@@ -1,0 +1,51 @@
+name: Build APK and AAB
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android project (first run only)
+        run: |
+          if [ ! -d android ]; then
+            cp -r lib /tmp/lib_backup
+            cp pubspec.yaml /tmp/pubspec_backup.yaml
+            flutter create --platforms=android --org com.aab --project-name aab .
+            rm -rf lib && cp -r /tmp/lib_backup lib
+            cp /tmp/pubspec_backup.yaml pubspec.yaml
+            rm -f test/widget_test.dart
+          fi
+
+      - name: Add INTERNET permission
+        run: |
+          F=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'android.permission.INTERNET' "$F"; then
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$F"
+          fi
+
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - run: flutter build appbundle --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AAB-release
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
