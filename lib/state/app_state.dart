@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
 import '../services/gemini_service.dart';
+import '../services/live_feed_service.dart';
 import '../services/market_data_service.dart';
 import '../services/news_service.dart';
 import '../services/settings_service.dart';
@@ -13,6 +15,7 @@ class AppState extends ChangeNotifier {
   final _market = MarketDataService();
   final _gemini = GeminiService();
   final _newsSvc = NewsService();
+  late final LiveFeed _feed;
 
   AppSettings settings = AppSettings();
   MarketSymbol symbol = allSymbols.first;
@@ -26,7 +29,13 @@ class AppState extends ChangeNotifier {
   bool loading = false;
   String? error;
   DateTime? lastUpdate;
-  int tick = 0; // increments on each new data push
+  int tick = 0; // increments whenever candles/signal changed
+
+  // live feed state
+  String liveStatus = 'off'; // off | connecting | live | poll | error
+  String liveSource = '';
+  DateTime? lastTickAt;
+  bool _dirty = false;
 
   bool aiLoading = false;
   String? aiError;
@@ -39,11 +48,15 @@ class AppState extends ChangeNotifier {
 
   Set<String> favorites = {};
 
-  Timer? _timer, _newsTimer;
+  Timer? _timer, _newsTimer, _uiTimer;
   bool _busy = false;
   int _gen = 0; // guards against stale responses after symbol/tf change
 
   static const timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
+
+  AppState() {
+    _feed = LiveFeed(onTick: _onTick, onStatus: _onLiveStatus);
+  }
 
   Future<void> init() async {
     settings = await AppSettings.load();
@@ -54,6 +67,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     if (settings.hasTwelve || settings.hasTiingo) {
       await refresh();
+      _feed.start(symbol, settings);
     } else {
       tab = 4; // go to settings so the user can add keys
       notifyListeners();
@@ -65,9 +79,47 @@ class AppState extends ChangeNotifier {
   void _startTimers() {
     _timer?.cancel();
     _newsTimer?.cancel();
+    _uiTimer?.cancel();
     _timer = Timer.periodic(
-        Duration(seconds: settings.refreshSec.clamp(10, 600).toInt()), (_) => refresh());
+        Duration(seconds: settings.refreshSec.clamp(15, 600).toInt()),
+        (_) => refresh());
     _newsTimer = Timer.periodic(const Duration(seconds: 90), (_) => loadNews());
+    // re-analyse at most once per second while live ticks arrive
+    _uiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_dirty) {
+        _dirty = false;
+        _analyze();
+        notifyListeners();
+      }
+    });
+  }
+
+  // ───────────── live ticks ─────────────
+  void _onLiveStatus(String status, String source) {
+    if (status == liveStatus && source == liveSource) return;
+    liveStatus = status;
+    liveSource = source;
+    notifyListeners();
+  }
+
+  void _onTick(Tick t) {
+    if (t.symbol != symbol.code || candles.isEmpty) return;
+    lastTickAt = DateTime.now();
+    final secs = MarketDataService.tfMinutes[tf]! * 60;
+    final nowTs = t.time.millisecondsSinceEpoch ~/ 1000;
+    final bucket = (nowTs ~/ secs) * secs;
+    final last = candles.last;
+    final p = t.price;
+    if (bucket >= last.ts + secs) {
+      candles.add(Candle(
+          DateTime.fromMillisecondsSinceEpoch(bucket * 1000, isUtc: true),
+          p, p, p, p));
+      if (candles.length > 450) candles.removeAt(0);
+    } else {
+      candles[candles.length - 1] = Candle(last.time, last.open,
+          math.max(last.high, p), math.min(last.low, p), p, last.volume);
+    }
+    _dirty = true;
   }
 
   void setTab(int i) {
@@ -81,6 +133,7 @@ class AppState extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     await p.setString('symbol', s.code);
     notifyListeners();
+    _feed.start(symbol, settings);
     await refresh();
   }
 
@@ -103,6 +156,7 @@ class AppState extends ChangeNotifier {
     _aiDir = null;
     _aiAt = null;
     aiError = null;
+    _dirty = false;
   }
 
   Future<void> toggleFavorite(String code) async {
@@ -117,8 +171,22 @@ class AppState extends ChangeNotifier {
     await s.save();
     _startTimers();
     notifyListeners();
+    _feed.start(symbol, settings);
     await refresh();
     loadNews();
+  }
+
+  void _analyze() {
+    if (candles.isEmpty) return;
+    final prev = signal;
+    signal = SignalEngine.analyze(candles, htf: htf, s: settings, sym: symbol);
+    if (prev != null && prev.direction == signal!.direction) {
+      signal!.aiVerdict = prev.aiVerdict;
+      signal!.aiComment = prev.aiComment;
+    }
+    lastUpdate = DateTime.now();
+    tick++;
+    _maybeAi();
   }
 
   Future<void> refresh() async {
@@ -146,16 +214,8 @@ class AppState extends ChangeNotifier {
           // higher timeframe is optional
         }
       }
-      final prev = signal;
-      signal = SignalEngine.analyze(candles, htf: htf, s: settings);
-      if (prev != null && prev.direction == signal!.direction) {
-        signal!.aiVerdict = prev.aiVerdict;
-        signal!.aiComment = prev.aiComment;
-      }
+      _analyze();
       error = null;
-      lastUpdate = DateTime.now();
-      tick++;
-      _maybeAi();
     } catch (e) {
       if (gen == _gen) error = e.toString().replaceFirst('Exception: ', '');
     } finally {
@@ -208,8 +268,10 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _feed.stop();
     _timer?.cancel();
     _newsTimer?.cancel();
+    _uiTimer?.cancel();
     super.dispose();
   }
 }
