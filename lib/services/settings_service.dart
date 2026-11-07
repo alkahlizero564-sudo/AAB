@@ -4,9 +4,13 @@ class AppSettings {
   String tiingoKey;
   List<String> twelveKeys; // 4 fields
   List<String> geminiKeys; // 4 fields
-  int refreshSec;
+  int refreshSec; // REST resync interval
+  int pollSec; // price polling interval when no WebSocket
   double atrMult;
-  double rr1, rr2;
+  double rr1, rr2, rr3; // TP1/TP2/TP3 as R multiples (QNA style 1R/2R/3R)
+  int cePeriod;
+  double ceMult;
+  bool liveWs;
   bool useAi;
   String source; // auto | twelve | tiingo
   String geminiModel;
@@ -15,10 +19,15 @@ class AppSettings {
     this.tiingoKey = '',
     List<String>? twelveKeys,
     List<String>? geminiKeys,
-    this.refreshSec = 30,
+    this.refreshSec = 60,
+    this.pollSec = 10,
     this.atrMult = 1.5,
-    this.rr1 = 1.5,
-    this.rr2 = 2.5,
+    this.rr1 = 1.0,
+    this.rr2 = 2.0,
+    this.rr3 = 3.0,
+    this.cePeriod = 22,
+    this.ceMult = 3.0,
+    this.liveWs = true,
     this.useAi = true,
     this.source = 'auto',
     this.geminiModel = 'gemini-2.5-flash',
@@ -41,10 +50,15 @@ class AppSettings {
       tiingoKey: p.getString('tiingo') ?? '',
       twelveKeys: _four(p.getStringList('twelve')),
       geminiKeys: _four(p.getStringList('gemini')),
-      refreshSec: p.getInt('refreshSec') ?? 30,
+      refreshSec: p.getInt('refreshSec') ?? 60,
+      pollSec: p.getInt('pollSec') ?? 10,
       atrMult: p.getDouble('atrMult') ?? 1.5,
-      rr1: p.getDouble('rr1') ?? 1.5,
-      rr2: p.getDouble('rr2') ?? 2.5,
+      rr1: p.getDouble('r1') ?? 1.0,
+      rr2: p.getDouble('r2') ?? 2.0,
+      rr3: p.getDouble('r3') ?? 3.0,
+      cePeriod: p.getInt('cePeriod') ?? 22,
+      ceMult: p.getDouble('ceMult') ?? 3.0,
+      liveWs: p.getBool('liveWs') ?? true,
       useAi: p.getBool('useAi') ?? true,
       source: p.getString('source') ?? 'auto',
       geminiModel: p.getString('geminiModel') ?? 'gemini-2.5-flash',
@@ -57,9 +71,14 @@ class AppSettings {
     await p.setStringList('twelve', twelveKeys.map((e) => e.trim()).toList());
     await p.setStringList('gemini', geminiKeys.map((e) => e.trim()).toList());
     await p.setInt('refreshSec', refreshSec);
+    await p.setInt('pollSec', pollSec);
     await p.setDouble('atrMult', atrMult);
-    await p.setDouble('rr1', rr1);
-    await p.setDouble('rr2', rr2);
+    await p.setDouble('r1', rr1);
+    await p.setDouble('r2', rr2);
+    await p.setDouble('r3', rr3);
+    await p.setInt('cePeriod', cePeriod);
+    await p.setDouble('ceMult', ceMult);
+    await p.setBool('liveWs', liveWs);
     await p.setBool('useAi', useAi);
     await p.setString('source', source);
     await p.setString('geminiModel', geminiModel.trim());
