@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import '../models.dart';
 import '../services/settings_service.dart';
 import 'indicators.dart';
+import 'levels.dart';
 import 'patterns.dart';
 import 'smc.dart';
 
@@ -12,6 +13,7 @@ class SignalEngine {
     'EMA 20/50', 'MACD', 'ADX/DI', 'Supertrend', 'Ichimoku',
     'Chandelier Exit', 'SR Breaks', 'Order Block', 'FVG',
     'Liquidity Sweep', 'Premium/Discount', 'الإطار الأعلى',
+    'Fibonacci', 'VWAP',
   };
 
   static int htfTrend(List<Candle>? h) {
@@ -77,10 +79,18 @@ class SignalEngine {
     final obs = orderBlocks(c);
     final fvg = fairValueGaps(c, at);
     final eq = equalLevels(c, a);
-    final sw = liquiditySweeps(c, eq);
     final eqLvl = equilibrium(c);
-    final vp = volumeProfile(c);
+    final vp = buildVp(c);
     final kz = killzone(c.last.time);
+
+    // ── Fibonacci / VWAP / day & session levels
+    final fibRes = fibonacci(c);
+    final vw = vwapSeries(c, vwapAnchorTs(sym, c.last.time));
+    final vwapLast = vw[i];
+    final day = dayLevels(c, htf, c.last.time);
+    final kl = buildKeyLevels(day, vp, vwapLast);
+    final sw = [...liquiditySweeps(c, eq), ...levelSweeps(c, kl)]
+      ..sort((x, y) => x.i.compareTo(y.i));
 
     final votes = <IndicatorVote>[];
     double sum = 0, maxW = 0;
@@ -247,6 +257,22 @@ class SignalEngine {
     add('Premium/Discount', price < eqLvl ? 'منطقة خصم (Discount)' : 'منطقة علاوة (Premium)',
         price < eqLvl ? 1 : -1, 5);
 
+    // Fibonacci (auto swing, OTE zone)
+    if (fibRes != null) {
+      final fv = fibVote(price, fibRes);
+      add('Fibonacci', fv.$2, fv.$1, 8, event: true);
+    }
+
+    // VWAP + daily open
+    if (!vwapLast.isNaN) {
+      add('VWAP', price > vwapLast ? 'فوق VWAP' : 'تحت VWAP',
+          price > vwapLast ? 1 : -1, 6);
+    }
+    if (!day.dayOpen.isNaN) {
+      add('Daily Open', price > day.dayOpen ? 'فوق افتتاح اليوم' : 'تحت افتتاح اليوم',
+          price > day.dayOpen ? 1 : -1, 4);
+    }
+
     // Volume profile
     if (vp != null) {
       add('Volume Profile', price > vp.poc ? 'فوق POC' : 'تحت POC',
@@ -392,6 +418,13 @@ class SignalEngine {
       aligned: aligned, killzone: kz.name, zones: zones, marks: marksOut,
       ceLong: ceL, ceShort: ceS, equilibrium: eqLvl,
       poc: vp?.poc ?? double.nan,
+      vah: vp?.vah ?? double.nan,
+      val: vp?.val ?? double.nan,
+      fibs: fibRes?.levels ?? const [],
+      fibUp: fibRes?.upLeg ?? true,
+      vpBins: vp?.bins ?? const [],
+      vwap: vw,
+      keyLevels: kl,
     );
   }
-}
+} 
