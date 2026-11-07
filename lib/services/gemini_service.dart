@@ -23,6 +23,58 @@ class GeminiService {
     return _pool!;
   }
 
+  /// Sends [prompt] and returns the decoded JSON object the model answers with.
+  Future<Map<String, dynamic>> askJson(String prompt, AppSettings s) async {
+    final pool = _poolFor(s);
+    if (pool.isEmpty) throw Exception('لا توجد مفاتيح Gemini');
+    String last = 'فشل الطلب';
+    for (var a = 0; a < pool.keys.length; a++) {
+      final key = pool.next();
+      if (key == null) break;
+      try {
+        final uri = Uri.https(
+          'generativelanguage.googleapis.com',
+          '/v1beta/models/${s.geminiModel}:generateContent',
+          {'key': key},
+        );
+        final r = await _c
+            .post(
+              uri,
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'contents': [
+                  {
+                    'parts': [
+                      {'text': prompt}
+                    ]
+                  }
+                ],
+                'generationConfig': {
+                  'temperature': 0.2,
+                  'responseMimeType': 'application/json',
+                },
+              }),
+            )
+            .timeout(const Duration(seconds: 40));
+        final j = jsonDecode(utf8.decode(r.bodyBytes));
+        if (j['error'] != null) {
+          last = '${j['error']['message']}';
+          pool.penalize(key);
+          continue;
+        }
+        var text = j['candidates'][0]['content']['parts'][0]['text'] as String;
+        text = text.replaceAll('```json', '').replaceAll('```', '').trim();
+        final o = jsonDecode(text);
+        if (o is Map<String, dynamic>) return o;
+        last = 'رد غير متوقع';
+      } catch (e) {
+        last = e.toString();
+        pool.penalize(key, const Duration(seconds: 20));
+      }
+    }
+    throw Exception(last);
+  }
+
   String _prompt(MarketSymbol sym, String tf, TradeSignal t) {
     final dirText = t.direction == Direction.buy
         ? 'BUY'
@@ -49,55 +101,7 @@ $votes
 
   Future<AiResult> review(
       MarketSymbol sym, String tf, TradeSignal t, AppSettings s) async {
-    final pool = _poolFor(s);
-    if (pool.isEmpty) throw Exception('لا توجد مفاتيح Gemini');
-    String last = 'فشل الطلب';
-    for (var a = 0; a < pool.keys.length; a++) {
-      final key = pool.next();
-      if (key == null) break;
-      try {
-        final uri = Uri.https(
-          'generativelanguage.googleapis.com',
-          '/v1beta/models/${s.geminiModel}:generateContent',
-          {'key': key},
-        );
-        final r = await _c
-            .post(
-              uri,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'contents': [
-                  {
-                    'parts': [
-                      {'text': _prompt(sym, tf, t)}
-                    ]
-                  }
-                ],
-                'generationConfig': {
-                  'temperature': 0.2,
-                  'responseMimeType': 'application/json',
-                },
-              }),
-            )
-            .timeout(const Duration(seconds: 30));
-        final j = jsonDecode(utf8.decode(r.bodyBytes));
-        if (j['error'] != null) {
-          last = '${j['error']['message']}';
-          pool.penalize(key);
-          continue;
-        }
-        var text = j['candidates'][0]['content']['parts'][0]['text'] as String;
-        text = text.replaceAll('```json', '').replaceAll('```', '').trim();
-        final o = jsonDecode(text);
-        return AiResult(
-          '${o['verdict']}'.toUpperCase(),
-          '${o['comment']}',
-        );
-      } catch (e) {
-        last = e.toString();
-        pool.penalize(key, const Duration(seconds: 20));
-      }
-    }
-    throw Exception(last);
+    final o = await askJson(_prompt(sym, tf, t), s);
+    return AiResult('${o['verdict']}'.toUpperCase(), '${o['comment']}');
   }
 }
