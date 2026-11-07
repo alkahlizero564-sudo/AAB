@@ -4,9 +4,47 @@ import 'package:url_launcher/url_launcher.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'premarket_view.dart';
 
-class NewsScreen extends StatelessWidget {
+class NewsScreen extends StatefulWidget {
   const NewsScreen({super.key});
+  @override
+  State<NewsScreen> createState() => _NewsScreenState();
+}
+
+class _NewsScreenState extends State<NewsScreen> {
+  int tab = 0; // 0 = news, 1 = pre-market analysis
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 4),
+        child: SizedBox(
+          width: double.infinity,
+          child: SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: 0, label: Text('الأخبار'), icon: Icon(Icons.newspaper, size: 18)),
+              ButtonSegment(
+                  value: 1,
+                  label: Text('تحليل قبل الافتتاح'),
+                  icon: Icon(Icons.wb_twilight, size: 18)),
+            ],
+            selected: {tab},
+            onSelectionChanged: (v) => setState(() => tab = v.first),
+          ),
+        ),
+      ),
+      Expanded(
+        child: tab == 0 ? const _NewsList() : const PreMarketView(),
+      ),
+    ]);
+  }
+}
+
+class _NewsList extends StatelessWidget {
+  const _NewsList();
 
   String _ago(DateTime t) {
     final d = DateTime.now().difference(t);
