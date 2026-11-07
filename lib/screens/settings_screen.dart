@@ -17,8 +17,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final List<TextEditingController> gemini;
   late final TextEditingController model;
   late int refresh;
-  late double atrMult, rr1, rr2;
-  late bool useAi;
+  late double atrMult, rr1, rr2, rr3, ceMult;
+  late int cePeriod, pollSec;
+  late bool useAi, liveWs;
   late String source;
 
   @override
@@ -29,10 +30,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     twelve = [for (final k in s.twelveKeys) TextEditingController(text: k)];
     gemini = [for (final k in s.geminiKeys) TextEditingController(text: k)];
     model = TextEditingController(text: s.geminiModel);
-    refresh = s.refreshSec.clamp(10, 120).toInt();
+    refresh = s.refreshSec.clamp(15, 120).toInt();
     atrMult = s.atrMult;
     rr1 = s.rr1;
     rr2 = s.rr2;
+    rr3 = s.rr3;
+    ceMult = s.ceMult;
+    cePeriod = s.cePeriod;
+    pollSec = s.pollSec.clamp(3, 60).toInt();
+    liveWs = s.liveWs;
     useAi = s.useAi;
     source = s.source;
   }
@@ -56,6 +62,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       atrMult: atrMult,
       rr1: rr1,
       rr2: rr2,
+      rr3: rr3,
+      ceMult: ceMult,
+      cePeriod: cePeriod,
+      pollSec: pollSec,
+      liveWs: liveWs,
       useAi: useAi,
       source: source,
       geminiModel: model.text.trim().isEmpty ? 'gemini-2.5-flash' : model.text,
@@ -153,14 +164,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: (v) => setState(() => source = v ?? 'auto'),
             ),
           ]),
-          _slider('التحديث كل', refresh.toDouble(), 10, 120, 11,
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('بث لحظي (ثانية بثانية)',
+                style: TextStyle(fontSize: 13)),
+            value: liveWs,
+            onChanged: (v) => setState(() => liveWs = v),
+          ),
+          _slider('تحديث الشموع من الخادم كل', refresh.toDouble(), 15, 120, 21,
               (v) => '${v.round()} ث', (v) => setState(() => refresh = v.round())),
+          _slider('فاصل جلب السعر (عند غياب WebSocket)', pollSec.toDouble(), 3, 60, 19,
+              (v) => '${v.round()} ث', (v) => setState(() => pollSec = v.round())),
           _slider('مضاعف ATR لوقف الخسارة', atrMult, 1, 3, 20,
               (v) => v.toStringAsFixed(1), (v) => setState(() => atrMult = v)),
-          _slider('نسبة العائد للهدف 1', rr1, 1, 3, 20,
-              (v) => '1:${v.toStringAsFixed(1)}', (v) => setState(() => rr1 = v)),
-          _slider('نسبة العائد للهدف 2', rr2, 1.5, 5, 35,
-              (v) => '1:${v.toStringAsFixed(1)}', (v) => setState(() => rr2 = v)),
+          _slider('الهدف 1 (R)', rr1, 0.5, 3, 25,
+              (v) => '${v.toStringAsFixed(1)}R', (v) => setState(() => rr1 = v)),
+          _slider('الهدف 2 (R)', rr2, 1, 5, 40,
+              (v) => '${v.toStringAsFixed(1)}R', (v) => setState(() => rr2 = v)),
+          _slider('الهدف 3 (R)', rr3, 1.5, 8, 65,
+              (v) => '${v.toStringAsFixed(1)}R', (v) => setState(() => rr3 = v)),
+          _slider('Chandelier Exit - فترة ATR', cePeriod.toDouble(), 1, 50, 49,
+              (v) => '${v.round()}', (v) => setState(() => cePeriod = v.round())),
+          _slider('Chandelier Exit - المضاعف', ceMult, 1, 5, 40,
+              (v) => v.toStringAsFixed(1), (v) => setState(() => ceMult = v)),
         ]),
       ),
       SizedBox(
