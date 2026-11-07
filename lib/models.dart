@@ -46,6 +46,25 @@ class Tick {
   const Tick(this.symbol, this.price, this.time);
 }
 
+class FibLevel {
+  final double ratio, price;
+  const FibLevel(this.ratio, this.price);
+}
+
+class VpBin {
+  final double lo, hi, w;
+  const VpBin(this.lo, this.hi, this.w);
+}
+
+/// A named horizontal level (PDH/PDL, Asia range, POC, VWAP ...).
+class KeyLevel {
+  final String name;
+  final double price;
+  final int side; // +1 liquidity above, -1 liquidity below, 0 neutral
+  final String kind; // day, session, vp, vwap, fib
+  const KeyLevel(this.name, this.price, this.side, this.kind);
+}
+
 class TradeSignal {
   final Direction direction;
   final double score; // -100..100
@@ -63,6 +82,12 @@ class TradeSignal {
   final List<double> ceLong, ceShort; // NaN where hidden (aligned to candles)
   final double equilibrium; // NaN when unknown
   final double poc; // NaN when unknown
+  final double vah, val; // value area, NaN when unknown
+  final List<FibLevel> fibs;
+  final bool fibUp;
+  final List<VpBin> vpBins;
+  final List<double> vwap; // aligned to candles, NaN before anchor
+  final List<KeyLevel> keyLevels;
   String? aiVerdict; // BUY / SELL / WAIT
   String? aiComment;
 
@@ -90,6 +115,13 @@ class TradeSignal {
     this.ceShort = const [],
     this.equilibrium = double.nan,
     this.poc = double.nan,
+    this.vah = double.nan,
+    this.val = double.nan,
+    this.fibs = const [],
+    this.fibUp = true,
+    this.vpBins = const [],
+    this.vwap = const [],
+    this.keyLevels = const [],
   });
 
   double get strength => score.abs().clamp(0, 100).toDouble();
@@ -126,4 +158,4 @@ class MarketSymbol {
       category == 'exotic' ||
       category == 'metal';
   String fmt(double v) => v.toStringAsFixed(decimals);
-} 
+}
