@@ -1,7 +1,56 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models.dart';
+import '../state/app_state.dart';
 import '../theme.dart';
 import 'common.dart';
+
+class LiveBadge extends StatelessWidget {
+  const LiveBadge({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final st = context.watch<AppState>();
+    Color c;
+    String t;
+    switch (st.liveStatus) {
+      case 'live':
+        c = AppColors.up;
+        t = 'LIVE • ${st.liveSource}';
+        break;
+      case 'poll':
+        c = AppColors.gold;
+        t = 'تحديث دوري • ${st.liveSource}';
+        break;
+      case 'connecting':
+        c = AppColors.accent;
+        t = 'جاري الاتصال…';
+        break;
+      case 'error':
+        c = AppColors.down;
+        t = st.liveSource.isEmpty ? 'خطأ في البث' : st.liveSource;
+        break;
+      default:
+        c = AppColors.muted;
+        t = 'REST فقط';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: c.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.circle, size: 8, color: c),
+        const SizedBox(width: 5),
+        Flexible(
+          child: Text(t,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.w700)),
+        ),
+      ]),
+    );
+  }
+}
 
 class SignalCard extends StatelessWidget {
   final TradeSignal sig;
@@ -15,6 +64,14 @@ class SignalCard extends StatelessWidget {
     return Panel(
       borderColor: col.withOpacity(0.6),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Flexible(child: LiveBadge()),
+          const Spacer(),
+          if (sig.killzone.isNotEmpty)
+            Text(sig.killzone,
+                style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+        ]),
+        const SizedBox(height: 10),
         Row(children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -39,6 +96,19 @@ class SignalCard extends StatelessWidget {
         Row(children: [
           const Text('قوة الإشارة',
               style: TextStyle(color: AppColors.muted, fontSize: 12)),
+          if (active) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: col.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text('درجة ${sig.grade}',
+                  style: TextStyle(
+                      color: col, fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+          ],
           const Spacer(),
           Text('${sig.strength.toStringAsFixed(0)}%',
               style: TextStyle(color: col, fontWeight: FontWeight.bold)),
@@ -65,10 +135,13 @@ class SignalCard extends StatelessWidget {
             _lv('الهدف 1', sym.fmt(sig.tp1), AppColors.up),
             const SizedBox(width: 8),
             _lv('الهدف 2', sym.fmt(sig.tp2), AppColors.up),
+            const SizedBox(width: 8),
+            _lv('الهدف 3', sym.fmt(sig.tp3), AppColors.up),
           ]),
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 6, children: [
-            _tag('اتفاق ${sig.agree}/${sig.total} مؤشر'),
+            _tag('توافق ${sig.aligned} مؤشر أساسي'),
+            _tag('اتفاق ${sig.agree}/${sig.total}'),
             _tag('ATR ${sym.fmt(sig.atr)}'),
             _tag(sig.htfTrend == 0
                 ? 'الإطار الأعلى: محايد'
@@ -87,7 +160,7 @@ class SignalCard extends StatelessWidget {
 
   Widget _lv(String t, String v, Color c) => Expanded(
         child: Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(12),
@@ -96,9 +169,12 @@ class SignalCard extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(t, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
             const SizedBox(height: 4),
-            Text(v,
-                style: TextStyle(
-                    color: c, fontSize: 16, fontWeight: FontWeight.bold)),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(v,
+                  style: TextStyle(
+                      color: c, fontSize: 15, fontWeight: FontWeight.bold)),
+            ),
           ]),
         ),
       );
