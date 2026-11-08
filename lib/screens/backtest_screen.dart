@@ -20,6 +20,11 @@ class _BacktestScreenState extends State<BacktestScreen> {
   int bars = 3000;
   bool lean = true;
   int minAligned = 4;
+  bool htfGate = false;
+  bool prune = false;
+  String mode = 'vote';
+  int minLoc = 2;
+  bool sessionOnly = false;
   bool running = false;
   double progress = 0;
   String phase = '';
@@ -33,6 +38,11 @@ class _BacktestScreenState extends State<BacktestScreen> {
     final cfg = EngineConfig.current;
     lean = cfg.lean;
     minAligned = cfg.minAligned;
+    htfGate = cfg.htfGate;
+    prune = cfg.prune;
+    mode = cfg.mode;
+    minLoc = cfg.minLoc;
+    sessionOnly = cfg.sessionOnly;
   }
 
   Future<void> _run(AppState app) async {
@@ -58,7 +68,15 @@ class _BacktestScreenState extends State<BacktestScreen> {
       } catch (_) {}
       if (c.length < 400) throw Exception('البيانات غير كافية (${c.length} شمعة فقط)');
       if (mounted) setState(() => phase = 'جاري الاختبار على ${c.length} شمعة…');
-      final cfg = EngineConfig(lean: lean, minAligned: minAligned, minScore: 30);
+      final cfg = EngineConfig(
+          mode: mode,
+          lean: lean,
+          minAligned: minAligned,
+          minScore: 30,
+          htfGate: htfGate,
+          prune: prune,
+          minLoc: minLoc,
+          sessionOnly: sessionOnly);
       final res = await BtRunner.run(BtRequest(c, h, symbol, s, cfg, tf), (p) {
         if (mounted && (p - progress).abs() > 0.01) setState(() => progress = p);
       });
@@ -124,11 +142,30 @@ class _BacktestScreenState extends State<BacktestScreen> {
             _chips<int>('عدد الشموع', const [1000, 2000, 3000, 5000], bars,
                 (v) => '$v', (v) => bars = v),
             const SizedBox(height: 12),
+            _chips<String>('نمط القرار', const ['vote', 'pro'], mode,
+                (v) => v == 'pro' ? 'احترافي (اتجاه + موقع + تريغر)' : 'تصويت المؤشرات',
+                (v) => mode = v),
+            if (mode == 'pro') ...[
+              const SizedBox(height: 12),
+              _chips<int>('أقل عوامل توافق عند المنطقة', const [1, 2, 3, 4], minLoc,
+                  (v) => '$v', (v) => minLoc = v),
+              const SizedBox(height: 12),
+              _chips<bool>('جلسات لندن/نيويورك فقط (فوركس)', const [false, true],
+                  sessionOnly, (v) => v ? 'مفعّل' : 'متوقف', (v) => sessionOnly = v),
+            ] else ...[
+            const SizedBox(height: 12),
             _chips<bool>('وضع المؤشرات', const [true, false], lean,
                 (v) => v ? 'مبسّط (موصى به)' : 'كامل', (v) => lean = v),
             const SizedBox(height: 12),
             _chips<int>('أقل عدد مؤشرات متوافقة', const [3, 4, 5, 6], minAligned,
                 (v) => '$v', (v) => minAligned = v),
+            const SizedBox(height: 12),
+            _chips<bool>('فلتر الإطار الأعلى (تداول مع اتجاهه فقط)', const [false, true],
+                htfGate, (v) => v ? 'مفعّل' : 'متوقف', (v) => htfGate = v),
+            const SizedBox(height: 12),
+            _chips<bool>('حذف المؤشرات الضعيفة (SR Breaks وغيرها)', const [false, true],
+                prune, (v) => v ? 'مفعّل' : 'متوقف', (v) => prune = v),
+            ],
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
@@ -203,7 +240,15 @@ class _BacktestScreenState extends State<BacktestScreen> {
         height: 48,
         child: OutlinedButton.icon(
           onPressed: () async {
-            final cfg = EngineConfig(lean: lean, minAligned: minAligned, minScore: 30);
+            final cfg = EngineConfig(
+                mode: mode,
+                lean: lean,
+                minAligned: minAligned,
+                minScore: 30,
+                htfGate: htfGate,
+                prune: prune,
+                minLoc: minLoc,
+                sessionOnly: sessionOnly);
             await cfg.save();
             await app.refresh();
             if (!mounted) return;
@@ -297,4 +342,4 @@ class _BacktestScreenState extends State<BacktestScreen> {
       ]),
     );
   }
-}
+} 
