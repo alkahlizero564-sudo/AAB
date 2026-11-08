@@ -92,33 +92,72 @@ class AppSettings {
 
 /// Signal-engine tuning (kept separate so Settings saves never reset it).
 class EngineConfig {
-  final bool lean; // lean = fewer, non-redundant indicators
-  final int minAligned; // minimum aligned core confluences for a signal
-  final double minScore; // minimum |score| for a signal
-  const EngineConfig({this.lean = true, this.minAligned = 4, this.minScore = 30});
+  final String mode; // 'vote' = indicator voting, 'pro' = trader-style pipeline
+  final bool lean; // vote mode: fewer, non-redundant indicators
+  final int minAligned; // vote mode: min aligned core confluences
+  final double minScore; // vote mode: min |score|
+  final bool htfGate; // vote mode: trade only with the higher-timeframe trend
+  final bool prune; // vote mode: drop indicators that tested negative
+  final int minLoc; // pro mode: min number of confluence factors at the zone
+  final bool sessionOnly; // pro mode: FX/metals only in London/NY killzones
+  const EngineConfig({
+    this.mode = 'vote',
+    this.lean = true,
+    this.minAligned = 4,
+    this.minScore = 30,
+    this.htfGate = false,
+    this.prune = false,
+    this.minLoc = 2,
+    this.sessionOnly = false,
+  });
 
   static EngineConfig current = const EngineConfig();
 
-  EngineConfig copy({bool? lean, int? minAligned, double? minScore}) => EngineConfig(
+  EngineConfig copy({
+    String? mode,
+    bool? lean,
+    int? minAligned,
+    double? minScore,
+    bool? htfGate,
+    bool? prune,
+    int? minLoc,
+    bool? sessionOnly,
+  }) =>
+      EngineConfig(
+        mode: mode ?? this.mode,
         lean: lean ?? this.lean,
         minAligned: minAligned ?? this.minAligned,
         minScore: minScore ?? this.minScore,
+        htfGate: htfGate ?? this.htfGate,
+        prune: prune ?? this.prune,
+        minLoc: minLoc ?? this.minLoc,
+        sessionOnly: sessionOnly ?? this.sessionOnly,
       );
 
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     current = EngineConfig(
+      mode: p.getString('eng_mode') ?? 'vote',
       lean: p.getBool('eng_lean') ?? true,
       minAligned: p.getInt('eng_aligned') ?? 4,
       minScore: p.getDouble('eng_score') ?? 30,
+      htfGate: p.getBool('eng_gate') ?? false,
+      prune: p.getBool('eng_prune') ?? false,
+      minLoc: p.getInt('eng_minloc') ?? 2,
+      sessionOnly: p.getBool('eng_session') ?? false,
     );
   }
 
   Future<void> save() async {
     final p = await SharedPreferences.getInstance();
+    await p.setString('eng_mode', mode);
     await p.setBool('eng_lean', lean);
     await p.setInt('eng_aligned', minAligned);
     await p.setDouble('eng_score', minScore);
+    await p.setBool('eng_gate', htfGate);
+    await p.setBool('eng_prune', prune);
+    await p.setInt('eng_minloc', minLoc);
+    await p.setBool('eng_session', sessionOnly);
     current = this;
   }
 }
