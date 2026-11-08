@@ -46,7 +46,11 @@ class SignalEngine {
   }
 
   static TradeSignal analyze(List<Candle> c,
-      {List<Candle>? htf, required AppSettings s, required MarketSymbol sym}) {
+      {List<Candle>? htf,
+      required AppSettings s,
+      required MarketSymbol sym,
+      EngineConfig? cfg}) {
+    final cf = cfg ?? EngineConfig.current;
     final now = DateTime.now();
     if (c.length < _minCandles) {
       return TradeSignal(
@@ -115,7 +119,7 @@ class SignalEngine {
       add('EMA 200', price > e200[i] ? 'فوق المتوسط' : 'تحت المتوسط',
           price > e200[i] ? 1 : -1, 6);
     }
-    if (!m.hist[i].isNaN && !m.hist[i - 1].isNaN) {
+    if (!cf.lean && !m.hist[i].isNaN && !m.hist[i - 1].isNaN) {
       final h = m.hist[i];
       var w = 10.0;
       var crossed = false;
@@ -142,7 +146,7 @@ class SignalEngine {
       }
       add('RSI 14', '${r[i].toStringAsFixed(1)} • $t', v, w);
     }
-    if (!sto.k[i].isNaN && !sto.d[i].isNaN) {
+    if (!cf.lean && !sto.k[i].isNaN && !sto.d[i].isNaN) {
       final k = sto.k[i], d = sto.d[i];
       int v;
       double w;
@@ -155,7 +159,7 @@ class SignalEngine {
       }
       add('Stochastic', 'K ${k.toStringAsFixed(0)} / D ${d.toStringAsFixed(0)}', v, w);
     }
-    if (!bb.mid[i].isNaN) {
+    if (!cf.lean && !bb.mid[i].isNaN) {
       int v;
       double w;
       String t;
@@ -173,7 +177,7 @@ class SignalEngine {
       add('ADX/DI', 'ADX ${adxNow.toStringAsFixed(0)} • ${adxNow > 25 ? 'اتجاه قوي' : 'اتجاه ضعيف'}',
           ad.plus[i] > ad.minus[i] ? 1 : -1, adxNow > 25 ? 8 : 3);
     }
-    if (!cc[i].isNaN) {
+    if (!cf.lean && !cc[i].isNaN) {
       int v;
       double w;
       if (cc[i] < -100) {
@@ -185,7 +189,7 @@ class SignalEngine {
       }
       add('CCI 20', cc[i].toStringAsFixed(0), v, w);
     }
-    if (!wr[i].isNaN) {
+    if (!cf.lean && !wr[i].isNaN) {
       add('Williams %R', wr[i].toStringAsFixed(0),
           wr[i] < -80 ? 1 : (wr[i] > -20 ? -1 : 0), 3);
     }
@@ -195,8 +199,10 @@ class SignalEngine {
       add('Supertrend', sup.dir[i] == 1 ? 'صاعد' : 'هابط', sup.dir[i], 8);
     }
     // Ichimoku
-    final ich = ichimokuVote(c);
-    add('Ichimoku', ich.$2, ich.$1, 8);
+    if (!cf.lean) {
+      final ich = ichimokuVote(c);
+      add('Ichimoku', ich.$2, ich.$1, 8);
+    }
 
     // Chandelier Exit (video 1 / image 2)
     if (!ce.longStop[i].isNaN || !ce.shortStop[i].isNaN) {
@@ -310,11 +316,11 @@ class SignalEngine {
     }
     score = score.clamp(-100, 100).toDouble();
 
-    var want = score >= 30 ? 1 : (score <= -30 ? -1 : 0);
+    var want = score >= cf.minScore ? 1 : (score <= -cf.minScore ? -1 : 0);
     var aligned = 0;
     if (want != 0) {
       aligned = votes.where((v) => _core.contains(v.name) && v.vote == want).length;
-      if (aligned < 4) want = 0;
+      if (aligned < cf.minAligned) want = 0;
     }
     final dir = want == 1
         ? Direction.buy
