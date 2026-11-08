@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'backtest_screen.dart';
 import 'chart_screen.dart';
 import 'dashboard_screen.dart';
 import 'markets_screen.dart';
@@ -73,6 +74,15 @@ class HomeShell extends StatelessWidget {
                   Navigator.of(context).pop();
                 },
               ),
+            ListTile(
+              leading: const Icon(Icons.science, color: AppColors.muted),
+              title: const Text('اختبار المحرك (Backtest)'),
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const BacktestScreen()));
+              },
+            ),
             const Spacer(),
             const Padding(
               padding: EdgeInsets.all(16),
