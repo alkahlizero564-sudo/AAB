@@ -4,6 +4,7 @@ import '../services/settings_service.dart';
 import 'indicators.dart';
 import 'levels.dart';
 import 'patterns.dart';
+import 'pro.dart';
 import 'smc.dart';
 
 class SignalEngine {
@@ -52,6 +53,15 @@ class SignalEngine {
       EngineConfig? cfg}) {
     final cf = cfg ?? EngineConfig.current;
     final now = DateTime.now();
+    if (cf.mode == 'pro') {
+      // trader-style pipeline: compute overlays with the vote engine, then decide
+      final base = analyze(c,
+          htf: htf,
+          s: s,
+          sym: sym,
+          cfg: cf.copy(mode: 'vote', minScore: 0, minAligned: 0, htfGate: false, prune: false));
+      return ProEngine.decide(base, c, htf, s, sym, cf);
+    }
     if (c.length < _minCandles) {
       return TradeSignal(
         direction: Direction.neutral, score: 0,
@@ -107,7 +117,7 @@ class SignalEngine {
 
     final adxNow = ad.adx[i].isNaN ? 0.0 : ad.adx[i];
 
-    if (!e20[i].isNaN && !e50[i].isNaN) {
+    if (!cf.prune && !e20[i].isNaN && !e50[i].isNaN) {
       final v = (price > e20[i] && e20[i] > e50[i])
           ? 1
           : (price < e20[i] && e20[i] < e50[i])
@@ -222,7 +232,9 @@ class SignalEngine {
     for (final e in sr.events) {
       if (e.i >= n - 4) lastSr = e;
     }
-    if (lastSr != null) {
+    if (cf.prune) {
+      // SR Breaks tested negative → skipped in pruned mode
+    } else if (lastSr != null) {
       add('SR Breaks',
           lastSr.retest
               ? 'إعادة اختبار ${lastSr.bias > 0 ? 'دعم' : 'مقاومة'}'
@@ -260,8 +272,10 @@ class SignalEngine {
     }
 
     // Premium / Discount (Dynamic 50%)
-    add('Premium/Discount', price < eqLvl ? 'منطقة خصم (Discount)' : 'منطقة علاوة (Premium)',
-        price < eqLvl ? 1 : -1, 5);
+    if (!cf.prune) {
+      add('Premium/Discount', price < eqLvl ? 'منطقة خصم (Discount)' : 'منطقة علاوة (Premium)',
+          price < eqLvl ? 1 : -1, 5);
+    }
 
     // Fibonacci (auto swing, OTE zone)
     if (fibRes != null) {
@@ -280,7 +294,7 @@ class SignalEngine {
     }
 
     // Volume profile
-    if (vp != null) {
+    if (!cf.prune && vp != null) {
       add('Volume Profile', price > vp.poc ? 'فوق POC' : 'تحت POC',
           price > vp.poc ? 1 : -1, 3);
     }
@@ -322,6 +336,8 @@ class SignalEngine {
       aligned = votes.where((v) => _core.contains(v.name) && v.vote == want).length;
       if (aligned < cf.minAligned) want = 0;
     }
+    // optional hard filter: only trade with the higher-timeframe trend
+    if (want != 0 && cf.htfGate && ht != want) want = 0;
     final dir = want == 1
         ? Direction.buy
         : want == -1
@@ -433,4 +449,4 @@ class SignalEngine {
       keyLevels: kl,
     );
   }
-} 
+}
