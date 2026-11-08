@@ -45,6 +45,7 @@ class AppSettings {
   }
 
   static Future<AppSettings> load() async {
+    await EngineConfig.load();
     final p = await SharedPreferences.getInstance();
     return AppSettings(
       tiingoKey: p.getString('tiingo') ?? '',
@@ -87,6 +88,39 @@ class AppSettings {
   bool get hasTwelve => twelveKeys.any((k) => k.trim().isNotEmpty);
   bool get hasTiingo => tiingoKey.trim().isNotEmpty;
   bool get hasGemini => geminiKeys.any((k) => k.trim().isNotEmpty);
+}
+
+/// Signal-engine tuning (kept separate so Settings saves never reset it).
+class EngineConfig {
+  final bool lean; // lean = fewer, non-redundant indicators
+  final int minAligned; // minimum aligned core confluences for a signal
+  final double minScore; // minimum |score| for a signal
+  const EngineConfig({this.lean = true, this.minAligned = 4, this.minScore = 30});
+
+  static EngineConfig current = const EngineConfig();
+
+  EngineConfig copy({bool? lean, int? minAligned, double? minScore}) => EngineConfig(
+        lean: lean ?? this.lean,
+        minAligned: minAligned ?? this.minAligned,
+        minScore: minScore ?? this.minScore,
+      );
+
+  static Future<void> load() async {
+    final p = await SharedPreferences.getInstance();
+    current = EngineConfig(
+      lean: p.getBool('eng_lean') ?? true,
+      minAligned: p.getInt('eng_aligned') ?? 4,
+      minScore: p.getDouble('eng_score') ?? 30,
+    );
+  }
+
+  Future<void> save() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool('eng_lean', lean);
+    await p.setInt('eng_aligned', minAligned);
+    await p.setDouble('eng_score', minScore);
+    current = this;
+  }
 }
 
 /// Round-robin key pool with a cooldown for keys that hit rate limits.
