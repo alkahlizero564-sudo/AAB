@@ -189,6 +189,38 @@ String volRegime(List<double> at) {
   return (below, below + step);
 }
 
+// ───────────────────────── RSI divergence ─────────────────────────
+/// Regular RSI divergence near the last pivot: +1 bullish, -1 bearish, 0 none.
+int rsiDivergence(List<Candle> c) {
+  final n = c.length;
+  if (n < 60) return 0;
+  final r = rsi(c.map((e) => e.close).toList(), 14);
+  final start = math.max(0, n - 60);
+  final pl = pivotLows(c, 3, 3).where((p) => p.i >= start).toList();
+  final ph = pivotHighs(c, 3, 3).where((p) => p.i >= start).toList();
+  if (pl.length >= 2) {
+    final b = pl.last, p0 = pl[pl.length - 2];
+    if (n - 1 - b.i <= 10 &&
+        b.p < p0.p &&
+        !r[b.i].isNaN &&
+        !r[p0.i].isNaN &&
+        r[b.i] > r[p0.i] + 2) {
+      return 1; // سعر قاع أدنى + RSI قاع أعلى
+    }
+  }
+  if (ph.length >= 2) {
+    final b = ph.last, p0 = ph[ph.length - 2];
+    if (n - 1 - b.i <= 10 &&
+        b.p > p0.p &&
+        !r[b.i].isNaN &&
+        !r[p0.i].isNaN &&
+        r[b.i] < r[p0.i] - 2) {
+      return -1; // سعر قمة أعلى + RSI قمة أدنى
+    }
+  }
+  return 0;
+}
+
 // ───────────────────────── Location confluence ─────────────────────────
 class LocFactor {
   final String name;
@@ -280,6 +312,9 @@ String? findTrigger({
     final uw = k.high - math.max(k.open, k.close);
     if (buy && lw >= 0.6 * rng && k.close >= k.open) return 'شمعة رفض سفلي (Pin Bar)';
     if (!buy && uw >= 0.6 * rng && k.close <= k.open) return 'شمعة رفض علوي (Pin Bar)';
+  }
+  if (rsiDivergence(c) == want) {
+    return 'دايفرجنس RSI ${buy ? 'صاعد' : 'هابط'}';
   }
   if (st.choch && st.breakDir == want) return 'CHoCH — ${st.label}';
   for (final p in cp) {
@@ -496,6 +531,25 @@ class ProEngine {
     steps.insert(3, '4) الفلاتر: ${kz.name} • التقلب $regimeAr');
 
     final sg = buy ? 1 : -1;
+
+    // ── targets: never beyond the nearest obstacle
+    final obs0 = obstacle;
+    var capped = false;
+    double cap(double t) {
+      if (obs0 == null) return t;
+      final lim = obs0 - sg * 0.1 * a; // نخرج قبل العائق بشوية
+      final over = buy ? t > lim : t < lim;
+      if (over) capped = true;
+      return over ? lim : t;
+    }
+
+    final tp1 = cap(price + sg * risk * s.rr1);
+    final tp2 = cap(price + sg * risk * s.rr2);
+    final tp3 = cap(price + sg * risk * s.rr3);
+    if (capped && obs0 != null) {
+      steps.add('تنبيه: الأهداف اتقصّت عند أقرب عائق ${sym.fmt(obs0)}');
+    }
+
     final aligned = loc.length + 1 + 1 + (st.trend == want ? 1 : 0);
     final strength = math.min(
         100.0, 35.0 + 9 * locW + (st.trend == want ? 8 : 0) + ((sym.isFx && kz.prime) ? 7 : 0));
@@ -507,12 +561,12 @@ class ProEngine {
         score: sg * strength,
         entry: price,
         sl: price - sg * risk,
-        tp1: price + sg * risk * s.rr1,
-        tp2: price + sg * risk * s.rr2,
-        tp3: price + sg * risk * s.rr3,
+        tp1: tp1,
+        tp2: tp2,
+        tp3: tp3,
         votes: votes,
         reasons: steps,
         grade: grade,
         aligned: aligned);
   }
-} 
+}
