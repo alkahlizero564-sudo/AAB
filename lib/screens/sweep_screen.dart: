@@ -1,0 +1,154 @@
+import 'package:flutter/material.dart';
+import '../analysis/sweep.dart';
+import '../models.dart';
+import '../services/settings_service.dart';
+
+class SweepScreen extends StatefulWidget {
+  final List<Candle> candles, htf;
+  final MarketSymbol sym;
+  final AppSettings settings;
+  final String tf;
+  const SweepScreen({
+    super.key,
+    required this.candles,
+    required this.htf,
+    required this.sym,
+    required this.settings,
+    required this.tf,
+  });
+
+  @override
+  State<SweepScreen> createState() => _SweepScreenState();
+}
+
+class _SweepScreenState extends State<SweepScreen> {
+  String _mode = 'pro';
+  bool _running = false;
+  int _done = 0, _total = 0;
+  String? _error;
+  List<SweepRow> _rows = [];
+
+  Future<void> _start() async {
+    setState(() {
+      _running = true;
+      _error = null;
+      _rows = [];
+      _done = 0;
+      _total = 0;
+    });
+    try {
+      final rows = await Sweep.run(
+        candles: widget.candles,
+        htf: widget.htf,
+        sym: widget.sym,
+        settings: widget.settings,
+        tf: widget.tf,
+        mode: _mode,
+        onProgress: (d, t) {
+          if (mounted) {
+            setState(() {
+              _done = d;
+              _total = t;
+            });
+          }
+        },
+      );
+      if (!mounted) return;
+      setState(() => _rows = rows);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  Future<void> _apply(SweepRow r) async {
+    await r.cfg.save();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم تطبيق الإعداد على المحرك')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('الضبط التلقائي')),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text(
+              'يجرّب عدة إعدادات على أول 70% من البيانات، ثم يعيد اختبارها '
+              'على آخر 30% اللي ما استخدمها في الضبط. اختر إعدادًا مربحًا '
+              'في الفترتين (علامة ✓).',
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('وضع المحترف (pro)'),
+                  selected: _mode == 'pro',
+                  onSelected:
+                      _running ? null : (_) => setState(() => _mode = 'pro'),
+                ),
+                ChoiceChip(
+                  label: const Text('وضع التصويت (vote)'),
+                  selected: _mode == 'vote',
+                  onSelected:
+                      _running ? null : (_) => setState(() => _mode = 'vote'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: _running ? null : _start,
+              child: Text(_running ? 'جارٍ الضبط...' : 'ابدأ الضبط'),
+            ),
+            if (_running) ...[
+              const SizedBox(height: 12),
+              LinearProgressIndicator(
+                  value: _total == 0 ? null : _done / _total),
+              const SizedBox(height: 6),
+              Text(_total == 0 ? 'تحضير...' : 'تمت $_done من $_total تركيبة'),
+            ],
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: const TextStyle(color: Colors.redAccent)),
+            ],
+            const SizedBox(height: 12),
+            for (final r in _rows)
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(
+                    color: r.holdsUp ? Colors.green : Colors.transparent,
+                    width: 1.5,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(r.describe()),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: OutlinedButton(
+                          onPressed: () => _apply(r),
+                          child: const Text('تطبيق'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
