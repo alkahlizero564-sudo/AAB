@@ -82,11 +82,13 @@ ModelStats _stats(String name, List<double> rs) {
 /// Replays the live engine candle by candle (no look-ahead): the signal is
 /// computed on closed candles up to i, the entry is the NEXT candle's open.
 /// If SL and a TP are touched inside the same candle, SL is assumed first.
+/// Targets follow the signal's own TP1/TP2/TP3 (expressed in R), so any
+/// capping done by the engine (e.g. at the nearest obstacle) is tested too.
 BtResult runBacktest(BtRequest r, void Function(double) progress) {
   const win = 260;
   final c = r.candles;
   final n = c.length;
-  final rr = [r.settings.rr1, r.settings.rr2, r.settings.rr3];
+  final rrDefault = [r.settings.rr1, r.settings.rr2, r.settings.rr3];
   final htfSecs = MarketDataService.tfMinutes[MarketDataService.higherTf[r.tf]!]! * 60;
   final trades = <_Trade>[];
   var i = win - 1, hp = 0;
@@ -111,6 +113,16 @@ BtResult runBacktest(BtRequest r, void Function(double) progress) {
       i++;
       continue;
     }
+
+    // R-multiples of the signal's targets (fallback to the settings' RR)
+    final sigRisk = (sig.entry - sig.stopLoss).abs();
+    final sigTps = [sig.tp1, sig.tp2, sig.tp3];
+    final rr = List<double>.generate(3, (k) {
+      if (sigRisk <= 0) return rrDefault[k];
+      final m = (sigTps[k] - sig.entry).abs() / sigRisk;
+      return m >= 0.1 ? m : rrDefault[k];
+    });
+
     final tps = [for (final m in rr) entry + sg * risk * m];
     int? slHit;
     final tpHit = <int?>[null, null, null];
@@ -178,7 +190,8 @@ BtResult runBacktest(BtRequest r, void Function(double) progress) {
         so += t.rs[1];
       }
     }
-    if (na >= 10 && no >= 10) {
+    // need a reasonable sample, otherwise the "edge" is just noise
+    if (na >= 30 && no >= 30) {
       inds.add(IndStat(name, na, no, sa / na, so / no));
     }
   }
