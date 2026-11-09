@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../analysis/sweep.dart';
 import '../models.dart';
 import '../services/settings_service.dart';
+import '../state/app_state.dart';
 
 class SweepScreen extends StatefulWidget {
   final List<Candle> candles, htf;
@@ -63,7 +65,9 @@ class _SweepScreenState extends State<SweepScreen> {
   }
 
   Future<void> _apply(SweepRow r) async {
+    final app = context.read<AppState>();
     await r.cfg.save();
+    await app.refresh();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('تم تطبيق الإعداد على المحرك')),
