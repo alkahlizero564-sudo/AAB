@@ -322,6 +322,51 @@ class ProEngine {
         tp3: 0, votes: votes, reasons: why, grade: 'C', aligned: 0);
   }
 
+  /// سيناريو معلّق: أقرب منطقة OB/FVG في اتجاه الاتجاه العام، قبل وصول السعر لها.
+  static List<String> _pendingScenario({
+    required bool buy,
+    required double price,
+    required double a,
+    required List<Zone> zones,
+    required AppSettings s,
+    required MarketSymbol sym,
+  }) {
+    final want = buy ? 1 : -1;
+    Zone? best;
+    var bestDist = double.infinity;
+    for (final z in zones) {
+      if (z.bias != want) continue;
+      if (z.kind != 'OB' && z.kind != 'FVG') continue;
+      final ahead = buy ? z.top < price : z.bottom > price;
+      if (!ahead) continue;
+      final dist = buy ? price - z.top : z.bottom - price;
+      if (dist > 5 * a) continue;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = z;
+      }
+    }
+    final b = best;
+    if (b == null) return const [];
+    final sg = buy ? 1 : -1;
+    final entry = buy ? b.top : b.bottom;
+    var sl = buy ? b.bottom - 0.1 * a : b.top + 0.1 * a;
+    var risk = (entry - sl).abs();
+    if (risk < 0.8 * a) {
+      risk = 0.8 * a;
+      sl = entry - sg * risk;
+    }
+    if (risk > 3 * a) return const [];
+    final t1 = entry + sg * risk * s.rr1;
+    final t2 = entry + sg * risk * s.rr2;
+    final side = buy ? 'شراء' : 'بيع';
+    return [
+      'سيناريو معلّق ($side): انتظر وصول السعر لمنطقة ${b.kind} بين ${sym.fmt(b.bottom)} و ${sym.fmt(b.top)}',
+      'الدخول المقترح: ${sym.fmt(entry)} • الوقف: ${sym.fmt(sl)} • الهدف 1: ${sym.fmt(t1)} • الهدف 2: ${sym.fmt(t2)}',
+      'لا تدخل إلا بعد ظهور شمعة تأكيد عند المنطقة.',
+    ];
+  }
+
   static TradeSignal decide(TradeSignal base, List<Candle> c, List<Candle>? htf,
       AppSettings s, MarketSymbol sym, EngineConfig cf) {
     final n = c.length;
@@ -372,10 +417,13 @@ class ProEngine {
       votes.add(IndicatorVote('موقع: ${f.name}', 'عند المنطقة', want));
     }
     if (loc.length < cf.minLoc) {
+      final scen = _pendingScenario(
+          buy: buy, price: price, a: a, zones: base.zones, s: s, sym: sym);
       return _wait(base, votes, [
         ...steps,
         '2) الموقع: ${loc.isEmpty ? 'السعر ليس عند منطقة مهمة' : loc.map((f) => f.name).join(' + ')} '
             '(${loc.length} من ${cf.minLoc} مطلوب) — انتظر وصول السعر لمنطقة توافق.',
+        ...scen,
       ]);
     }
     steps.add('2) الموقع: ${loc.map((f) => f.name).join(' + ')} (${loc.length} عوامل)');
@@ -383,7 +431,12 @@ class ProEngine {
     final cp = chartPatterns(c, a);
     final trig = findTrigger(buy: buy, c: c, base: base, st: st, cp: cp, a: a);
     if (trig == null) {
-      return _wait(base, votes, [...steps, 'لا تريغر بعد — انتظر شمعة تأكيد عند المنطقة.']);
+      return _wait(base, votes, [
+        ...steps,
+        'لا تريغر بعد — انتظر شمعة تأكيد عند المنطقة.',
+        'سيناريو معلّق (${buy ? 'شراء' : 'بيع'}): السعر عند منطقة التوافق الآن، جهّز الدخول '
+            'وانتظر شمعة تأكيد (رفض أو ابتلاع أو CHoCH). لا تدخل قبلها.',
+      ]);
     }
     votes.add(IndicatorVote('التريغر', trig, want));
     steps.add('3) التريغر: $trig');
@@ -462,4 +515,4 @@ class ProEngine {
         grade: grade,
         aligned: aligned);
   }
-}
+} 
