@@ -91,6 +91,7 @@ class AppSettings {
 }
 
 /// Signal-engine tuning (kept separate so Settings saves never reset it).
+/// الوضع الاحترافي (pro) هو الأساسي دايمًا في التطبيق.
 class EngineConfig {
   final String mode; // 'vote' = indicator voting, 'pro' = trader-style pipeline
   final bool lean; // vote mode: fewer, non-redundant indicators
@@ -101,7 +102,7 @@ class EngineConfig {
   final int minLoc; // pro mode: min number of confluence factors at the zone
   final bool sessionOnly; // pro mode: FX/metals only in London/NY killzones
   const EngineConfig({
-    this.mode = 'vote',
+    this.mode = 'pro',
     this.lean = true,
     this.minAligned = 4,
     this.minScore = 30,
@@ -137,7 +138,7 @@ class EngineConfig {
   static Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     current = EngineConfig(
-      mode: p.getString('eng_mode') ?? 'vote',
+      mode: 'pro', // دايمًا احترافي، حتى لو كان محفوظ غيره
       lean: p.getBool('eng_lean') ?? true,
       minAligned: p.getInt('eng_aligned') ?? 4,
       minScore: p.getDouble('eng_score') ?? 30,
@@ -150,7 +151,7 @@ class EngineConfig {
 
   Future<void> save() async {
     final p = await SharedPreferences.getInstance();
-    await p.setString('eng_mode', mode);
+    await p.setString('eng_mode', 'pro');
     await p.setBool('eng_lean', lean);
     await p.setInt('eng_aligned', minAligned);
     await p.setDouble('eng_score', minScore);
@@ -158,7 +159,7 @@ class EngineConfig {
     await p.setBool('eng_prune', prune);
     await p.setInt('eng_minloc', minLoc);
     await p.setBool('eng_session', sessionOnly);
-    current = this;
+    current = copy(mode: 'pro');
   }
 }
 
@@ -187,4 +188,4 @@ class KeyPool {
   void penalize(String k, [Duration d = const Duration(seconds: 60)]) {
     _cool[k] = DateTime.now().add(d);
   }
-}
+} 
