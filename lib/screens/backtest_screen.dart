@@ -7,6 +7,7 @@ import '../services/settings_service.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'sweep_screen.dart';
 
 /// Replays the engine on past candles and reports real statistics.
 class BacktestScreen extends StatefulWidget {
@@ -88,6 +89,51 @@ class _BacktestScreenState extends State<BacktestScreen> {
     }
   }
 
+  Future<void> _openSweep(AppState app) async {
+    final s = app.settings;
+    if (!s.hasTwelve && !s.hasTiingo) {
+      setState(() => error = 'أضف مفاتيح البيانات من الإعدادات أولاً');
+      return;
+    }
+    final symbol = sym ?? app.symbol;
+    setState(() {
+      running = true;
+      error = null;
+      progress = 0;
+      phase = 'جلب البيانات للضبط…';
+    });
+    try {
+      final md = MarketDataService();
+      final c = await md.fetch(symbol, tf, s, count: bars);
+      // الإطار الأعلى يغطي نفس فترة الشموع
+      final hf = MarketDataService.higherTf[tf]!;
+      final hCount = (bars *
+                  MarketDataService.tfMinutes[tf]! /
+                  MarketDataService.tfMinutes[hf]!)
+              .ceil() +
+          150;
+      var h = <Candle>[];
+      try {
+        h = await md.fetch(symbol, hf, s, count: hCount);
+      } catch (_) {}
+      if (c.length < 800) {
+        throw Exception('البيانات غير كافية للضبط (${c.length} شمعة). اختر 3000 أو أكثر.');
+      }
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SweepScreen(
+              candles: c, htf: h, sym: symbol, settings: s, tf: tf),
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => running = false);
+    }
+  }
+
   Widget _chips<T>(String title, List<T> values, T current, String Function(T) label,
       void Function(T) on) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -153,18 +199,18 @@ class _BacktestScreenState extends State<BacktestScreen> {
               _chips<bool>('جلسات لندن/نيويورك فقط (فوركس)', const [false, true],
                   sessionOnly, (v) => v ? 'مفعّل' : 'متوقف', (v) => sessionOnly = v),
             ] else ...[
-            const SizedBox(height: 12),
-            _chips<bool>('وضع المؤشرات', const [true, false], lean,
-                (v) => v ? 'مبسّط (موصى به)' : 'كامل', (v) => lean = v),
-            const SizedBox(height: 12),
-            _chips<int>('أقل عدد مؤشرات متوافقة', const [3, 4, 5, 6], minAligned,
-                (v) => '$v', (v) => minAligned = v),
-            const SizedBox(height: 12),
-            _chips<bool>('فلتر الإطار الأعلى (تداول مع اتجاهه فقط)', const [false, true],
-                htfGate, (v) => v ? 'مفعّل' : 'متوقف', (v) => htfGate = v),
-            const SizedBox(height: 12),
-            _chips<bool>('حذف المؤشرات الضعيفة (SR Breaks وغيرها)', const [false, true],
-                prune, (v) => v ? 'مفعّل' : 'متوقف', (v) => prune = v),
+              const SizedBox(height: 12),
+              _chips<bool>('وضع المؤشرات', const [true, false], lean,
+                  (v) => v ? 'مبسّط (موصى به)' : 'كامل', (v) => lean = v),
+              const SizedBox(height: 12),
+              _chips<int>('أقل عدد مؤشرات متوافقة', const [3, 4, 5, 6], minAligned,
+                  (v) => '$v', (v) => minAligned = v),
+              const SizedBox(height: 12),
+              _chips<bool>('فلتر الإطار الأعلى (تداول مع اتجاهه فقط)', const [false, true],
+                  htfGate, (v) => v ? 'مفعّل' : 'متوقف', (v) => htfGate = v),
+              const SizedBox(height: 12),
+              _chips<bool>('حذف المؤشرات الضعيفة (SR Breaks وغيرها)', const [false, true],
+                  prune, (v) => v ? 'مفعّل' : 'متوقف', (v) => prune = v),
             ],
             const SizedBox(height: 14),
             SizedBox(
@@ -175,6 +221,16 @@ class _BacktestScreenState extends State<BacktestScreen> {
                 icon: const Icon(Icons.play_arrow),
                 label: Text(running ? 'جاري التشغيل…' : 'شغّل الاختبار',
                     style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton.icon(
+                onPressed: running ? null : () => _openSweep(app),
+                icon: const Icon(Icons.tune),
+                label: const Text('ضبط تلقائي (تدريب + اختبار)'),
               ),
             ),
             if (running) ...[
@@ -313,7 +369,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
         const SizedBox(height: 4),
         const Text(
-            'متوسط R للصفقات التي وافق فيها المؤشر الاتجاه مقابل الباقي. الفرق الموجب الكبير = مؤشر مفيد. (يظهر فقط لو فيه 10 صفقات على الأقل من كل نوع)',
+            'متوسط R للصفقات التي وافق فيها المؤشر الاتجاه مقابل الباقي. الفرق الموجب الكبير = مؤشر مفيد. (يظهر فقط لو فيه 30 صفقة على الأقل من كل نوع)',
             style: TextStyle(color: AppColors.muted, fontSize: 10, height: 1.4)),
         const SizedBox(height: 8),
         for (final s in r.inds)
