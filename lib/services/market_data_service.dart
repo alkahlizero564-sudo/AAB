@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import '../models.dart';
@@ -25,6 +26,8 @@ class MarketDataService {
     '1h': '4h', '4h': '1d', '1d': '1d',
   };
 
+  static const _binanceHosts = ['data-api.binance.vision', 'api.binance.com'];
+
   KeyPool _pool(AppSettings s) {
     final sig = s.twelveKeys.join('|');
     if (_twelvePool == null || sig != _twelveSig) {
@@ -40,6 +43,17 @@ class MarketDataService {
     final tiingoOk = s.hasTiingo && sym.tiingo;
     final twelveOk = s.hasTwelve;
 
+    // العملات الرقمية: Binance أولاً (حجم حقيقي شراء/بيع) — مجاني وبدون مفتاح
+    if (sym.isCrypto) {
+      try {
+        final data = await _binance(sym, tf, count);
+        if (data.length >= 20) return data;
+        errors.add('binance: بيانات قليلة');
+      } catch (e) {
+        errors.add('binance: ${e.toString().replaceFirst('Exception: ', '')}');
+      }
+    }
+
     final order = <String>[];
     if (s.source == 'tiingo') {
       if (tiingoOk) order.add('tiingo');
@@ -52,7 +66,9 @@ class MarketDataService {
       if (tiingoOk) order.add('tiingo');
     }
     if (order.isEmpty) {
-      throw Exception('أضف مفتاح Twelve Data أو Tiingo من الإعدادات');
+      throw Exception(errors.isEmpty
+          ? 'أضف مفتاح Twelve Data أو Tiingo من الإعدادات'
+          : errors.join(' | '));
     }
     for (final src in order) {
       try {
@@ -66,6 +82,63 @@ class MarketDataService {
       }
     }
     throw Exception(errors.join(' | '));
+  }
+
+  Future<List<dynamic>> _binanceGet(Map<String, String> q) async {
+    var last = 'فشل الاتصال';
+    for (final h in _binanceHosts) {
+      try {
+        final r = await _c
+            .get(Uri.https(h, '/api/v3/klines', q))
+            .timeout(const Duration(seconds: 15));
+        final j = jsonDecode(r.body);
+        if (j is List) return j;
+        last = (j is Map && j['msg'] != null)
+            ? '${j['msg']}'
+            : 'رد غير متوقع (${r.statusCode})';
+      } catch (e) {
+        last = e.toString();
+      }
+    }
+    throw Exception(last);
+  }
+
+  Future<List<Candle>> _binance(MarketSymbol sym, String tf, int count) async {
+    final out = <Candle>[];
+    int? endTime;
+    for (var page = 0; page < 12 && out.length < count; page++) {
+      final need = math.min(1000, count - out.length);
+      final q = <String, String>{
+        'symbol': sym.binanceTicker,
+        'interval': tf,
+        'limit': '$need',
+      };
+      if (endTime != null) q['endTime'] = '$endTime';
+      List<dynamic> rows;
+      try {
+        rows = await _binanceGet(q);
+      } catch (e) {
+        if (out.isEmpty) rethrow;
+        break;
+      }
+      if (rows.isEmpty) break;
+      final part = rows.map<Candle>((v) {
+        final m = v as List;
+        return Candle(
+          DateTime.fromMillisecondsSinceEpoch(m[0] as int, isUtc: true),
+          double.parse('${m[1]}'),
+          double.parse('${m[2]}'),
+          double.parse('${m[3]}'),
+          double.parse('${m[4]}'),
+          double.parse('${m[5]}'), // الحجم الكلي
+          double.parse('${m[9]}'), // حجم شراء الـ Taker
+        );
+      }).toList();
+      out.insertAll(0, part);
+      endTime = part.first.time.millisecondsSinceEpoch - 1;
+      if (rows.length < need) break;
+    }
+    return out;
   }
 
   DateTime _parseTd(String dt) {
