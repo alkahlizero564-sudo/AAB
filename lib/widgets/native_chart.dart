@@ -376,8 +376,8 @@ class _Painter extends CustomPainter {
           Paint()..color = col);
     }
 
-    // ── markers (CE flips, sweeps, S/R breaks)
-    if (s != null) {
+    // ── markers (CE flips, sweeps, S/R breaks) — من المحرك القديم، تُخفى مع المحرك الجديد
+    if (s != null && f == null) {
       for (final m in s!.marks) {
         final idx = _idxOf(m.ts);
         if (idx < i0 || idx > i1 || c[idx].ts != m.ts) continue;
@@ -409,7 +409,7 @@ class _Painter extends CustomPainter {
     if (f != null) _paintForecast(canvas, w, h, barW, xOf, yOf, inY, i0, i1);
 
     // ── trade box (Entry / SL / TP1-3) like the QNA style
-    if (s != null && s!.direction != Direction.neutral) {
+    if (f == null && s != null && s!.direction != Direction.neutral) {
       final x0 = math.max(0.0, xOf((n - 1).toDouble()) - barW / 2);
       if (x0 < w) {
         final yE = yOf(s!.entry), yS = yOf(s!.stopLoss), yT = yOf(s!.tp3);
@@ -621,7 +621,7 @@ class _Painter extends CustomPainter {
 
     // الشمعة القادمة المتوقعة (شبحية)
     final nb = fc.next;
-    if (nb != null) {
+    if (nb != null && fc.showNext) {
       final x = xOf(n.toDouble());
       if (x < w) {
         final up = nb.pUp >= 0.5;

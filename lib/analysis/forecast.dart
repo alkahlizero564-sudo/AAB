@@ -95,6 +95,7 @@ class Forecast {
   final List<double> ema20, ema50, ema200;
   final String liveSignal; // إشارة تتكوّن في الشمعة الحالية (غير مغلقة)
   final List<IndNow> indicators; // حالة كل مؤشر الآن + طريقة عمله
+  final int liveDir; // اتجاه الإشارة التي تتكوّن في الشمعة الحالية
   const Forecast({
     this.patterns = const [],
     this.signals = const [],
@@ -108,7 +109,39 @@ class Forecast {
     this.ema200 = const [],
     this.liveSignal = '',
     this.indicators = const [],
+    this.liveDir = 0,
   });
+
+  /// القرار الوحيد المعروض للمستخدم (من هذا المحرك فقط).
+  Decision get decision {
+    if (signals.isNotEmpty && signals.last.exitI < 0) {
+      final sg = signals.last;
+      final side = sg.dir > 0 ? 'شراء' : 'بيع';
+      return Decision(1, sg.dir, sg.entry, sg.result == 1 ? sg.entry : sg.sl, sg.tp1, sg.tp2,
+          sg.result == 1 ? '$side مفتوح — تحقق TP1 والوقف الآن عند الدخول' : '$side — صفقة مفتوحة',
+          sg.why);
+    }
+    if (pending.isNotEmpty) {
+      final p = pending.first;
+      return Decision(2, p.dir, p.trigger, p.sl, p.tp1, p.tp2,
+          '${p.dir > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد — ادخل عند ${p.dir > 0 ? 'اختراق' : 'كسر'} السعر المحدد',
+          p.cond);
+    }
+    if (liveDir != 0) {
+      return Decision(3, liveDir, double.nan, double.nan, double.nan, double.nan,
+          '${liveDir > 0 ? 'شراء' : 'بيع'} يتكوّن الآن — انتظر إغلاق الشمعة', liveSignal);
+    }
+    return const Decision(0, 0, double.nan, double.nan, double.nan, double.nan,
+        'انتظار — لا توجد إشارة مكتملة الشروط', 'الشروط: اتجاه مع EMA200 + سبب دخول + توافق 60–90% من المؤشرات + كسر شمعة الإشارة');
+  }
+
+  /// توقع الشمعة القادمة يُعرض فقط إذا كان واضحاً ويتفق مع القرار الحالي.
+  bool get showNext {
+    final nb = next;
+    final d = decision.dir;
+    if (nb == null || !nb.clear || d == 0) return false;
+    return (nb.pUp >= 0.5 ? 1 : -1) == d;
+  }
 
   int get wins => signals.where((s) => s.result > 0).length;
   int get losses => signals.where((s) => s.result < 0).length;
@@ -157,6 +190,15 @@ class IndNow {
   final int bias; // +1 صاعد ، -1 هابط ، 0 محايد
   final bool fired; // أعطى إشارة دخول في آخر 3 شموع
   const IndNow(this.name, this.how, this.bias, this.fired);
+}
+
+/// القرار الحالي: 0 انتظار ، 1 صفقة مفتوحة ، 2 تنتظر التأكيد ، 3 تتكوّن الآن.
+class Decision {
+  final int state, dir;
+  final double entry, sl, tp1, tp2; // NaN عند عدم التوفر
+  final String title, why;
+  const Decision(this.state, this.dir, this.entry, this.sl, this.tp1, this.tp2,
+      this.title, this.why);
 }
 
 class _Bar {
@@ -509,8 +551,10 @@ Forecast buildForecast(List<Candle> c,
         '${wd > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد ($wwhy) — ادخل عند ${wd > 0 ? 'اختراق' : 'كسر'}'));
   }
   var live = '';
-  if (busyUntil < n) {
+  var liveDir = 0;
+  if (busyUntil < n && pending.isEmpty) {
     final (dLive, whyLive, _, _) = decide(last);
+    liveDir = dLive;
     if (dLive != 0) {
       live = '${dLive > 0 ? 'شراء' : 'بيع'} يتكوّن الآن ($whyLive) — بعد إغلاق الشمعة '
           'يكون الدخول عند ${dLive > 0 ? 'اختراق قمتها' : 'كسر قاعها'}';
@@ -535,6 +579,7 @@ Forecast buildForecast(List<Candle> c,
     ema50: e50,
     ema200: e200,
     liveSignal: live,
+    liveDir: liveDir,
     indicators: [
       for (final p in panel)
         IndNow(p.name, p.how, p.bias[last],

@@ -77,33 +77,23 @@ class _ChartScreenState extends State<ChartScreen> {
           layers: layers,
         ),
       ),
-      if (st.forecast != null && layers.fc) _forecastBar(st.forecast!, st.symbol),
-      if (s != null) _bottomBar(s, st.symbol),
+      if (st.forecast != null) ...[
+        _forecastBar(st.forecast!, st.symbol),
+        _decisionBar(st.forecast!.decision, st.symbol),
+      ] else if (s != null)
+        _bottomBar(s, st.symbol),
     ]);
   }
 
   Widget _forecastBar(Forecast f, MarketSymbol sym) {
     final nb = f.next;
     final lines = <Widget>[];
-    if (f.liveSignal.isNotEmpty) {
-      lines.add(Text('⚡ ${f.liveSignal}',
-          style: const TextStyle(color: AppColors.gold, fontSize: 11, fontWeight: FontWeight.w700)));
-    }
-    if (nb != null) {
+    if (layers.fc && nb != null && f.showNext) {
       final up = nb.pUp >= 0.5;
       final pct = ((up ? nb.pUp : 1 - nb.pUp) * 100).toStringAsFixed(0);
       lines.add(Text(
-          nb.clear
-              ? 'الشمعة القادمة: ${up ? '▲ صعود' : '▼ هبوط'} $pct% (من ${nb.sample} حالة مشابهة) — ${nb.why}'
-              : 'الشمعة القادمة: غير واضحة (لا ميزة إحصائية) — ${nb.why}',
-          style: TextStyle(
-              color: !nb.clear ? AppColors.muted : (up ? AppColors.up : AppColors.down),
-              fontSize: 11)));
-    }
-    for (final p in f.pending) {
-      lines.add(Text(
-          '⏳ ${p.cond} ${sym.fmt(p.trigger)} • وقف ${sym.fmt(p.sl)} • هدف ${sym.fmt(p.tp1)} / ${sym.fmt(p.tp2)}',
-          style: TextStyle(color: p.dir > 0 ? AppColors.up : AppColors.down, fontSize: 11)));
+          'الشمعة القادمة تدعم القرار: ${up ? '▲ صعود' : '▼ هبوط'} $pct% (من ${nb.sample} حالة مشابهة)',
+          style: TextStyle(color: up ? AppColors.up : AppColors.down, fontSize: 11)));
     }
     if (f.indicators.isNotEmpty) {
       final upN = f.indicators.where((e) => e.bias > 0).length;
@@ -186,6 +176,66 @@ class _ChartScreenState extends State<ChartScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// القرار الوحيد في شاشة الشارت (من محرك التوصيات المقاس).
+  Widget _decisionBar(Decision d, MarketSymbol sym) {
+    final col = d.dir > 0
+        ? AppColors.up
+        : d.dir < 0
+            ? AppColors.down
+            : AppColors.muted;
+    final label = d.state == 0
+        ? 'انتظار'
+        : d.state == 1
+            ? (d.dir > 0 ? 'شراء' : 'بيع')
+            : d.state == 2
+                ? '⏳ ${d.dir > 0 ? 'شراء' : 'بيع'}'
+                : '⚡ يتكوّن';
+    Widget item(String t, double v, Color c) => Expanded(
+          child: Column(children: [
+            Text(t, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+            const SizedBox(height: 2),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(v.isNaN ? '-' : sym.fmt(v),
+                  style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.bold)),
+            ),
+          ]),
+        );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+            decoration: BoxDecoration(
+              color: col.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(label,
+                style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
+          ),
+          const SizedBox(width: 6),
+          if (d.state == 1 || d.state == 2) ...[
+            item(d.state == 2 ? 'دخول عند' : 'دخول', d.entry, AppColors.accent),
+            item('وقف', d.sl, AppColors.down),
+            item('TP1', d.tp1, AppColors.up),
+            item('TP2', d.tp2, AppColors.up),
+          ] else
+            Expanded(
+                child: Text(d.title,
+                    style: TextStyle(color: col, fontSize: 12, fontWeight: FontWeight.w600))),
+        ]),
+        const SizedBox(height: 4),
+        Text(d.state == 1 || d.state == 2 ? '${d.title} • ${d.why}' : d.why,
+            style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+      ]),
     );
   }
 
