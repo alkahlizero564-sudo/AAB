@@ -182,8 +182,9 @@ class AppState extends ChangeNotifier {
   void _analyze() {
     if (candles.isEmpty) return;
     final prev = signal;
-    signal = SignalEngine.analyze(candles, htf: htf, s: settings, sym: symbol);
+    final base = SignalEngine.analyze(candles, htf: htf, s: settings, sym: symbol);
     forecast = buildForecast(candles, rr1: settings.rr1, rr2: settings.rr2);
+    signal = _unify(base, forecast!);
     if (prev != null && prev.direction == signal!.direction) {
       signal!.aiVerdict = prev.aiVerdict;
       signal!.aiComment = prev.aiComment;
@@ -191,6 +192,68 @@ class AppState extends ChangeNotifier {
     lastUpdate = DateTime.now();
     tick++;
     _maybeAi();
+  }
+
+  /// قرار واحد في كل التطبيق: الاتجاه والمستويات والأسباب من محرك التوصيات المقاس
+  /// (forecast)، مع الإبقاء على طبقات الرسم (مناطق، فيبوناتشي، VWAP...) من المحرك القديم.
+  TradeSignal _unify(TradeSignal b, Forecast f) {
+    if (f.indicators.isEmpty) return b; // بيانات غير كافية
+    final d = f.decision;
+    final open = d.state == 1;
+    final dir = !open
+        ? Direction.neutral
+        : d.dir > 0
+            ? Direction.buy
+            : Direction.sell;
+    final ratio = d.total == 0 ? 0.0 : d.agree / d.total;
+    final reasons = <String>[
+      d.title,
+      if (d.why.isNotEmpty) d.why,
+      if (d.state == 2)
+        'الدخول عند ${symbol.fmt(d.entry)} • الوقف ${symbol.fmt(d.sl)} • '
+            'الهدف 1 ${symbol.fmt(d.tp1)} • الهدف 2 ${symbol.fmt(d.tp2)}',
+      if (f.closed > 0)
+        'دقة التوصيات على هذا الشارت: ${(f.winRate * 100).toStringAsFixed(0)}% '
+            '(${f.wins} ربح / ${f.losses} خسارة)',
+    ];
+    final tp3 = open && !d.risk.isNaN ? d.entry + d.dir * d.risk * settings.rr3 : 0.0;
+    return TradeSignal(
+      direction: dir,
+      score: open ? d.dir * ratio * 100 : 0,
+      price: b.price,
+      entry: open ? d.entry : b.price,
+      stopLoss: open ? d.sl : 0,
+      tp1: open ? d.tp1 : 0,
+      tp2: open ? d.tp2 : 0,
+      tp3: tp3,
+      atr: b.atr,
+      votes: [
+        for (final e in f.indicators)
+          IndicatorVote(e.name,
+              '${e.bias > 0 ? 'صاعد' : e.bias < 0 ? 'هابط' : 'محايد'}${e.fired ? ' • إشارة جديدة' : ''}',
+              e.bias),
+      ],
+      patterns: b.patterns,
+      reasons: reasons,
+      htfTrend: b.htfTrend,
+      time: b.time,
+      grade: !open ? 'C' : (ratio >= 0.7 ? 'A' : 'B'),
+      aligned: d.agree,
+      killzone: b.killzone,
+      zones: b.zones,
+      marks: b.marks,
+      ceLong: b.ceLong,
+      ceShort: b.ceShort,
+      equilibrium: b.equilibrium,
+      poc: b.poc,
+      vah: b.vah,
+      val: b.val,
+      fibs: b.fibs,
+      fibUp: b.fibUp,
+      vpBins: b.vpBins,
+      vwap: b.vwap,
+      keyLevels: b.keyLevels,
+    );
   }
 
   Future<void> refresh() async {

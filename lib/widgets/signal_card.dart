@@ -94,7 +94,7 @@ class SignalCard extends StatelessWidget {
         ]),
         const SizedBox(height: 14),
         Row(children: [
-          const Text('قوة الإشارة',
+          const Text('توافق المؤشرات',
               style: TextStyle(color: AppColors.muted, fontSize: 12)),
           if (active) ...[
             const SizedBox(width: 8),
@@ -140,8 +140,7 @@ class SignalCard extends StatelessWidget {
           ]),
           const SizedBox(height: 10),
           Wrap(spacing: 8, runSpacing: 6, children: [
-            _tag('توافق ${sig.aligned} مؤشر أساسي'),
-            _tag('اتفاق ${sig.agree}/${sig.total}'),
+            _tag('توافق المؤشرات ${sig.agree}/${sig.total}'),
             _tag('ATR ${sym.fmt(sig.atr)}'),
             _tag(sig.htfTrend == 0
                 ? 'الإطار الأعلى: محايد'
@@ -151,8 +150,18 @@ class SignalCard extends StatelessWidget {
           ]),
         ] else ...[
           const SizedBox(height: 12),
-          const Text('لا توجد صفقة الآن — انتظر وضوح الاتجاه.',
-              style: TextStyle(color: AppColors.muted)),
+          for (final r in sig.reasons.take(3))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(r,
+                  style: TextStyle(
+                      color: r == sig.reasons.first ? AppColors.text : AppColors.muted,
+                      fontWeight: r == sig.reasons.first ? FontWeight.w700 : FontWeight.w400,
+                      fontSize: 12)),
+            ),
+          if (sig.reasons.isEmpty)
+            const Text('لا توجد صفقة الآن — انتظر وضوح الاتجاه.',
+                style: TextStyle(color: AppColors.muted)),
         ],
       ]),
     );

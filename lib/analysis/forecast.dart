@@ -119,13 +119,13 @@ class Forecast {
       final side = sg.dir > 0 ? 'شراء' : 'بيع';
       return Decision(1, sg.dir, sg.entry, sg.result == 1 ? sg.entry : sg.sl, sg.tp1, sg.tp2,
           sg.result == 1 ? '$side مفتوح — تحقق TP1 والوقف الآن عند الدخول' : '$side — صفقة مفتوحة',
-          sg.why);
+          sg.why, (sg.entry - sg.sl).abs(), sg.agree, sg.total);
     }
     if (pending.isNotEmpty) {
       final p = pending.first;
       return Decision(2, p.dir, p.trigger, p.sl, p.tp1, p.tp2,
           '${p.dir > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد — ادخل عند ${p.dir > 0 ? 'اختراق' : 'كسر'} السعر المحدد',
-          p.cond);
+          p.cond, (p.trigger - p.sl).abs());
     }
     if (liveDir != 0) {
       return Decision(3, liveDir, double.nan, double.nan, double.nan, double.nan,
@@ -197,8 +197,11 @@ class Decision {
   final int state, dir;
   final double entry, sl, tp1, tp2; // NaN عند عدم التوفر
   final String title, why;
+  final double risk; // مسافة الوقف الأصلية (لحساب TP3)
+  final int agree, total; // توافق المؤشرات
   const Decision(this.state, this.dir, this.entry, this.sl, this.tp1, this.tp2,
-      this.title, this.why);
+      this.title, this.why,
+      [this.risk = double.nan, this.agree = 0, this.total = 0]);
 }
 
 class _Bar {
