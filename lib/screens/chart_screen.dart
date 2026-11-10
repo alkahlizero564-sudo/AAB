@@ -16,11 +16,65 @@ class ChartScreen extends StatefulWidget {
 
 class _ChartScreenState extends State<ChartScreen> {
   final layers = ChartLayers();
+  bool full = false; // وضع الشاشة الكاملة للشارت
+
+  Widget _seg(List<(String, String)> items, String value, void Function(String) on) => Container(
+        margin: const EdgeInsetsDirectional.only(end: 6),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final (k, label) in items)
+            InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => setState(() => on(k)),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: value == k ? AppColors.accent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(label,
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: value == k ? Colors.white : AppColors.muted,
+                        fontWeight: value == k ? FontWeight.w700 : FontWeight.w400)),
+              ),
+            ),
+        ]),
+      );
+
+  Widget _toolbar() => SizedBox(
+        height: 36,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+          children: [
+            _seg(const [('candle', 'شموع'), ('ha', 'Heikin Ashi'), ('line', 'خطي')], layers.type,
+                (v) => layers.type = v),
+            _seg(const [('rsi', 'RSI'), ('macd', 'MACD'), ('none', 'بدون')], layers.sub,
+                (v) => layers.sub = v),
+            _seg(const [('on', 'الحجم')], layers.vol ? 'on' : '', (_) => layers.vol = !layers.vol),
+            IconButton(
+              tooltip: full ? 'إظهار الأدوات' : 'شاشة كاملة',
+              visualDensity: VisualDensity.compact,
+              iconSize: 20,
+              color: AppColors.accent,
+              icon: Icon(full ? Icons.fullscreen_exit : Icons.fullscreen),
+              onPressed: () => setState(() => full = !full),
+            ),
+          ],
+        ),
+      );
 
   Widget _chip(String label, bool on, VoidCallback tap) => Padding(
         padding: const EdgeInsetsDirectional.only(end: 6),
         child: FilterChip(
-          label: Text(label, style: TextStyle(fontSize: 11, color: on ? Colors.white : AppColors.muted)),
+          label: Text(label,
+              style: TextStyle(fontSize: 11, color: on ? Colors.white : AppColors.muted)),
           selected: on,
           onSelected: (_) => setState(tap),
           selectedColor: AppColors.accent,
@@ -36,37 +90,40 @@ class _ChartScreenState extends State<ChartScreen> {
     final st = context.watch<AppState>();
     final s = st.signal;
     return Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
-        child: Row(children: [
-          const SymbolButton(),
-          const SizedBox(width: 8),
-          const Flexible(child: LiveBadge()),
-        ]),
-      ),
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 14),
-        child: TfChips(),
-      ),
-      SizedBox(
-        height: 38,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          children: [
-            _chip('توصيات', layers.sigs, () => layers.sigs = !layers.sigs),
-            _chip('توقع', layers.fc, () => layers.fc = !layers.fc),
-            _chip('أنماط الشموع', layers.pats, () => layers.pats = !layers.pats),
-            _chip('EMA 20/50/200', layers.ema, () => layers.ema = !layers.ema),
-            _chip('Fib', layers.fib, () => layers.fib = !layers.fib),
-            _chip('Volume Profile', layers.vp, () => layers.vp = !layers.vp),
-            _chip('مناطق OB/FVG', layers.zones, () => layers.zones = !layers.zones),
-            _chip('VWAP', layers.vwap, () => layers.vwap = !layers.vwap),
-            _chip('Chandelier', layers.ce, () => layers.ce = !layers.ce),
-            _chip('مستويات', layers.levels, () => layers.levels = !layers.levels),
-          ],
+      if (!full) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+          child: Row(children: [
+            const SymbolButton(),
+            const SizedBox(width: 8),
+            const Flexible(child: LiveBadge()),
+          ]),
         ),
-      ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14),
+          child: TfChips(),
+        ),
+        SizedBox(
+          height: 38,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            children: [
+              _chip('توصيات', layers.sigs, () => layers.sigs = !layers.sigs),
+              _chip('توقع', layers.fc, () => layers.fc = !layers.fc),
+              _chip('أنماط الشموع', layers.pats, () => layers.pats = !layers.pats),
+              _chip('EMA 20/50/200', layers.ema, () => layers.ema = !layers.ema),
+              _chip('Fib', layers.fib, () => layers.fib = !layers.fib),
+              _chip('Volume Profile', layers.vp, () => layers.vp = !layers.vp),
+              _chip('مناطق OB/FVG', layers.zones, () => layers.zones = !layers.zones),
+              _chip('VWAP', layers.vwap, () => layers.vwap = !layers.vwap),
+              _chip('Chandelier', layers.ce, () => layers.ce = !layers.ce),
+              _chip('مستويات', layers.levels, () => layers.levels = !layers.levels),
+            ],
+          ),
+        ),
+      ],
+      _toolbar(),
       Expanded(
         child: NativeChart(
           candles: st.candles,
@@ -78,7 +135,7 @@ class _ChartScreenState extends State<ChartScreen> {
         ),
       ),
       if (st.forecast != null) ...[
-        _forecastBar(st.forecast!, st.symbol),
+        if (!full) _forecastBar(st.forecast!, st.symbol),
         _decisionBar(st.forecast!.decision, st.symbol),
       ] else if (s != null)
         _bottomBar(s, st.symbol),
@@ -248,9 +305,7 @@ class _ChartScreenState extends State<ChartScreen> {
             const SizedBox(height: 2),
             FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(v,
-                  style: TextStyle(
-                      color: c, fontSize: 11, fontWeight: FontWeight.bold)),
+              child: Text(v, style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.bold)),
             ),
           ]),
         );
@@ -268,8 +323,7 @@ class _ChartScreenState extends State<ChartScreen> {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(dirLabel(s.direction),
-              style: TextStyle(
-                  color: col, fontWeight: FontWeight.w800, fontSize: 12)),
+              style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
         ),
         const SizedBox(width: 6),
         if (active) ...[

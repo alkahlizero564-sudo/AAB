@@ -1,12 +1,32 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../analysis/forecast.dart';
+import '../analysis/indicators.dart';
 import '../models.dart';
 import '../theme.dart';
 
 class ChartLayers {
   bool fib = false, vp = false, zones = true, vwap = false, levels = false, ce = false;
   bool sigs = true, fc = true, pats = true, ema = true;
+  bool vol = true; // أعمدة الحجم أسفل الشارت
+  String type = 'candle'; // candle | ha (Heikin Ashi) | line
+  String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
+}
+
+/// خط الكتابة في الشارت (null = خط النظام). يُغيَّر في اختبارات لقطات الشاشة فقط.
+String? chartFont;
+
+const _tfMin = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440};
+
+/// خطوة "جميلة" للمحور (1 ، 2 ، 2.5 ، 5 × 10^n).
+double _niceStep(double raw) {
+  if (raw <= 0 || raw.isNaN) return 1;
+  final e = math.pow(10, (math.log(raw) / math.ln10).floor()).toDouble();
+  final f = raw / e;
+  final m = f <= 1 ? 1.0 : f <= 2 ? 2.0 : f <= 2.5 ? 2.5 : f <= 5 ? 5.0 : 10.0;
+  return m * e;
 }
 
 /// Our own candlestick chart (no TradingView, no WebView).
@@ -32,47 +52,180 @@ class NativeChart extends StatefulWidget {
   State<NativeChart> createState() => _NativeChartState();
 }
 
-class _NativeChartState extends State<NativeChart> {
-  double visible = 90, shift = -6, _baseVisible = 90;
+class _NativeChartState extends State<NativeChart> with SingleTickerProviderStateMixin {
+  static const _homeShift = -6.0;
+  double visible = 90, shift = _homeShift, _baseVisible = 90;
+  double yZoom = 1, _baseYZoom = 1; // تكبير عمودي يدوي (اسحب على محور السعر)
+  bool _axisDrag = false;
+  double _chartW = 1;
   Offset? cross;
+  late final Ticker _ticker;
+  double _vel = 0; // سرعة التمرير بعد رفع الإصبع (شموع/ثانية)
+  Duration _lastTick = Duration.zero;
+  Timer? _clock;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = createTicker(_onTick);
+    // تحديث العدّاد التنازلي لإغلاق الشمعة كل ثانية
+    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && cross == null) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker.dispose();
+    _clock?.cancel();
+    super.dispose();
+  }
+
+  double get _maxShift => math.max(0, widget.candles.length - 20).toDouble();
+
+  void _onTick(Duration t) {
+    final dt = (t - _lastTick).inMicroseconds / 1e6;
+    _lastTick = t;
+    if (dt <= 0 || dt > 0.1) return;
+    setState(() {
+      shift = (shift + _vel * dt).clamp(-12.0, _maxShift).toDouble();
+      _vel *= math.pow(0.04, dt).toDouble(); // احتكاك
+    });
+    if (_vel.abs() < 2 || shift <= -12 || shift >= _maxShift) {
+      _ticker.stop();
+    }
+  }
+
+  void _stopFling() {
+    if (_ticker.isActive) _ticker.stop();
+    _vel = 0;
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, box) {
-      final chartW = math.max(1.0, box.maxWidth - _Painter.axisW);
-      return GestureDetector(
-        onScaleStart: (_) => _baseVisible = visible,
-        onScaleUpdate: (d) {
-          final n = widget.candles.length;
-          setState(() {
-            if (d.pointerCount >= 2) {
-              visible = (_baseVisible / d.scale).clamp(25.0, 300.0).toDouble();
-            }
-            final barW = chartW / visible;
-            shift = (shift + d.focalPointDelta.dx / barW)
-                .clamp(-12.0, math.max(0, n - 20).toDouble())
-                .toDouble();
-          });
-        },
-        onLongPressStart: (d) => setState(() => cross = d.localPosition),
-        onLongPressMoveUpdate: (d) => setState(() => cross = d.localPosition),
-        onLongPressEnd: (_) => setState(() => cross = null),
-        onDoubleTap: () => setState(() {
-          visible = 90;
-          shift = -6;
-        }),
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _Painter(widget.candles, widget.signal, widget.forecast,
-              widget.sym, widget.tf, visible, shift, cross, widget.layers),
+      _chartW = math.max(1.0, box.maxWidth - _Painter.axisW);
+      return Stack(children: [
+        Positioned.fill(
+          child: GestureDetector(
+            onScaleStart: (d) {
+              _stopFling();
+              _baseVisible = visible;
+              _baseYZoom = yZoom;
+              _axisDrag = d.pointerCount == 1 && d.localFocalPoint.dx > _chartW;
+            },
+            onScaleUpdate: (d) {
+              final n = widget.candles.length;
+              setState(() {
+                if (_axisDrag) {
+                  // سحب عمودي على محور السعر = تكبير/تصغير السعر
+                  yZoom = (yZoom * math.exp(d.focalPointDelta.dy / 150))
+                      .clamp(0.2, 6.0)
+                      .toDouble();
+                  return;
+                }
+                final barW0 = _chartW / visible;
+                if (d.pointerCount >= 2) {
+                  // تكبير حول نقطة الإصبعين: الشمعة تحت الأصابع تبقى مكانها
+                  final fx = d.localFocalPoint.dx.clamp(0.0, _chartW);
+                  final right0 = n - 1 - shift;
+                  final left0 = right0 - visible + 1;
+                  final idxF = left0 + fx / barW0 - 0.5;
+                  visible = (_baseVisible / d.horizontalScale).clamp(20.0, 320.0).toDouble();
+                  final bw = _chartW / visible;
+                  final left1 = idxF - fx / bw + 0.5;
+                  shift = n - 1 - (left1 + visible - 1);
+                  if (d.verticalScale > 0 && (d.verticalScale - 1).abs() > 0.15 &&
+                      (d.horizontalScale - 1).abs() < 0.05) {
+                    yZoom = (_baseYZoom / d.verticalScale).clamp(0.2, 6.0).toDouble();
+                  }
+                }
+                final barW = _chartW / visible;
+                shift = (shift + d.focalPointDelta.dx / barW)
+                    .clamp(-12.0, _maxShift)
+                    .toDouble();
+              });
+            },
+            onScaleEnd: (d) {
+              if (_axisDrag || d.pointerCount > 0) return;
+              final barW = _chartW / visible;
+              _vel = d.velocity.pixelsPerSecond.dx / barW;
+              if (_vel.abs() > 8) {
+                _lastTick = Duration.zero;
+                _ticker.start();
+              }
+            },
+            onTapDown: (_) => _stopFling(),
+            onTap: () {
+              if (cross != null) setState(() => cross = null);
+            },
+            onLongPressStart: (d) => setState(() => cross = d.localPosition),
+            onLongPressMoveUpdate: (d) => setState(() => cross = d.localPosition),
+            onDoubleTap: () => setState(() {
+              _stopFling();
+              visible = 90;
+              shift = _homeShift;
+              yZoom = 1;
+              cross = null;
+            }),
+            child: CustomPaint(
+              size: Size.infinite,
+              painter: _Painter(widget.candles, widget.signal, widget.forecast,
+                  widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
+                  DateTime.now().toUtc()),
+            ),
+          ),
         ),
-      );
+        // زر الرجوع لآخر سعر عند التمرير للخلف
+        if (shift > 4)
+          Positioned(
+            right: _Painter.axisW + 8,
+            bottom: _Painter.timeH + 8,
+            child: Material(
+              color: AppColors.card.withOpacity(0.92),
+              shape: const StadiumBorder(side: BorderSide(color: AppColors.border)),
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: () => setState(() {
+                  _stopFling();
+                  shift = _homeShift;
+                }),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('آخر سعر', style: TextStyle(color: AppColors.text, fontSize: 11)),
+                    SizedBox(width: 4),
+                    Icon(Icons.keyboard_double_arrow_right, size: 16, color: AppColors.accent),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        // الضغط مطولاً يُبقي المؤشر ظاهراً؛ زر لإخفائه
+        if (cross != null)
+          Positioned(
+            left: 6,
+            bottom: _Painter.timeH + 8,
+            child: Material(
+              color: AppColors.card.withOpacity(0.92),
+              shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => setState(() => cross = null),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(Icons.close, size: 16, color: AppColors.muted),
+                ),
+              ),
+            ),
+          ),
+      ]);
     });
   }
 }
 
 class _Painter extends CustomPainter {
-  static const axisW = 58.0, timeH = 20.0;
+  static const axisW = 62.0, timeH = 20.0;
   final List<Candle> c;
   final TradeSignal? s;
   final Forecast? f;
@@ -81,8 +234,10 @@ class _Painter extends CustomPainter {
   final double visible, shift;
   final Offset? cross;
   final ChartLayers L;
+  final double yZoom;
+  final DateTime now;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L);
+      this.cross, this.L, this.yZoom, this.now);
 
   static const _up = AppColors.up, _down = AppColors.down;
 
@@ -93,6 +248,7 @@ class _Painter extends CustomPainter {
       text: TextSpan(
           text: t,
           style: TextStyle(
+              fontFamily: chartFont,
               color: color,
               fontSize: size,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w400)),
@@ -141,7 +297,9 @@ class _Painter extends CustomPainter {
           size: 12);
       return;
     }
-    final w = size.width - axisW, h = size.height - timeH;
+    final fullH = size.height - timeH;
+    final subH = L.sub == 'none' ? 0.0 : math.max(60.0, fullH * 0.22);
+    final w = size.width - axisW, h = fullH - subH;
     final rightIdx = n - 1 - shift;
     final leftIdx = rightIdx - visible + 1;
     final barW = w / visible;
@@ -149,32 +307,76 @@ class _Painter extends CustomPainter {
     final i0 = math.max(0, leftIdx.floor()), i1 = math.min(n - 1, rightIdx.ceil());
     if (i0 > i1) return;
 
+    // الشموع المعروضة: عادية أو Heikin Ashi
+    final k = L.type == 'ha' ? _heikin() : c;
+
     double hi = -double.infinity, lo = double.infinity;
     for (var i = i0; i <= i1; i++) {
-      hi = math.max(hi, c[i].high);
-      lo = math.min(lo, c[i].low);
+      hi = math.max(hi, k[i].high);
+      lo = math.min(lo, k[i].low);
     }
     if (!(hi > lo)) hi = lo + 1;
+    final hasVol = L.vol && c.sublist(i0, i1 + 1).any((e) => e.volume > 0);
     final pad = (hi - lo) * 0.08;
     hi += pad;
-    lo -= pad;
+    lo -= pad * (hasVol ? 2.5 : 1); // مساحة لأعمدة الحجم
+    if (yZoom != 1) {
+      final mid = (hi + lo) / 2, half = (hi - lo) / 2 * yZoom;
+      hi = mid + half;
+      lo = mid - half;
+    }
     double yOf(double p) => h * (hi - p) / (hi - lo);
     bool inY(double p) => p <= hi && p >= lo;
 
-    // ── grid + price axis
+    // ── علامة مائية
+    _txt(canvas, '${sym.code}  ${tf.toUpperCase()}', Offset(w / 2 - 70, h / 2 - 16),
+        color: AppColors.muted.withOpacity(0.07), size: 28, bold: true);
+
+    // ── شبكة + محور السعر بخطوات منتظمة
     final gridP = Paint()
-      ..color = AppColors.border.withOpacity(0.55)
+      ..color = AppColors.border.withOpacity(0.45)
       ..strokeWidth = 1;
-    for (var k = 0; k <= 6; k++) {
-      final p = hi - k * (hi - lo) / 6;
+    final step = _niceStep((hi - lo) / 7);
+    for (var p = (lo / step).ceil() * step; p <= hi; p += step) {
       final y = yOf(p);
       canvas.drawLine(Offset(0, y), Offset(w, y), gridP);
       _txt(canvas, sym.fmt(p), Offset(w + 4, y - 6));
     }
-    canvas.drawLine(Offset(w, 0), Offset(w, h), Paint()..color = AppColors.border);
+    // خطوط زمنية عمودية + محور الوقت
+    final tStep = math.max(1, (75 / barW).ceil());
+    DateTime? prevLabel;
+    for (var i = i0; i <= i1; i++) {
+      if (i % tStep != 0) continue;
+      final x = xOf(i.toDouble());
+      canvas.drawLine(Offset(x, 0), Offset(x, fullH), gridP);
+      final t = c[i].time;
+      final newDay = prevLabel != null && prevLabel.day != t.day;
+      _txt(canvas, newDay && tf != '1d' ? _date(t) : _time(t), Offset(x - 14, fullH + 4),
+          color: newDay ? AppColors.text : AppColors.muted, bold: newDay);
+      prevLabel = t;
+    }
+    canvas.drawLine(Offset(w, 0), Offset(w, fullH), Paint()..color = AppColors.border);
+    if (subH > 0) {
+      canvas.drawLine(Offset(0, h), Offset(size.width, h), Paint()..color = AppColors.border);
+    }
 
     canvas.save();
     canvas.clipRect(Rect.fromLTWH(0, 0, w, h));
+
+    // ── أعمدة الحجم (أسفل منطقة السعر)
+    if (hasVol) {
+      double maxV = 0;
+      for (var i = i0; i <= i1; i++) {
+        maxV = math.max(maxV, c[i].volume);
+      }
+      final vw = math.max(1.0, barW * 0.7);
+      for (var i = i0; i <= i1 && maxV > 0; i++) {
+        final x = xOf(i.toDouble());
+        final vh = h * 0.16 * c[i].volume / maxV;
+        canvas.drawRect(Rect.fromLTRB(x - vw / 2, h - vh, x + vw / 2, h),
+            Paint()..color = (c[i].close >= c[i].open ? _up : _down).withOpacity(0.28));
+      }
+    }
 
     // ── volume profile histogram (right side)
     if (L.vp && s != null && s!.vpBins.isNotEmpty) {
@@ -359,21 +561,59 @@ class _Painter extends CustomPainter {
       ln(f!.ema200, const Color(0xFFE040FB), 1.6);
     }
 
-    // ── candles
-    final bodyW = math.max(1.0, barW * 0.7);
-    for (var i = i0; i <= i1; i++) {
-      final k = c[i];
-      final x = xOf(i.toDouble());
-      final col = k.close >= k.open ? _up : _down;
-      canvas.drawLine(Offset(x, yOf(k.high)), Offset(x, yOf(k.low)),
+    // ── السعر: شموع / Heikin Ashi / خطي
+    if (L.type == 'line') {
+      final path = Path(), area = Path();
+      for (var i = i0; i <= i1; i++) {
+        final o = Offset(xOf(i.toDouble()), yOf(c[i].close));
+        if (i == i0) {
+          path.moveTo(o.dx, o.dy);
+          area.moveTo(o.dx, h);
+          area.lineTo(o.dx, o.dy);
+        } else {
+          path.lineTo(o.dx, o.dy);
+          area.lineTo(o.dx, o.dy);
+        }
+      }
+      area.lineTo(xOf(i1.toDouble()), h);
+      area.close();
+      canvas.drawPath(
+          area,
           Paint()
-            ..color = col
-            ..strokeWidth = 1);
-      final yo = yOf(k.open), yc = yOf(k.close);
-      final top = math.min(yo, yc), bot = math.max(yo, yc);
-      canvas.drawRect(
-          Rect.fromLTRB(x - bodyW / 2, top, x + bodyW / 2, math.max(bot, top + 1)),
-          Paint()..color = col);
+            ..shader = LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppColors.accent.withOpacity(0.28), AppColors.accent.withOpacity(0)],
+            ).createShader(Rect.fromLTWH(0, 0, w, h)));
+      canvas.drawPath(
+          path,
+          Paint()
+            ..color = AppColors.accent
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.8);
+    } else {
+      final bodyW = math.max(1.0, barW * 0.72);
+      final upP = Paint()..color = _up, dnP = Paint()..color = _down;
+      final wickUp = Paint()
+        ..color = _up
+        ..strokeWidth = math.max(1.0, barW * 0.08);
+      final wickDn = Paint()
+        ..color = _down
+        ..strokeWidth = math.max(1.0, barW * 0.08);
+      for (var i = i0; i <= i1; i++) {
+        final q = k[i];
+        final x = xOf(i.toDouble());
+        final bull = q.close >= q.open;
+        canvas.drawLine(Offset(x, yOf(q.high)), Offset(x, yOf(q.low)), bull ? wickUp : wickDn);
+        final yo = yOf(q.open), yc = yOf(q.close);
+        final top = math.min(yo, yc), bot = math.max(yo, yc);
+        final r = Rect.fromLTRB(x - bodyW / 2, top, x + bodyW / 2, math.max(bot, top + 1));
+        if (barW >= 6) {
+          canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(1.2)), bull ? upP : dnP);
+        } else {
+          canvas.drawRect(r, bull ? upP : dnP);
+        }
+      }
     }
 
     // ── markers (CE flips, sweeps, S/R breaks) — من المحرك القديم، تُخفى مع المحرك الجديد
@@ -436,56 +676,214 @@ class _Painter extends CustomPainter {
       }
     }
 
-    // ── last price line
+    // ── خط آخر سعر
     final last = c.last.close;
+    final lastCol = c.last.close >= c.last.open ? _up : _down;
     if (inY(last)) {
-      final y = yOf(last);
-      _dashed(canvas, 0, w, y, Paint()
-        ..color = (c.last.close >= c.last.open ? _up : _down).withOpacity(0.7)
-        ..strokeWidth = 1);
+      _dashed(canvas, 0, w, yOf(last), Paint()
+        ..color = lastCol.withOpacity(0.75)
+        ..strokeWidth = 1, dash: 3, gap: 3);
     }
     canvas.restore();
 
-    if (inY(last)) {
-      final y = yOf(last);
-      _txt(canvas, sym.fmt(last), Offset(w + 3, y - 7),
-          color: Colors.white,
-          size: 10,
-          bold: true,
-          bg: c.last.close >= c.last.open ? _up : _down);
+    // ── اللوحة السفلية (RSI / MACD)
+    if (subH > 0) _paintSub(canvas, Rect.fromLTWH(0, h, w, subH), xOf, barW, i0, i1);
+
+    // ── سعر آخر شمعة + العد التنازلي لإغلاقها
+    final ly = yOf(last).clamp(0.0, h - 26).toDouble();
+    _pill(canvas, sym.fmt(last), Offset(w + 1, ly - 7), lastCol, bold: true);
+    final mins = _tfMin[tf];
+    if (mins != null) {
+      final secs = mins * 60;
+      final nowS = now.millisecondsSinceEpoch ~/ 1000;
+      var left = (c.last.ts + secs) - nowS;
+      if (left < 0 || left > secs) left = secs - (nowS % secs);
+      final hh = left ~/ 3600, mm = (left % 3600) ~/ 60, ss = left % 60;
+      final t = hh > 0
+          ? '$hh:${mm.toString().padLeft(2, '0')}:${ss.toString().padLeft(2, '0')}'
+          : '${mm.toString().padLeft(2, '0')}:${ss.toString().padLeft(2, '0')}';
+      _pill(canvas, t, Offset(w + 1, ly + 8), lastCol.withOpacity(0.55));
     }
 
-    // ── time axis
-    final step = math.max(1, (visible / 5).round());
-    for (var i = i0; i <= i1; i++) {
-      if ((i - i0) % step != 0) continue;
-      _txt(canvas, _time(c[i].time), Offset(xOf(i.toDouble()) - 14, h + 4));
-    }
-
-    if (f != null && cross == null) _legend(canvas);
-
-    // ── crosshair
+    // ── رأس الشارت: OHLC للشمعة الحالية أو التي تحت المؤشر
+    int? cIdx;
+    double? cx, cy;
     if (cross != null) {
-      final cx = cross!.dx.clamp(0.0, w).toDouble();
-      final cy = cross!.dy.clamp(0.0, h).toDouble();
-      final idx = (cx / barW + leftIdx - 0.5).round().clamp(0, n - 1).toInt();
-      final p = hi - cy / h * (hi - lo);
+      cIdx = ((cross!.dx.clamp(0.0, w)) / barW + leftIdx - 0.5).round().clamp(i0, i1).toInt();
+      cx = xOf(cIdx.toDouble()); // التصاق بمنتصف الشمعة
+      cy = cross!.dy.clamp(0.0, fullH).toDouble();
+    }
+    _header(canvas, cIdx ?? n - 1, w);
+    if (f != null) _legend(canvas);
+
+    // ── المؤشر المتقاطع
+    if (cIdx != null) {
       final cp = Paint()
         ..color = Colors.white54
         ..strokeWidth = 0.8;
-      _dashed(canvas, 0, w, cy, cp, dash: 3, gap: 3);
-      canvas.drawLine(Offset(cx, 0), Offset(cx, h), cp);
-      _txt(canvas, sym.fmt(p), Offset(w + 3, cy - 7),
-          color: Colors.white, size: 10, bg: AppColors.accent);
-      final k = c[idx];
-      _txt(
-          canvas,
-          '${_time(k.time)}  O ${sym.fmt(k.open)}  H ${sym.fmt(k.high)}  L ${sym.fmt(k.low)}  C ${sym.fmt(k.close)}',
-          const Offset(6, 4),
-          color: AppColors.text,
-          size: 10,
-          bg: AppColors.surface);
+      _dashed(canvas, 0, w, cy!, cp, dash: 3, gap: 3);
+      var y = 0.0;
+      while (y < fullH) {
+        canvas.drawLine(Offset(cx!, y), Offset(cx, math.min(y + 3, fullH)), cp);
+        y += 6;
+      }
+      if (cy <= h) {
+        _pill(canvas, sym.fmt(hi - cy / h * (hi - lo)), Offset(w + 1, cy - 7), AppColors.accent);
+      }
+      final t = c[cIdx].time;
+      _pill(canvas, '${_date(t)} ${_time(t)}', Offset(cx! - 34, fullH + 2), AppColors.accent);
     }
+  }
+
+  void _pill(Canvas cv, String t, Offset o, Color bg, {bool bold = false}) {
+    final tp = TextPainter(
+      text: TextSpan(
+          text: t,
+          style: TextStyle(
+              fontFamily: chartFont,
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w500)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    cv.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(o.dx, o.dy - 1, tp.width + 8, tp.height + 2), const Radius.circular(3)),
+        Paint()..color = bg);
+    tp.paint(cv, Offset(o.dx + 4, o.dy));
+  }
+
+  String _date(DateTime t) =>
+      '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')}';
+
+  String _vol(double v) {
+    if (v >= 1e9) return '${(v / 1e9).toStringAsFixed(2)}B';
+    if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(2)}M';
+    if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  void _header(Canvas cv, int i, double w) {
+    final q = c[i];
+    final prev = i > 0 ? c[i - 1].close : q.open;
+    final ch = prev == 0 ? 0.0 : (q.close - prev) / prev * 100;
+    final col = q.close >= q.open ? _up : _down;
+    final spans = <TextSpan>[
+      const TextSpan(text: 'O ', style: TextStyle(color: AppColors.muted)),
+      TextSpan(text: '${sym.fmt(q.open)}  ', style: TextStyle(color: col)),
+      const TextSpan(text: 'H ', style: TextStyle(color: AppColors.muted)),
+      TextSpan(text: '${sym.fmt(q.high)}  ', style: TextStyle(color: col)),
+      const TextSpan(text: 'L ', style: TextStyle(color: AppColors.muted)),
+      TextSpan(text: '${sym.fmt(q.low)}  ', style: TextStyle(color: col)),
+      const TextSpan(text: 'C ', style: TextStyle(color: AppColors.muted)),
+      TextSpan(text: '${sym.fmt(q.close)}  ', style: TextStyle(color: col)),
+      TextSpan(
+          text: '${ch >= 0 ? '+' : ''}${ch.toStringAsFixed(2)}%',
+          style: TextStyle(color: col, fontWeight: FontWeight.w700)),
+      if (q.volume > 0)
+        TextSpan(text: '   Vol ${_vol(q.volume)}', style: const TextStyle(color: AppColors.muted)),
+    ];
+    final tp = TextPainter(
+      text: TextSpan(style: TextStyle(fontFamily: chartFont, fontSize: 10), children: spans),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: w - 8);
+    cv.drawRect(Rect.fromLTWH(4, 3, tp.width + 4, tp.height + 2),
+        Paint()..color = AppColors.bg.withOpacity(0.75));
+    tp.paint(cv, const Offset(6, 4));
+  }
+
+  List<Candle> _heikin() {
+    final out = <Candle>[];
+    var o = (c[0].open + c[0].close) / 2;
+    var cl = (c[0].open + c[0].high + c[0].low + c[0].close) / 4;
+    for (var i = 0; i < c.length; i++) {
+      final q = c[i];
+      if (i > 0) {
+        o = (o + cl) / 2;
+        cl = (q.open + q.high + q.low + q.close) / 4;
+      }
+      out.add(Candle(q.time, o, math.max(q.high, math.max(o, cl)),
+          math.min(q.low, math.min(o, cl)), cl, q.volume));
+    }
+    return out;
+  }
+
+  void _paintSub(Canvas cv, Rect r, double Function(double) xOf, double barW, int i0, int i1) {
+    final cl = c.map((e) => e.close).toList();
+    cv.save();
+    cv.clipRect(r);
+    final gp = Paint()
+      ..color = AppColors.muted.withOpacity(0.35)
+      ..strokeWidth = 1;
+    Path line(List<double> v, double Function(double) y) {
+      final p = Path();
+      var open = false;
+      for (var i = i0; i <= i1; i++) {
+        if (v[i].isNaN) {
+          open = false;
+          continue;
+        }
+        final o = Offset(xOf(i.toDouble()), y(v[i]));
+        if (open) {
+          p.lineTo(o.dx, o.dy);
+        } else {
+          p.moveTo(o.dx, o.dy);
+          open = true;
+        }
+      }
+      return p;
+    }
+
+    Paint stroke(Color c, [double w = 1.4]) => Paint()
+      ..color = c
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w;
+    String label;
+    if (L.sub == 'rsi') {
+      final v = rsi(cl, 14);
+      double y(double x) => r.top + 4 + (r.height - 8) * (100 - x) / 100;
+      cv.drawRect(Rect.fromLTRB(r.left, y(70), r.right, y(30)),
+          Paint()..color = const Color(0xFF7E57C2).withOpacity(0.10));
+      for (final lv in [70.0, 50.0, 30.0]) {
+        _dashed(cv, r.left, r.right, y(lv), gp, dash: 3, gap: 4);
+      }
+      cv.drawPath(line(v, y), stroke(const Color(0xFFB39DDB)));
+      final last = v[i1];
+      label = 'RSI 14  ${last.isNaN ? '-' : last.toStringAsFixed(1)}';
+      cv.restore();
+      for (final lv in [70.0, 30.0]) {
+        _txt(cv, lv.toStringAsFixed(0), Offset(r.right + 4, y(lv) - 6));
+      }
+    } else {
+      final m = macd(cl);
+      var mx = 0.0;
+      for (var i = i0; i <= i1; i++) {
+        for (final x in [m.line[i], m.signal[i], m.hist[i]]) {
+          if (!x.isNaN) mx = math.max(mx, x.abs());
+        }
+      }
+      if (mx == 0) mx = 1;
+      double y(double x) => r.center.dy - (r.height / 2 - 6) * x / mx;
+      cv.drawLine(Offset(r.left, y(0)), Offset(r.right, y(0)), gp);
+      final bw = math.max(1.0, barW * 0.6);
+      for (var i = i0; i <= i1; i++) {
+        final hv = m.hist[i];
+        if (hv.isNaN) continue;
+        final grow = i > 0 && !m.hist[i - 1].isNaN && hv.abs() >= m.hist[i - 1].abs();
+        final col = hv >= 0 ? _up : _down;
+        final x = xOf(i.toDouble());
+        cv.drawRect(Rect.fromLTRB(x - bw / 2, math.min(y(0), y(hv)), x + bw / 2, math.max(y(0), y(hv))),
+            Paint()..color = col.withOpacity(grow ? 0.75 : 0.35));
+      }
+      cv.drawPath(line(m.line, y), stroke(const Color(0xFF4FC3F7), 1.3));
+      cv.drawPath(line(m.signal, y), stroke(const Color(0xFFFFB74D), 1.3));
+      final h = m.hist[i1];
+      label = 'MACD 12 26 9  ${h.isNaN ? '-' : h.toStringAsPrecision(3)}';
+      cv.restore();
+    }
+    _txt(cv, label, Offset(r.left + 6, r.top + 3), color: AppColors.text, size: 10);
   }
 
   void _paintForecast(Canvas cv, double w, double h, double barW,
@@ -495,10 +893,18 @@ class _Painter extends CustomPainter {
     final n = c.length;
 
     // أنماط الشموع اليابانية على كل شمعة
-    if (L.pats) {
+    if (L.pats && barW >= 3) {
+      var lastUp = -1e9, lastDn = -1e9; // منع تداخل الأسماء
       for (final p in fc.patterns) {
         if (p.i < i0 || p.i > i1) continue;
         final x = xOf(p.i.toDouble());
+        if (p.bias > 0) {
+          if (x - lastUp < 42) continue;
+          lastUp = x;
+        } else {
+          if (x - lastDn < 42) continue;
+          lastDn = x;
+        }
         final col = (p.bias > 0 ? _up : _down).withOpacity(0.85);
         if (p.bias > 0) {
           _txt(cv, p.label, Offset(x - 12, yOf(c[p.i].low) + 24),
@@ -668,7 +1074,7 @@ class _Painter extends CustomPainter {
     if (L.ema) {
       lines.add(('EMA20 سماوي • EMA50 برتقالي • EMA200 بنفسجي', AppColors.muted));
     }
-    var y = 4.0;
+    var y = 22.0;
     for (final (t, col) in lines) {
       _txt(cv, t, Offset(6, y), color: col, size: 10, bg: AppColors.surface.withOpacity(0.85),
           rtl: true);
