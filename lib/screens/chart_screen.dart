@@ -93,12 +93,16 @@ class _ChartScreenState extends State<ChartScreen> {
       final up = nb.pUp >= 0.5;
       final pct = ((up ? nb.pUp : 1 - nb.pUp) * 100).toStringAsFixed(0);
       lines.add(Text(
-          'الشمعة القادمة: ${up ? '▲ صعود' : '▼ هبوط'} $pct% (من ${nb.sample} حالة مشابهة) — ${nb.why}',
-          style: TextStyle(color: up ? AppColors.up : AppColors.down, fontSize: 11)));
+          nb.clear
+              ? 'الشمعة القادمة: ${up ? '▲ صعود' : '▼ هبوط'} $pct% (من ${nb.sample} حالة مشابهة) — ${nb.why}'
+              : 'الشمعة القادمة: غير واضحة (لا ميزة إحصائية) — ${nb.why}',
+          style: TextStyle(
+              color: !nb.clear ? AppColors.muted : (up ? AppColors.up : AppColors.down),
+              fontSize: 11)));
     }
     for (final p in f.pending) {
       lines.add(Text(
-          '⏳ ${p.cond}: ${sym.fmt(p.trigger)} • وقف ${sym.fmt(p.sl)} • هدف ${sym.fmt(p.tp1)} / ${sym.fmt(p.tp2)}',
+          '⏳ ${p.cond} ${sym.fmt(p.trigger)} • وقف ${sym.fmt(p.sl)} • هدف ${sym.fmt(p.tp1)} / ${sym.fmt(p.tp2)}',
           style: TextStyle(color: p.dir > 0 ? AppColors.up : AppColors.down, fontSize: 11)));
     }
     return Container(

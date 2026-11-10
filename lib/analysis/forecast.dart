@@ -55,7 +55,7 @@ class PastSignal {
   final int i; // شمعة الإشارة (مغلقة)
   final int dir; // +1 شراء / -1 بيع
   final double entry, sl, tp1, tp2;
-  final int result; // 2 = TP2 ، 1 = TP1 ، -1 = وقف ، 0 = ما زالت مفتوحة
+  final int result; // 2 = TP2 ، 1 = TP1 ، -1 = وقف ، -2 = انتهت المهلة ، 0 = مفتوحة
   final int exitI; // شمعة الخروج (-1 لو مفتوحة)
   final String why;
   final bool strong; // تأكيدان أو أكثر
@@ -77,8 +77,9 @@ class NextBar {
   final int sample; // عدد الحالات المشابهة في التاريخ
   final double open, high, low, close; // الشمعة الشبحية المتوقعة
   final String why;
+  final bool clear; // هل توجد ميزة احتمالية حقيقية؟ (وإلا "غير واضح")
   const NextBar(this.pUp, this.sample, this.open, this.high, this.low,
-      this.close, this.why);
+      this.close, this.why, this.clear);
 }
 
 class Forecast {
@@ -111,6 +112,34 @@ class Forecast {
   double get predAcc => predN == 0 ? 0 : predOk / predN;
 }
 
+/// إعدادات فلاتر التوصيات (القيم الافتراضية مختارة بالقياس على بيانات حقيقية).
+class ForecastCfg {
+  final double adxMin; // أقل قوة اتجاه ADX (0 = بدون)
+  final double maxExt; // أقصى ابتعاد عن EMA20 بوحدات ATR (0 = بدون)
+  final bool e200; // التداول مع اتجاه EMA200 فقط
+  final int confirm; // الدخول فقط بعد كسر طرف شمعة الإشارة خلال N شموع (0 = افتتاح التالية)
+  final int stopLook; // عدد الشموع لحساب الوقف خلف القاع/القمة
+  final double minRisk; // أقل وقف بوحدات ATR
+  final bool counter; // السماح بصفقات الانعكاس عكس الاتجاه
+  final int minWhy; // أقل عدد أسباب للدخول
+  final bool adaptive; // إيقاف أي سبب دخول دقته ضعيفة على نفس الشارت
+  final double predEdge; // أقل ميزة احتمالية لإظهار توقع الشمعة
+  final int predH; // أفق التوقع بالشموع
+  const ForecastCfg({
+    this.predEdge = 0.15,
+    this.predH = 1,
+    this.adxMin = 0,
+    this.maxExt = 0,
+    this.e200 = true,
+    this.confirm = 3,
+    this.stopLook = 3,
+    this.minRisk = 0.7,
+    this.counter = true,
+    this.minWhy = 1,
+    this.adaptive = true,
+  });
+}
+
 class _Bar {
   final int trend; // اتجاه EMA + Supertrend
   final int pat; // انحياز أقوى نموذج شمعة
@@ -130,7 +159,11 @@ class _Bar {
 ///  • التوصيات التاريخية على الشارت مع نتيجتها الحقيقية ← دقة مرئية بدون باكتست.
 ///  • توقع الشمعة القادمة من تكرار الحالات المشابهة في نفس الشارت.
 ///  • مستويات الإشارة المرتقبة قبل حدوثها.
-Forecast buildForecast(List<Candle> c, {double rr1 = 1.0, double rr2 = 2.0}) {
+Forecast buildForecast(List<Candle> c,
+    {double rr1 = 1.0,
+    double rr2 = 2.0,
+    int history = 300,
+    ForecastCfg cfg = const ForecastCfg()}) {
   final n = c.length;
   if (n < 70) return const Forecast();
   final cl = c.map((e) => e.close).toList();
@@ -139,8 +172,9 @@ Forecast buildForecast(List<Candle> c, {double rr1 = 1.0, double rr2 = 2.0}) {
   final m = macd(cl);
   final at = atr(c, 14);
   final st = supertrend(c);
+  final adx = adxCalc(c).adx;
 
-  final start = math.max(55, n - 300);
+  final start = math.max(55, n - history);
 
   // ── قيعان/قمم محورية (يسار 3 ، يمين 2) للانحرافات — تتأكد بعد شمعتين
   bool isPivLow(int p) {
@@ -220,36 +254,62 @@ Forecast buildForecast(List<Candle> c, {double rr1 = 1.0, double rr2 = 2.0}) {
     bars[i] = barAt(i);
   }
 
-  // ── منطق التوصية لشمعة i: يُرجع (الاتجاه، السبب، قوي؟)
-  (int, String, bool) decide(int i) {
+  // إحصائيات كل سبب دخول على نفس الشارت (تتحدث بعد إغلاق كل صفقة فقط)
+  final trigW = <String, int>{}, trigN = <String, int>{};
+  bool trigOk(String k) {
+    if (!cfg.adaptive) return true;
+    final t = trigN[k] ?? 0;
+    if (t < 6) return true;
+    return (trigW[k] ?? 0) / t >= 0.45;
+  }
+
+  // ── منطق التوصية لشمعة i: يُرجع (الاتجاه، السبب، قوي؟، مفاتيح الأسباب)
+  (int, String, bool, List<String>) decide(int i) {
     final b = bars[i]!;
+    final a = at[i].isNaN ? (c[i].high - c[i].low) : at[i];
     for (final d in const [1, -1]) {
       final why = <String>[];
-      if (b.pat == d) why.add('شمعة ${b.hit!.ar}');
-      if (b.div == d) why.add('انحراف RSI ${d > 0 ? 'إيجابي' : 'سلبي'}');
-      if (b.ema == d) why.add('ارتداد من EMA20');
-      if (b.macdX == d) why.add('تقاطع MACD');
+      final keys = <String>[];
+      void add(String k, String t) {
+        if (!trigOk(k)) return;
+        keys.add(k);
+        why.add(t);
+      }
+
+      if (b.pat == d) add('p:${b.hit!.en}', 'شمعة ${b.hit!.ar}');
+      if (b.div == d) add('div', 'انحراف RSI ${d > 0 ? 'إيجابي' : 'سلبي'}');
+      if (b.ema == d) add('ema', 'ارتداد من EMA20');
+      if (b.macdX == d) add('macd', 'تقاطع MACD');
       final rv = r[i];
       final rsiOk = rv.isNaN || (d > 0 ? rv < 72 : rv > 28);
-      if (!rsiOk || why.isEmpty) continue;
-      // مع الاتجاه: يكفي تأكيد واحد. عكس الاتجاه (انعكاس): انحراف + شمعة انعكاسية.
-      if (b.trend == d) return (d, why.join(' + '), why.length >= 2);
-      if (b.trend == 0 && why.length >= 2) return (d, why.join(' + '), true);
+      if (!rsiOk || why.isEmpty || why.length < cfg.minWhy) continue;
+      if (b.trend == d) {
+        if (cfg.adxMin > 0 && !adx[i].isNaN && adx[i] < cfg.adxMin) continue;
+        if (cfg.maxExt > 0 && !e20[i].isNaN && (cl[i] - e20[i]).abs() > cfg.maxExt * a) {
+          continue;
+        }
+        if (cfg.e200 && !e200[i].isNaN && (d > 0 ? cl[i] < e200[i] : cl[i] > e200[i])) {
+          continue;
+        }
+        return (d, why.join(' + '), why.length >= 2, keys);
+      }
+      if (!cfg.counter) continue;
+      if (b.trend == 0 && why.length >= 2) return (d, why.join(' + '), true, keys);
       if (b.trend == -d && b.div == d && b.pat == d) {
-        return (d, 'انعكاس: ${why.join(' + ')}', true);
+        return (d, 'انعكاس: ${why.join(' + ')}', true, keys);
       }
     }
-    return (0, '', false);
+    return (0, '', false, const []);
   }
 
   (double, double, double, double) levels(int i, int d, double entry) {
     final a = at[i].isNaN ? (c[i].high - c[i].low) : at[i];
     var ext = d > 0 ? c[i].low : c[i].high;
-    for (var j = math.max(0, i - 2); j <= i; j++) {
+    for (var j = math.max(0, i - cfg.stopLook + 1); j <= i; j++) {
       ext = d > 0 ? math.min(ext, c[j].low) : math.max(ext, c[j].high);
     }
     var risk = (d > 0 ? entry - ext : ext - entry) + 0.1 * a;
-    risk = risk.clamp(0.7 * a, 2.5 * a).toDouble();
+    risk = risk.clamp(cfg.minRisk * a, math.max(2.5, cfg.minRisk + 0.5) * a).toDouble();
     return (
       entry - d * risk,
       entry + d * risk * rr1,
@@ -261,17 +321,46 @@ Forecast buildForecast(List<Candle> c, {double rr1 = 1.0, double rr2 = 2.0}) {
   // ── التوصيات التاريخية + نتيجتها (صفقة واحدة في كل مرة كالتداول الحقيقي)
   final signals = <PastSignal>[];
   var busyUntil = -1;
+  (int, int, String)? waiting; // آخر إشارة لم تتأكد بعد (الشمعة، الاتجاه، السبب)
   for (var i = start; i < n - 1; i++) {
     if (i <= busyUntil) continue;
-    final (d, why, strong) = decide(i);
+    final (d, why, strong, keys) = decide(i);
     if (d == 0) continue;
-    final entry = c[i + 1].open;
+    // الدخول: افتتاح الشمعة التالية ، أو (مع التأكيد) عند كسر طرف شمعة الإشارة
+    var entryI = i + 1;
+    var entry = c[i + 1].open;
+    if (cfg.confirm > 0) {
+      final trig = d > 0 ? c[i].high : c[i].low;
+      entryI = -1;
+      var cancelled = false;
+      var j = i + 1;
+      for (; j < n && j <= i + cfg.confirm; j++) {
+        final k = c[j];
+        // إلغاء لو ضرب السعر قاع/قمة شمعة الإشارة قبل التأكيد
+        if (d > 0 ? k.low < c[i].low : k.high > c[i].high) {
+          cancelled = true;
+          break;
+        }
+        if (d > 0 ? k.high > trig : k.low < trig) {
+          entryI = j;
+          entry = d > 0 ? math.max(trig, k.open) : math.min(trig, k.open);
+          break;
+        }
+      }
+      if (entryI < 0) {
+        // وصلنا لنهاية البيانات والمهلة لم تنتهِ ← إشارة مرتقبة
+        if (!cancelled && j >= n) waiting = (i, d, why);
+        continue; // لم تتأكد ← لا صفقة
+      }
+    }
+    waiting = null;
     final (sl, t1, t2, _) = levels(i, d, entry);
     var res = 0, exitI = -1;
     var stop = sl;
     var gotT1 = false;
-    for (var j = i + 1; j < n && j <= i + 80; j++) {
+    for (var j = entryI; j < n; j++) {
       final k = c[j];
+      // في شمعة الدخول نفسها مع التأكيد: لا نعرف الترتيب ← نفحص الوقف فقط
       final hitSl = d > 0 ? k.low <= stop : k.high >= stop;
       if (hitSl) {
         res = gotT1 ? 1 : -1; // بعد الهدف الأول ينتقل الوقف للدخول
@@ -287,10 +376,22 @@ Forecast buildForecast(List<Candle> c, {double rr1 = 1.0, double rr2 = 2.0}) {
         exitI = j;
         break;
       }
+      if (j >= i + 80) {
+        // انتهت المهلة: تُغلق بسعر الإغلاق
+        res = gotT1 ? 1 : -2;
+        exitI = j;
+        break;
+      }
     }
     if (exitI < 0 && gotT1) res = 1; // تحقق الهدف الأول وما زالت مفتوحة
     signals.add(PastSignal(i, d, entry, sl, t1, t2, res, exitI, why, strong));
     busyUntil = exitI < 0 ? n : exitI;
+    if (exitI >= 0 || res != 0) {
+      for (final k in keys) {
+        trigN[k] = (trigN[k] ?? 0) + 1;
+        if (res > 0) trigW[k] = (trigW[k] ?? 0) + 1;
+      }
+    }
   }
 
   // ── توقع الشمعة القادمة: تكرار الحالات المشابهة (Walk-forward بلا نظر للمستقبل)
@@ -300,7 +401,7 @@ Forecast buildForecast(List<Candle> c, {double rr1 = 1.0, double rr2 = 2.0}) {
   final up = <String, int>{}, tot = <String, int>{};
   void learn(int j) {
     final b = bars[j]!;
-    final u = cl[j + 1] > cl[j] ? 1 : 0;
+    final u = cl[j + cfg.predH] > cl[j] ? 1 : 0;
     for (final k in ['3${k3(b)}', '2${k2(b)}', '1${k1(b)}', '0']) {
       up[k] = (up[k] ?? 0) + u;
       tot[k] = (tot[k] ?? 0) + 1;
@@ -319,23 +420,28 @@ Forecast buildForecast(List<Candle> c, {double rr1 = 1.0, double rr2 = 2.0}) {
 
   final predHits = List<int>.filled(n, 0);
   var predN = 0, predOk = 0;
-  for (var i = start; i < n - 1; i++) {
-    if (i - 1 >= start) learn(i - 1);
+  final hz = cfg.predH;
+  for (var i = start; i < n - hz; i++) {
+    // نتعلم فقط من الشموع التي عُرفت نتيجتها عند الشمعة i
+    if (i - hz >= start) learn(i - hz);
     final (p, t) = predict(bars[i]!);
-    if (t < 12 || (p - 0.5).abs() < 0.06) continue; // لا توقع عند عدم الوضوح
-    final ok = (p > 0.5) == (cl[i + 1] > cl[i]);
-    predHits[i + 1] = ok ? 1 : -1;
+    if (t < 12 || (p - 0.5).abs() < cfg.predEdge) continue; // لا توقع عند عدم الوضوح
+    final ok = (p > 0.5) == (cl[i + hz] > cl[i]);
+    predHits[i + hz] = ok ? 1 : -1;
     predN++;
     if (ok) predOk++;
   }
-  learn(n - 2);
+  for (var j = math.max(start, n - 2 * hz); j <= n - 1 - hz; j++) {
+    if (j >= start) learn(j);
+  }
 
   final last = n - 1;
   final lb = bars[last]!;
   final (pUp, sample) = predict(lb);
   final a = at[last].isNaN ? (c[last].high - c[last].low) : at[last];
   final o = cl[last];
-  final cNext = o + (pUp - 0.5) * 2 * 0.6 * a;
+  final clear = sample >= 12 && (pUp - 0.5).abs() >= cfg.predEdge;
+  final cNext = clear ? o + (pUp - 0.5) * 2 * 0.6 * a : o;
   final whyNext = <String>[
     lb.trend == 1 ? 'اتجاه صاعد' : lb.trend == -1 ? 'اتجاه هابط' : 'بدون اتجاه',
     if (lb.hit != null) 'شمعة ${lb.hit!.ar}',
@@ -343,34 +449,25 @@ Forecast buildForecast(List<Candle> c, {double rr1 = 1.0, double rr2 = 2.0}) {
     'RSI ${r[last].isNaN ? '-' : r[last].toStringAsFixed(0)}',
   ];
   final next = NextBar(pUp, sample, o, math.max(o, cNext) + 0.25 * a,
-      math.min(o, cNext) - 0.25 * a, cNext, whyNext.join(' • '));
+      math.min(o, cNext) - 0.25 * a, cNext, whyNext.join(' • '), clear);
 
-  // ── الإشارة المرتقبة قبل حدوثها
+  // ── الإشارة المرتقبة قبل حدوثها: إشارة ظهرت وتنتظر كسر طرف شمعتها للدخول
   final pending = <PendingSetup>[];
-  final (dLive, whyLive, _) = decide(last);
+  final w = waiting;
+  if (w != null && busyUntil < n) {
+    final (wi, wd, wwhy) = w;
+    final trig = wd > 0 ? c[wi].high : c[wi].low;
+    final (sl, t1, t2, _) = levels(wi, wd, trig);
+    pending.add(PendingSetup(wd, trig, sl, t1, t2,
+        '${wd > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد ($wwhy) — ادخل عند ${wd > 0 ? 'اختراق' : 'كسر'}'));
+  }
   var live = '';
-  if (dLive != 0) {
-    live = '${dLive > 0 ? 'شراء' : 'بيع'} يتكوّن الآن ($whyLive) — يتأكد بإغلاق الشمعة';
-  }
-  void addBreak(int d, double trig, String cond) {
-    final (sl, t1, t2, _) = levels(last, d, trig);
-    pending.add(PendingSetup(d, trig, sl, t1, t2, cond));
-  }
-
-  final hh = math.max(c[last].high, c[last - 1].high);
-  final ll = math.min(c[last].low, c[last - 1].low);
-  if (lb.trend == 1) {
-    addBreak(1, hh, 'الاتجاه صاعد: شراء عند اختراق قمة آخر شمعتين');
-  } else if (lb.trend == -1) {
-    addBreak(-1, ll, 'الاتجاه هابط: بيع عند كسر قاع آخر شمعتين');
-  } else {
-    var rh = c[last].high, rl = c[last].low;
-    for (var j = math.max(0, last - 20); j < last; j++) {
-      rh = math.max(rh, c[j].high);
-      rl = math.min(rl, c[j].low);
+  if (busyUntil < n) {
+    final (dLive, whyLive, _, _) = decide(last);
+    if (dLive != 0) {
+      live = '${dLive > 0 ? 'شراء' : 'بيع'} يتكوّن الآن ($whyLive) — بعد إغلاق الشمعة '
+          'يكون الدخول عند ${dLive > 0 ? 'اختراق قمتها' : 'كسر قاعها'}';
     }
-    addBreak(1, rh, 'تذبذب: شراء عند اختراق قمة النطاق');
-    addBreak(-1, rl, 'تذبذب: بيع عند كسر قاع النطاق');
   }
 
   final pats = <PatMark>[];

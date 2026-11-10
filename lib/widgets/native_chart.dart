@@ -559,11 +559,17 @@ class _Painter extends CustomPainter {
               ? '✓ TP2'
               : sg.result == 1
                   ? '✓ TP1'
-                  : '✗ SL';
-          final rc = sg.result > 0 ? _up : _down;
+                  : sg.result == -2
+                      ? '⌛ انتهت المهلة'
+                      : '✗ SL';
+          final rc = sg.result > 0
+              ? _up
+              : sg.result == -2
+                  ? AppColors.muted
+                  : _down;
           final ry = sg.result > 0 ? yOf(sg.result == 2 ? sg.tp2 : sg.tp1) : yS;
           _txt(cv, res, Offset(xe - 28, ry - 14),
-              color: Colors.white, size: 9, bold: true, bg: rc);
+              color: Colors.white, size: 9, bold: true, bg: rc, rtl: sg.result == -2);
         } else {
           _txt(cv, '⏳ مفتوحة', Offset(xe - 40, yE - 14),
               color: Colors.white, size: 9, bg: AppColors.accent, rtl: true);
@@ -614,7 +620,7 @@ class _Painter extends CustomPainter {
       final x = xOf(n.toDouble());
       if (x < w) {
         final up = nb.pUp >= 0.5;
-        final col = up ? _up : _down;
+        final col = !nb.clear ? AppColors.muted : (up ? _up : _down);
         final bw = math.max(2.0, barW * 0.7);
         cv.drawLine(Offset(x, yOf(nb.high)), Offset(x, yOf(nb.low)),
             Paint()
@@ -631,7 +637,7 @@ class _Painter extends CustomPainter {
               ..style = PaintingStyle.stroke
               ..strokeWidth = 1);
         final pct = ((up ? nb.pUp : 1 - nb.pUp) * 100).toStringAsFixed(0);
-        _txt(cv, '${up ? '▲' : '▼'} $pct%',
+        _txt(cv, nb.clear ? '${up ? '▲' : '▼'} $pct%' : '؟',
             Offset(x - 12, up ? yOf(nb.high) - 14 : yOf(nb.low) + 3),
             color: col, size: 10, bold: true);
       }
