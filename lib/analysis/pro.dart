@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import '../models.dart';
 import '../services/settings_service.dart';
+import 'flow.dart';
 import 'indicators.dart';
 import 'smc.dart';
+import 'ut_bot.dart';
 
 // ───────────────────────── Market structure ─────────────────────────
 class Structure {
@@ -64,7 +66,8 @@ class ChartPat {
   const ChartPat(this.name, this.bias, this.fresh);
 }
 
-/// Double top/bottom and (inverse) head & shoulders, confirmed by a neckline break.
+/// Double top/bottom, (inverse) head & shoulders, triangles, wedges and
+/// ranges — all confirmed by a close beyond the neckline / trendline.
 List<ChartPat> chartPatterns(List<Candle> c, double a) {
   final out = <ChartPat>[];
   final n = c.length;
@@ -147,6 +150,48 @@ List<ChartPat> chartPatterns(List<Candle> c, double a) {
       }
     }
   }
+
+  // ---- Triangles / wedges / rectangle: breakout confirmed by a close ----
+  if (ph.length >= 2 && pl.length >= 2) {
+    final h2 = ph[ph.length - 1], h1 = ph[ph.length - 2];
+    final l2 = pl[pl.length - 1], l1 = pl[pl.length - 2];
+    final i0 = math.min(h1.i, l1.i);
+    final span = math.max(h2.i, l2.i) - i0;
+    if (h2.i != h1.i && l2.i != l1.i && span >= 15 && span <= 120) {
+      final hs = (h2.p - h1.p) / (h2.i - h1.i); // upper line slope per candle
+      final ls = (l2.p - l1.p) / (l2.i - l1.i); // lower line slope per candle
+      double upper(int k) => h2.p + hs * (k - h2.i);
+      double lower(int k) => l2.p + ls * (k - l2.i);
+      final w0 = upper(i0) - lower(i0);
+      final w1 = upper(n - 1) - lower(n - 1);
+      if (w0 >= 1.5 * a) {
+        final hm = hs * span, lm = ls * span;
+        final flatH = hm.abs() <= 0.6 * a, flatL = lm.abs() <= 0.6 * a;
+        final upH = hm > 0.6 * a, downH = hm < -0.6 * a;
+        final upL = lm > 0.6 * a, downL = lm < -0.6 * a;
+        final conv = w1 > 0 && w1 < w0 * 0.85; // الخطوط تضيق ولم تلتقِ بعد
+        final upBreak = c[n - 1].close > upper(n - 1) + 0.1 * a &&
+            c[n - 4].close <= upper(n - 4);
+        final dnBreak = c[n - 1].close < lower(n - 1) - 0.1 * a &&
+            c[n - 4].close >= lower(n - 4);
+        if (flatH && upL && conv) {
+          if (upBreak) out.add(const ChartPat('مثلث صاعد', 1, true));
+        } else if (flatL && downH && conv) {
+          if (dnBreak) out.add(const ChartPat('مثلث هابط', -1, true));
+        } else if (downH && upL && conv) {
+          if (upBreak) out.add(const ChartPat('مثلث متماثل (كسر لأعلى)', 1, true));
+          if (dnBreak) out.add(const ChartPat('مثلث متماثل (كسر لأسفل)', -1, true));
+        } else if (upH && upL && conv) {
+          if (dnBreak) out.add(const ChartPat('وتد صاعد', -1, true));
+        } else if (downH && downL && conv) {
+          if (upBreak) out.add(const ChartPat('وتد هابط', 1, true));
+        } else if (flatH && flatL) {
+          if (upBreak) out.add(const ChartPat('نطاق عرضي (كسر لأعلى)', 1, true));
+          if (dnBreak) out.add(const ChartPat('نطاق عرضي (كسر لأسفل)', -1, true));
+        }
+      }
+    }
+  }
   return out;
 }
 
@@ -189,39 +234,7 @@ String volRegime(List<double> at) {
   return (below, below + step);
 }
 
-// ───────────────────────── RSI divergence ─────────────────────────
-/// Regular RSI divergence near the last pivot: +1 bullish, -1 bearish, 0 none.
-int rsiDivergence(List<Candle> c) {
-  final n = c.length;
-  if (n < 60) return 0;
-  final r = rsi(c.map((e) => e.close).toList(), 14);
-  final start = math.max(0, n - 60);
-  final pl = pivotLows(c, 3, 3).where((p) => p.i >= start).toList();
-  final ph = pivotHighs(c, 3, 3).where((p) => p.i >= start).toList();
-  if (pl.length >= 2) {
-    final b = pl.last, p0 = pl[pl.length - 2];
-    if (n - 1 - b.i <= 10 &&
-        b.p < p0.p &&
-        !r[b.i].isNaN &&
-        !r[p0.i].isNaN &&
-        r[b.i] > r[p0.i] + 2) {
-      return 1; // سعر قاع أدنى + RSI قاع أعلى
-    }
-  }
-  if (ph.length >= 2) {
-    final b = ph.last, p0 = ph[ph.length - 2];
-    if (n - 1 - b.i <= 10 &&
-        b.p > p0.p &&
-        !r[b.i].isNaN &&
-        !r[p0.i].isNaN &&
-        r[b.i] < r[p0.i] - 2) {
-      return -1; // سعر قمة أعلى + RSI قمة أدنى
-    }
-  }
-  return 0;
-}
-
-// ───────────────────────── Location confluence ─────────────────────────
+// ───────────────────────── Location confluence (price action only) ─────────────────────────
 class LocFactor {
   final String name;
   final int w;
@@ -254,16 +267,13 @@ List<LocFactor> locationFactors({
     if (z.kind == 'FVG') add('FVG', 1);
     if (z.kind == 'SR') add('دعم/مقاومة', 1);
   }
+  // مستويات اليوم والجلسة فقط (قمم وقيعان سابقة) — بدون VWAP وVolume Profile
   for (final k in kl) {
     if ((price - k.price).abs() > tol) continue;
     final ok = buy ? (k.side <= 0 && price >= k.price - tol) : (k.side >= 0 && price <= k.price + tol);
     if (!ok) continue;
     if (k.kind == 'day' || k.kind == 'session') {
       add('مستوى يومي/جلسة', k.side != 0 ? 2 : 1);
-    } else if (k.kind == 'vp') {
-      add('Volume Profile', 1);
-    } else if (k.kind == 'vwap') {
-      add('VWAP', 1);
     }
   }
   double? p50, p786;
@@ -313,9 +323,6 @@ String? findTrigger({
     if (buy && lw >= 0.6 * rng && k.close >= k.open) return 'شمعة رفض سفلي (Pin Bar)';
     if (!buy && uw >= 0.6 * rng && k.close <= k.open) return 'شمعة رفض علوي (Pin Bar)';
   }
-  if (rsiDivergence(c) == want) {
-    return 'دايفرجنس RSI ${buy ? 'صاعد' : 'هابط'}';
-  }
   if (st.choch && st.breakDir == want) return 'CHoCH — ${st.label}';
   for (final p in cp) {
     if (p.bias == want && p.fresh) return 'نموذج: ${p.name}';
@@ -324,9 +331,11 @@ String? findTrigger({
 }
 
 // ───────────────────────── The trader-style decision ─────────────────────────
-/// 1) higher-timeframe bias  2) price at a confluence zone  3) price-action
+/// 1) market-structure bias  2) price at a confluence zone  3) price-action
 /// trigger  4) filters (volatility, session)  5) room to run to the next
-/// obstacle.  [base] is the vote-engine result, used only for its overlays.
+/// obstacle.  Price action only: no indicator takes part in the decision;
+/// RSI / MACD / MAs / UT Bot / real volume are shown as a confirmation line only.
+/// [base] is the vote-engine result, used only for its overlays.
 class ProEngine {
   static TradeSignal _build(TradeSignal b,
       {required Direction dir,
@@ -355,6 +364,82 @@ class ProEngine {
     return _build(b,
         dir: Direction.neutral, score: 0, entry: b.price, sl: 0, tp1: 0, tp2: 0,
         tp3: 0, votes: votes, reasons: why, grade: 'C', aligned: 0);
+  }
+
+  /// سطر تأكيد من المؤشرات: للعلم فقط، لا يدخل في قرار الدخول.
+  static List<String> _confirm(List<Candle> c, bool buy) {
+    final n = c.length;
+    if (n < 60) return const [];
+    final cl = c.map((e) => e.close).toList();
+    final price = cl[n - 1];
+    final want = buy ? 1 : -1;
+    final items = <String>[];
+    var agree = 0, total = 0;
+    void chk(String name, String val, int vote) {
+      total++;
+      if (vote == want) agree++;
+      items.add('$name $val ${vote == 0 ? '•' : (vote == want ? '✓' : '✗')}');
+    }
+
+    final r = rsi(cl, 14)[n - 1];
+    if (!r.isNaN) {
+      final v = r > 70 ? -1 : (r < 30 ? 1 : (r > 50 ? 1 : -1));
+      final t = r > 70
+          ? 'تشبع شرائي'
+          : (r < 30 ? 'تشبع بيعي' : (r > 50 ? 'زخم صاعد' : 'زخم هابط'));
+      chk('RSI', '${r.toStringAsFixed(0)} $t', v);
+    }
+    final mh = macd(cl).hist[n - 1];
+    if (!mh.isNaN) chk('MACD', mh > 0 ? 'إيجابي' : 'سلبي', mh > 0 ? 1 : -1);
+    final e20 = ema(cl, 20)[n - 1], e50 = ema(cl, 50)[n - 1];
+    if (!e20.isNaN && !e50.isNaN) {
+      final v = (price > e20 && e20 > e50) ? 1 : ((price < e20 && e20 < e50) ? -1 : 0);
+      chk('EMA 20/50', v == 1 ? 'صاعد' : (v == -1 ? 'هابط' : 'متذبذب'), v);
+    }
+    final e200 = ema(cl, 200)[n - 1];
+    if (!e200.isNaN) {
+      chk('EMA 200', price > e200 ? 'فوق' : 'تحت', price > e200 ? 1 : -1);
+    }
+    double? sma(int p) {
+      if (n < p) return null;
+      var s = 0.0;
+      for (var i = n - p; i < n; i++) {
+        s += cl[i];
+      }
+      return s / p;
+    }
+
+    final s50 = sma(50), s200 = sma(200);
+    if (s50 != null && s200 != null) {
+      chk('SMA 50/200', s50 > s200 ? '50 فوق 200' : '50 تحت 200', s50 > s200 ? 1 : -1);
+    }
+
+    // UT Bot (وقف متحرك مبني على ATR)
+    final ut = utBot(c);
+    if (ut.$1 != 0) {
+      final fresh = ut.$2 >= 0 && ut.$2 <= 2;
+      chk('UT Bot',
+          '${ut.$1 == 1 ? 'شراء' : 'بيع'}${fresh ? ' (إشارة جديدة)' : ''}', ut.$1);
+    }
+
+    // الحجم الحقيقي (العملات الرقمية من Binance فقط)
+    final fl = flowOf(c);
+    if (fl != null) {
+      int dv(double x) => x > 0.08 ? 1 : (x < -0.08 ? -1 : 0);
+      String who(double x) => x > 0.08 ? 'مشترين' : (x < -0.08 ? 'بائعين' : 'متوازن');
+      chk('ضغط آخر 10 شموع (حجم حقيقي)', who(fl.delta10), dv(fl.delta10));
+      chk('ضغط آخر 30 شمعة', who(fl.delta30), dv(fl.delta30));
+      if (fl.volRatio >= 1.8) {
+        chk('حجم الشمعة الأخيرة', '${fl.volRatio.toStringAsFixed(1)}× المتوسط',
+            dv(fl.lastDelta));
+      }
+    }
+
+    if (total == 0) return const [];
+    return [
+      'تأكيد المؤشرات (للعلم فقط — لا يغيّر القرار): $agree من $total تتفق مع ${buy ? 'الشراء' : 'البيع'}',
+      items.join(' • '),
+    ];
   }
 
   /// سيناريو معلّق: أقرب منطقة OB/FVG في اتجاه الاتجاه العام، قبل وصول السعر لها.
@@ -411,14 +496,15 @@ class ProEngine {
     final st = marketStructure(c);
     final hs = (htf != null && htf.length >= 40) ? marketStructure(htf) : null;
 
+    // الاتجاه من هيكل السوق فقط (قمم وقيعان)
     var bias = 0;
     var biasTxt = 'غير واضح';
     if (hs != null && !hs.choch && hs.trend != 0) {
       bias = hs.trend;
       biasTxt = 'هيكل الإطار الأعلى: ${hs.label}';
-    } else if (base.htfTrend != 0) {
-      bias = base.htfTrend;
-      biasTxt = 'متوسطات الإطار الأعلى ${bias > 0 ? 'صاعدة' : 'هابطة'}';
+    } else if (hs == null && st.trend != 0 && !st.choch) {
+      bias = st.trend;
+      biasTxt = 'هيكل الإطار الحالي: ${st.label}';
     }
     final kz = killzone(c.last.time);
     final regime = volRegime(at);
@@ -432,13 +518,16 @@ class ProEngine {
     final steps = <String>['1) الاتجاه: $biasTxt'];
 
     if (bias == 0) {
-      return _wait(base, votes, [...steps, 'لا اتجاه واضح على الإطار الأعلى — لا صفقة.']);
+      return _wait(base, votes, [...steps, 'لا اتجاه واضح في هيكل السوق — لا صفقة.']);
     }
+    final conf = _confirm(c, bias > 0);
     if (regime == 'quiet') {
-      return _wait(base, votes, [...steps, 'السوق هادئ جداً (تقلب منخفض) — الحركة ضعيفة، انتظر.']);
+      return _wait(base, votes,
+          [...steps, 'السوق هادئ جداً (تقلب منخفض) — الحركة ضعيفة، انتظر.', ...conf]);
     }
     if (cf.sessionOnly && sym.isFx && !kz.prime) {
-      return _wait(base, votes, [...steps, 'خارج جلسات لندن/نيويورك (${kz.name}) — انتظر.']);
+      return _wait(base, votes,
+          [...steps, 'خارج جلسات لندن/نيويورك (${kz.name}) — انتظر.', ...conf]);
     }
 
     final buy = bias > 0;
@@ -459,6 +548,7 @@ class ProEngine {
         '2) الموقع: ${loc.isEmpty ? 'السعر ليس عند منطقة مهمة' : loc.map((f) => f.name).join(' + ')} '
             '(${loc.length} من ${cf.minLoc} مطلوب) — انتظر وصول السعر لمنطقة توافق.',
         ...scen,
+        ...conf,
       ]);
     }
     steps.add('2) الموقع: ${loc.map((f) => f.name).join(' + ')} (${loc.length} عوامل)');
@@ -470,13 +560,14 @@ class ProEngine {
         ...steps,
         'لا تريغر بعد — انتظر شمعة تأكيد عند المنطقة.',
         'سيناريو معلّق (${buy ? 'شراء' : 'بيع'}): السعر عند منطقة التوافق الآن، جهّز الدخول '
-            'وانتظر شمعة تأكيد (رفض أو ابتلاع أو CHoCH). لا تدخل قبلها.',
+            'وانتظر شمعة تأكيد (رفض أو ابتلاع أو CHoCH أو كسر نموذج). لا تدخل قبلها.',
+        ...conf,
       ]);
     }
     votes.add(IndicatorVote('التريغر', trig, want));
     steps.add('3) التريغر: $trig');
 
-    // ── stop: structural invalidation
+    // ── stop: structural invalidation (zones, swings, last candles)
     final cands = <double>[];
     for (final z in base.zones) {
       if (z.bias == want && (z.kind == 'OB' || z.kind == 'FVG') &&
@@ -490,8 +581,6 @@ class ProEngine {
     cands.add(buy
         ? last3.map((e) => e.low).reduce(math.min)
         : last3.map((e) => e.high).reduce(math.max));
-    final ceArr = buy ? base.ceLong : base.ceShort;
-    if (ceArr.length == n && !ceArr[n - 1].isNaN) cands.add(ceArr[n - 1]);
     var risk = a * s.atrMult;
     double? best;
     for (final cnd in cands) {
@@ -509,6 +598,7 @@ class ProEngine {
     }
 
     for (final k in base.keyLevels) {
+      if (k.kind == 'vp' || k.kind == 'vwap') continue;
       if (k.side == (buy ? 1 : -1)) consider(k.price);
     }
     for (final z in base.zones) {
@@ -522,6 +612,7 @@ class ProEngine {
         return _wait(base, votes, [
           ...steps,
           '5) مساحة الحركة: أقرب عائق على بعد ${room.toStringAsFixed(1)}R فقط (أقل من 1.5R) — لا صفقة.',
+          ...conf,
         ]);
       }
       steps.add('5) مساحة الحركة: أقرب عائق بعد ${room.toStringAsFixed(1)}R');
@@ -549,6 +640,7 @@ class ProEngine {
     if (capped && obs0 != null) {
       steps.add('تنبيه: الأهداف اتقصّت عند أقرب عائق ${sym.fmt(obs0)}');
     }
+    steps.addAll(conf);
 
     final aligned = loc.length + 1 + 1 + (st.trend == want ? 1 : 0);
     final strength = math.min(
@@ -569,4 +661,4 @@ class ProEngine {
         grade: grade,
         aligned: aligned);
   }
-}
+} 
