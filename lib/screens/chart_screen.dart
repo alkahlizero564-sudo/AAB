@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../analysis/forecast.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -53,6 +54,10 @@ class _ChartScreenState extends State<ChartScreen> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           children: [
+            _chip('توصيات', layers.sigs, () => layers.sigs = !layers.sigs),
+            _chip('توقع', layers.fc, () => layers.fc = !layers.fc),
+            _chip('أنماط الشموع', layers.pats, () => layers.pats = !layers.pats),
+            _chip('EMA 20/50/200', layers.ema, () => layers.ema = !layers.ema),
             _chip('Fib', layers.fib, () => layers.fib = !layers.fib),
             _chip('Volume Profile', layers.vp, () => layers.vp = !layers.vp),
             _chip('مناطق OB/FVG', layers.zones, () => layers.zones = !layers.zones),
@@ -66,13 +71,42 @@ class _ChartScreenState extends State<ChartScreen> {
         child: NativeChart(
           candles: st.candles,
           signal: s,
+          forecast: st.forecast,
           sym: st.symbol,
           tf: st.tf,
           layers: layers,
         ),
       ),
+      if (st.forecast != null && layers.fc) _forecastBar(st.forecast!, st.symbol),
       if (s != null) _bottomBar(s, st.symbol),
     ]);
+  }
+
+  Widget _forecastBar(Forecast f, MarketSymbol sym) {
+    final nb = f.next;
+    final lines = <Widget>[];
+    if (f.liveSignal.isNotEmpty) {
+      lines.add(Text('⚡ ${f.liveSignal}',
+          style: const TextStyle(color: AppColors.gold, fontSize: 11, fontWeight: FontWeight.w700)));
+    }
+    if (nb != null) {
+      final up = nb.pUp >= 0.5;
+      final pct = ((up ? nb.pUp : 1 - nb.pUp) * 100).toStringAsFixed(0);
+      lines.add(Text(
+          'الشمعة القادمة: ${up ? '▲ صعود' : '▼ هبوط'} $pct% (من ${nb.sample} حالة مشابهة) — ${nb.why}',
+          style: TextStyle(color: up ? AppColors.up : AppColors.down, fontSize: 11)));
+    }
+    for (final p in f.pending) {
+      lines.add(Text(
+          '⏳ ${p.cond}: ${sym.fmt(p.trigger)} • وقف ${sym.fmt(p.sl)} • هدف ${sym.fmt(p.tp1)} / ${sym.fmt(p.tp2)}',
+          style: TextStyle(color: p.dir > 0 ? AppColors.up : AppColors.down, fontSize: 11)));
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: AppColors.card,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: lines),
+    );
   }
 
   Widget _bottomBar(TradeSignal s, MarketSymbol sym) {

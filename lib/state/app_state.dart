@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../analysis/forecast.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -26,6 +27,7 @@ class AppState extends ChangeNotifier {
   List<Candle>? htf;
   DateTime? _htfAt;
   TradeSignal? signal;
+  Forecast? forecast; // توصيات الشارت + توقع الشمعة القادمة
   bool loading = false;
   String? error;
   DateTime? lastUpdate;
@@ -152,6 +154,7 @@ class AppState extends ChangeNotifier {
     htf = null;
     _htfAt = null;
     signal = null;
+    forecast = null;
     error = null;
     _aiDir = null;
     _aiAt = null;
@@ -180,6 +183,7 @@ class AppState extends ChangeNotifier {
     if (candles.isEmpty) return;
     final prev = signal;
     signal = SignalEngine.analyze(candles, htf: htf, s: settings, sym: symbol);
+    forecast = buildForecast(candles, rr1: settings.rr1, rr2: settings.rr2);
     if (prev != null && prev.direction == signal!.direction) {
       signal!.aiVerdict = prev.aiVerdict;
       signal!.aiComment = prev.aiComment;

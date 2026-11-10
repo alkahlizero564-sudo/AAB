@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../analysis/forecast.dart';
 import '../models.dart';
 import '../theme.dart';
 
 class ChartLayers {
-  bool fib = true, vp = true, zones = true, vwap = true, levels = true, ce = true;
+  bool fib = false, vp = false, zones = true, vwap = false, levels = false, ce = false;
+  bool sigs = true, fc = true, pats = true, ema = true;
 }
 
 /// Our own candlestick chart (no TradingView, no WebView).
@@ -12,6 +14,7 @@ class ChartLayers {
 class NativeChart extends StatefulWidget {
   final List<Candle> candles;
   final TradeSignal? signal;
+  final Forecast? forecast;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -19,6 +22,7 @@ class NativeChart extends StatefulWidget {
     super.key,
     required this.candles,
     required this.signal,
+    this.forecast,
     required this.sym,
     required this.tf,
     required this.layers,
@@ -29,7 +33,7 @@ class NativeChart extends StatefulWidget {
 }
 
 class _NativeChartState extends State<NativeChart> {
-  double visible = 90, shift = 0, _baseVisible = 90;
+  double visible = 90, shift = -6, _baseVisible = 90;
   Offset? cross;
 
   @override
@@ -46,7 +50,7 @@ class _NativeChartState extends State<NativeChart> {
             }
             final barW = chartW / visible;
             shift = (shift + d.focalPointDelta.dx / barW)
-                .clamp(-8.0, math.max(0, n - 20).toDouble())
+                .clamp(-12.0, math.max(0, n - 20).toDouble())
                 .toDouble();
           });
         },
@@ -55,12 +59,12 @@ class _NativeChartState extends State<NativeChart> {
         onLongPressEnd: (_) => setState(() => cross = null),
         onDoubleTap: () => setState(() {
           visible = 90;
-          shift = 0;
+          shift = -6;
         }),
         child: CustomPaint(
           size: Size.infinite,
-          painter: _Painter(widget.candles, widget.signal, widget.sym,
-              widget.tf, visible, shift, cross, widget.layers),
+          painter: _Painter(widget.candles, widget.signal, widget.forecast,
+              widget.sym, widget.tf, visible, shift, cross, widget.layers),
         ),
       );
     });
@@ -71,18 +75,20 @@ class _Painter extends CustomPainter {
   static const axisW = 58.0, timeH = 20.0;
   final List<Candle> c;
   final TradeSignal? s;
+  final Forecast? f;
   final MarketSymbol sym;
   final String tf;
   final double visible, shift;
   final Offset? cross;
   final ChartLayers L;
-  _Painter(this.c, this.s, this.sym, this.tf, this.visible, this.shift,
+  _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
       this.cross, this.L);
 
   static const _up = AppColors.up, _down = AppColors.down;
 
   void _txt(Canvas cv, String t, Offset o,
-      {Color color = AppColors.muted, double size = 10, Color? bg, bool bold = false}) {
+      {Color color = AppColors.muted, double size = 10, Color? bg, bool bold = false,
+      bool rtl = false}) {
     final tp = TextPainter(
       text: TextSpan(
           text: t,
@@ -90,7 +96,7 @@ class _Painter extends CustomPainter {
               color: color,
               fontSize: size,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w400)),
-      textDirection: TextDirection.ltr,
+      textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
     )..layout();
     if (bg != null) {
       cv.drawRect(Rect.fromLTWH(o.dx - 2, o.dy - 1, tp.width + 4, tp.height + 2),
@@ -321,6 +327,38 @@ class _Painter extends CustomPainter {
       line(s!.ceShort, _down);
     }
 
+    // ── EMA 20 / 50 / 200
+    if (L.ema && f != null) {
+      void ln(List<double> arr, Color col, double sw) {
+        final path = Path();
+        var open = false;
+        for (var i = i0; i <= i1 && i < arr.length; i++) {
+          final v = arr[i];
+          if (v.isNaN) {
+            open = false;
+            continue;
+          }
+          final o = Offset(xOf(i.toDouble()), yOf(v));
+          if (open) {
+            path.lineTo(o.dx, o.dy);
+          } else {
+            path.moveTo(o.dx, o.dy);
+            open = true;
+          }
+        }
+        canvas.drawPath(
+            path,
+            Paint()
+              ..color = col
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = sw);
+      }
+
+      ln(f!.ema20, const Color(0xFF4FC3F7), 1.2);
+      ln(f!.ema50, const Color(0xFFFFB74D), 1.4);
+      ln(f!.ema200, const Color(0xFFE040FB), 1.6);
+    }
+
     // ── candles
     final bodyW = math.max(1.0, barW * 0.7);
     for (var i = i0; i <= i1; i++) {
@@ -367,6 +405,8 @@ class _Painter extends CustomPainter {
         }
       }
     }
+
+    if (f != null) _paintForecast(canvas, w, h, barW, xOf, yOf, inY, i0, i1);
 
     // ── trade box (Entry / SL / TP1-3) like the QNA style
     if (s != null && s!.direction != Direction.neutral) {
@@ -422,6 +462,8 @@ class _Painter extends CustomPainter {
       _txt(canvas, _time(c[i].time), Offset(xOf(i.toDouble()) - 14, h + 4));
     }
 
+    if (f != null && cross == null) _legend(canvas);
+
     // ── crosshair
     if (cross != null) {
       final cx = cross!.dx.clamp(0.0, w).toDouble();
@@ -443,6 +485,183 @@ class _Painter extends CustomPainter {
           color: AppColors.text,
           size: 10,
           bg: AppColors.surface);
+    }
+  }
+
+  void _paintForecast(Canvas cv, double w, double h, double barW,
+      double Function(double) xOf, double Function(double) yOf,
+      bool Function(double) inY, int i0, int i1) {
+    final fc = f!;
+    final n = c.length;
+
+    // أنماط الشموع اليابانية على كل شمعة
+    if (L.pats) {
+      for (final p in fc.patterns) {
+        if (p.i < i0 || p.i > i1) continue;
+        final x = xOf(p.i.toDouble());
+        final col = (p.bias > 0 ? _up : _down).withOpacity(0.85);
+        if (p.bias > 0) {
+          _txt(cv, p.label, Offset(x - 12, yOf(c[p.i].low) + 24),
+              color: col, size: 8, rtl: true);
+        } else {
+          _txt(cv, p.label, Offset(x - 12, yOf(c[p.i].high) - 34),
+              color: col, size: 8, rtl: true);
+        }
+      }
+    }
+
+    // التوصيات على الشارت ونتيجتها الحقيقية
+    if (L.sigs) {
+      for (final sg in fc.signals) {
+        final exitI = sg.exitI < 0 ? n - 1 : sg.exitI;
+        if (exitI < i0 || sg.i > i1) continue;
+        final buy = sg.dir > 0;
+        final col = buy ? _up : _down;
+        final xs = xOf(sg.i.toDouble()), xe = xOf(exitI.toDouble()) + barW / 2;
+        // صندوق الصفقة: أخضر للهدف ، أحمر للوقف
+        final yE = yOf(sg.entry), yS = yOf(sg.sl), yT = yOf(sg.tp2);
+        cv.drawRect(Rect.fromLTRB(xs, math.min(yE, yT), xe, math.max(yE, yT)),
+            Paint()..color = _up.withOpacity(0.08));
+        cv.drawRect(Rect.fromLTRB(xs, math.min(yE, yS), xe, math.max(yE, yS)),
+            Paint()..color = _down.withOpacity(0.08));
+        cv.drawLine(Offset(xs, yE), Offset(xe, yE),
+            Paint()
+              ..color = Colors.white54
+              ..strokeWidth = 1);
+        _dashed(cv, xs, xe, yOf(sg.tp1), Paint()
+          ..color = _up.withOpacity(0.6)
+          ..strokeWidth = 1, dash: 3, gap: 3);
+        // سهم كبير عند شمعة الإشارة
+        final k = c[sg.i];
+        final path = Path();
+        if (buy) {
+          final y = yOf(k.low) + 4;
+          path
+            ..moveTo(xs, y)
+            ..lineTo(xs - 7, y + 12)
+            ..lineTo(xs + 7, y + 12)
+            ..close();
+        } else {
+          final y = yOf(k.high) - 4;
+          path
+            ..moveTo(xs, y)
+            ..lineTo(xs - 7, y - 12)
+            ..lineTo(xs + 7, y - 12)
+            ..close();
+        }
+        cv.drawPath(path, Paint()..color = sg.strong ? col : col.withOpacity(0.6));
+        _txt(cv, buy ? 'شراء' : 'بيع',
+            Offset(xs - 10, buy ? yOf(k.low) + 14 : yOf(k.high) - 28),
+            color: Colors.white, size: 8, bold: true, bg: col, rtl: true);
+        // النتيجة
+        if (sg.exitI >= 0 || sg.result != 0) {
+          final res = sg.result == 2
+              ? '✓ TP2'
+              : sg.result == 1
+                  ? '✓ TP1'
+                  : '✗ SL';
+          final rc = sg.result > 0 ? _up : _down;
+          final ry = sg.result > 0 ? yOf(sg.result == 2 ? sg.tp2 : sg.tp1) : yS;
+          _txt(cv, res, Offset(xe - 28, ry - 14),
+              color: Colors.white, size: 9, bold: true, bg: rc);
+        } else {
+          _txt(cv, '⏳ مفتوحة', Offset(xe - 40, yE - 14),
+              color: Colors.white, size: 9, bg: AppColors.accent, rtl: true);
+        }
+      }
+    }
+
+    if (!L.fc) return;
+
+    // شريط دقة توقع الشموع (أسفل الشارت): أخضر صح ، أحمر خطأ
+    for (var i = i0; i <= i1 && i < fc.predHits.length; i++) {
+      final v = fc.predHits[i];
+      if (v == 0) continue;
+      final x = xOf(i.toDouble());
+      cv.drawRect(Rect.fromLTWH(x - barW * 0.35, h - 4, barW * 0.7, 3),
+          Paint()..color = (v > 0 ? _up : _down).withOpacity(0.8));
+    }
+
+    // الإشارات المرتقبة قبل حدوثها
+    final xLast = xOf((n - 1).toDouble());
+    for (final p in fc.pending) {
+      final col = p.dir > 0 ? _up : _down;
+      if (inY(p.trigger)) {
+        final y = yOf(p.trigger);
+        _dashed(cv, xLast - barW * 6, w, y, Paint()
+          ..color = col
+          ..strokeWidth = 1.4, dash: 6, gap: 3);
+        _txt(cv,
+            '⏳ ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'} ${sym.fmt(p.trigger)}',
+            Offset(xLast - barW * 6, y - 13),
+            color: Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
+      }
+      if (inY(p.sl)) {
+        _dashed(cv, xLast + barW, w, yOf(p.sl), Paint()
+          ..color = _down.withOpacity(0.6)
+          ..strokeWidth = 1, dash: 2, gap: 3);
+      }
+      if (inY(p.tp1)) {
+        _dashed(cv, xLast + barW, w, yOf(p.tp1), Paint()
+          ..color = _up.withOpacity(0.6)
+          ..strokeWidth = 1, dash: 2, gap: 3);
+      }
+    }
+
+    // الشمعة القادمة المتوقعة (شبحية)
+    final nb = fc.next;
+    if (nb != null) {
+      final x = xOf(n.toDouble());
+      if (x < w) {
+        final up = nb.pUp >= 0.5;
+        final col = up ? _up : _down;
+        final bw = math.max(2.0, barW * 0.7);
+        cv.drawLine(Offset(x, yOf(nb.high)), Offset(x, yOf(nb.low)),
+            Paint()
+              ..color = col.withOpacity(0.5)
+              ..strokeWidth = 1);
+        final yo = yOf(nb.open), yc = yOf(nb.close);
+        final r = Rect.fromLTRB(x - bw / 2, math.min(yo, yc), x + bw / 2,
+            math.max(math.max(yo, yc), math.min(yo, yc) + 2));
+        cv.drawRect(r, Paint()..color = col.withOpacity(0.3));
+        cv.drawRect(
+            r,
+            Paint()
+              ..color = col
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1);
+        final pct = ((up ? nb.pUp : 1 - nb.pUp) * 100).toStringAsFixed(0);
+        _txt(cv, '${up ? '▲' : '▼'} $pct%',
+            Offset(x - 12, up ? yOf(nb.high) - 14 : yOf(nb.low) + 3),
+            color: col, size: 10, bold: true);
+      }
+    }
+  }
+
+  void _legend(Canvas cv) {
+    final fc = f!;
+    final lines = <(String, Color)>[];
+    if (L.sigs && fc.closed > 0) {
+      lines.add((
+        'دقة التوصيات على الشارت: ${(fc.winRate * 100).toStringAsFixed(0)}% '
+            '(${fc.wins} ربح / ${fc.losses} خسارة)',
+        fc.winRate >= 0.5 ? _up : _down
+      ));
+    }
+    if (L.fc && fc.predN > 0) {
+      lines.add((
+        'دقة توقع اتجاه الشمعة: ${(fc.predAcc * 100).toStringAsFixed(0)}% (${fc.predN} توقع)',
+        fc.predAcc >= 0.5 ? _up : _down
+      ));
+    }
+    if (L.ema) {
+      lines.add(('EMA20 سماوي • EMA50 برتقالي • EMA200 بنفسجي', AppColors.muted));
+    }
+    var y = 4.0;
+    for (final (t, col) in lines) {
+      _txt(cv, t, Offset(6, y), color: col, size: 10, bg: AppColors.surface.withOpacity(0.85),
+          rtl: true);
+      y += 15;
     }
   }
 
