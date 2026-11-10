@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import '../models.dart';
+import 'indicator_panel.dart';
 import 'indicators.dart';
 import 'patterns.dart';
 import 'smc.dart';
@@ -59,8 +60,10 @@ class PastSignal {
   final int exitI; // شمعة الخروج (-1 لو مفتوحة)
   final String why;
   final bool strong; // تأكيدان أو أكثر
+  final int agree, total; // عدد المؤشرات المتوافقة من لوحة المؤشرات
   const PastSignal(this.i, this.dir, this.entry, this.sl, this.tp1, this.tp2,
-      this.result, this.exitI, this.why, this.strong);
+      this.result, this.exitI, this.why, this.strong,
+      [this.agree = 0, this.total = 0]);
 }
 
 /// إشارة مرتقبة: مستوى إذا وصل له السعر تتأكد التوصية (قبل حدوثها).
@@ -91,6 +94,7 @@ class Forecast {
   final List<PendingSetup> pending;
   final List<double> ema20, ema50, ema200;
   final String liveSignal; // إشارة تتكوّن في الشمعة الحالية (غير مغلقة)
+  final List<IndNow> indicators; // حالة كل مؤشر الآن + طريقة عمله
   const Forecast({
     this.patterns = const [],
     this.signals = const [],
@@ -103,6 +107,7 @@ class Forecast {
     this.ema50 = const [],
     this.ema200 = const [],
     this.liveSignal = '',
+    this.indicators = const [],
   });
 
   int get wins => signals.where((s) => s.result > 0).length;
@@ -123,9 +128,15 @@ class ForecastCfg {
   final bool counter; // السماح بصفقات الانعكاس عكس الاتجاه
   final int minWhy; // أقل عدد أسباب للدخول
   final bool adaptive; // إيقاف أي سبب دخول دقته ضعيفة على نفس الشارت
+  final Set<String> extraTrig; // مؤشرات إضافية تُستخدم كسبب دخول
+  final double confRatio; // أقل نسبة مؤشرات متوافقة مع الاتجاه (0 = بدون)
+  final double confMax; // أعلى نسبة (توافق كامل غالباً = حركة منتهية ودخول متأخر)
   final double predEdge; // أقل ميزة احتمالية لإظهار توقع الشمعة
   final int predH; // أفق التوقع بالشموع
   const ForecastCfg({
+    this.extraTrig = const {'cci', 'ha', 'mfi'},
+    this.confRatio = 0.6,
+    this.confMax = 0.9,
     this.predEdge = 0.15,
     this.predH = 1,
     this.adxMin = 0,
@@ -138,6 +149,14 @@ class ForecastCfg {
     this.minWhy = 1,
     this.adaptive = true,
   });
+}
+
+/// حالة مؤشر عند آخر شمعة (للعرض والشرح).
+class IndNow {
+  final String name, how;
+  final int bias; // +1 صاعد ، -1 هابط ، 0 محايد
+  final bool fired; // أعطى إشارة دخول في آخر 3 شموع
+  const IndNow(this.name, this.how, this.bias, this.fired);
 }
 
 class _Bar {
@@ -173,6 +192,26 @@ Forecast buildForecast(List<Candle> c,
   final at = atr(c, 14);
   final st = supertrend(c);
   final adx = adxCalc(c).adx;
+  final panel = buildPanel(c, at);
+  // توافق المؤشرات مع الاتجاه d عند الشمعة i
+  (int, int) conf(int i, int d) {
+    var ag = 0, tot = 0;
+    for (final p in panel) {
+      if (p.bias[i] == 0) continue;
+      tot++;
+      if (p.bias[i] == d) ag++;
+    }
+    final mh = m.hist[i];
+    if (!mh.isNaN) {
+      tot++;
+      if ((mh > 0 ? 1 : -1) == d) ag++;
+    }
+    if (st.dir[i] != 0) {
+      tot++;
+      if (st.dir[i] == d) ag++;
+    }
+    return (ag, tot);
+  }
 
   final start = math.max(55, n - history);
 
@@ -280,9 +319,16 @@ Forecast buildForecast(List<Candle> c,
       if (b.div == d) add('div', 'انحراف RSI ${d > 0 ? 'إيجابي' : 'سلبي'}');
       if (b.ema == d) add('ema', 'ارتداد من EMA20');
       if (b.macdX == d) add('macd', 'تقاطع MACD');
+      for (final p in panel) {
+        if (cfg.extraTrig.contains(p.key) && p.trig[i] == d) add('i:${p.key}', p.name);
+      }
       final rv = r[i];
       final rsiOk = rv.isNaN || (d > 0 ? rv < 72 : rv > 28);
       if (!rsiOk || why.isEmpty || why.length < cfg.minWhy) continue;
+      if (cfg.confRatio > 0) {
+        final (ag, tot) = conf(i, d);
+        if (tot == 0 || ag / tot < cfg.confRatio || ag / tot >= cfg.confMax) continue;
+      }
       if (b.trend == d) {
         if (cfg.adxMin > 0 && !adx[i].isNaN && adx[i] < cfg.adxMin) continue;
         if (cfg.maxExt > 0 && !e20[i].isNaN && (cl[i] - e20[i]).abs() > cfg.maxExt * a) {
@@ -384,7 +430,8 @@ Forecast buildForecast(List<Candle> c,
       }
     }
     if (exitI < 0 && gotT1) res = 1; // تحقق الهدف الأول وما زالت مفتوحة
-    signals.add(PastSignal(i, d, entry, sl, t1, t2, res, exitI, why, strong));
+    final (ag, tot) = conf(i, d);
+    signals.add(PastSignal(i, d, entry, sl, t1, t2, res, exitI, why, strong, ag, tot));
     busyUntil = exitI < 0 ? n : exitI;
     if (exitI >= 0 || res != 0) {
       for (final k in keys) {
@@ -488,5 +535,10 @@ Forecast buildForecast(List<Candle> c,
     ema50: e50,
     ema200: e200,
     liveSignal: live,
+    indicators: [
+      for (final p in panel)
+        IndNow(p.name, p.how, p.bias[last],
+            p.trig.sublist(math.max(0, last - 2)).any((v) => v != 0)),
+    ],
   );
 }

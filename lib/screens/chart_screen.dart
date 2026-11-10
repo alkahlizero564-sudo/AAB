@@ -105,11 +105,87 @@ class _ChartScreenState extends State<ChartScreen> {
           '⏳ ${p.cond} ${sym.fmt(p.trigger)} • وقف ${sym.fmt(p.sl)} • هدف ${sym.fmt(p.tp1)} / ${sym.fmt(p.tp2)}',
           style: TextStyle(color: p.dir > 0 ? AppColors.up : AppColors.down, fontSize: 11)));
     }
+    if (f.indicators.isNotEmpty) {
+      final upN = f.indicators.where((e) => e.bias > 0).length;
+      final dnN = f.indicators.where((e) => e.bias < 0).length;
+      lines.add(InkWell(
+        onTap: () => _showPanel(f),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text('📊 لوحة المؤشرات: $upN صاعد • $dnN هابط — اضغط لشرح كل مؤشر',
+              style: const TextStyle(
+                  color: AppColors.accent, fontSize: 11, decoration: TextDecoration.underline)),
+        ),
+      ));
+    }
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       color: AppColors.card,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: lines),
+    );
+  }
+
+  void _showPanel(Forecast f) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        builder: (_, ctl) => ListView(
+          controller: ctl,
+          padding: const EdgeInsets.all(14),
+          children: [
+            const Text('لوحة المؤشرات الآن',
+                style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            const Text(
+                'تُقبل التوصية فقط عندما يتوافق 60% إلى 90% من المؤشرات مع اتجاهها. '
+                'التوافق الكامل 100% غالباً يعني أن الحركة انتهت والدخول متأخر.',
+                style: TextStyle(color: AppColors.muted, fontSize: 11)),
+            const SizedBox(height: 10),
+            for (final e in f.indicators)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text('${e.fired ? '⚡ ' : ''}${e.name}',
+                          style: const TextStyle(
+                              color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 13)),
+                    ),
+                    Text(
+                        e.bias > 0
+                            ? '▲ صاعد'
+                            : e.bias < 0
+                                ? '▼ هابط'
+                                : '— محايد',
+                        style: TextStyle(
+                            color: e.bias > 0
+                                ? AppColors.up
+                                : e.bias < 0
+                                    ? AppColors.down
+                                    : AppColors.muted,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12)),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(e.how, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                ]),
+              ),
+            const Text('⚡ = أعطى المؤشر إشارة دخول في آخر 3 شموع',
+                style: TextStyle(color: AppColors.muted, fontSize: 10)),
+          ],
+        ),
+      ),
     );
   }
 

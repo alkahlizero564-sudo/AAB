@@ -553,6 +553,11 @@ class _Painter extends CustomPainter {
         _txt(cv, buy ? 'شراء' : 'بيع',
             Offset(xs - 10, buy ? yOf(k.low) + 14 : yOf(k.high) - 28),
             color: Colors.white, size: 8, bold: true, bg: col, rtl: true);
+        if (sg.total > 0) {
+          _txt(cv, '${sg.agree}/${sg.total}',
+              Offset(xs - 8, buy ? yOf(k.low) + 28 : yOf(k.high) - 40),
+              color: col, size: 8);
+        }
         // النتيجة
         if (sg.exitI >= 0 || sg.result != 0) {
           final res = sg.result == 2
