@@ -1,9 +1,12 @@
 class Candle {
   final DateTime time; // UTC
   final double open, high, low, close, volume;
+  final double buyVol; // حجم شراء الـ Taker الحقيقي (Binance فقط)، -1 = غير متوفر
   const Candle(this.time, this.open, this.high, this.low, this.close,
-      [this.volume = 0]);
+      [this.volume = 0, this.buyVol = -1]);
   int get ts => time.millisecondsSinceEpoch ~/ 1000;
+  bool get hasFlow => buyVol >= 0 && volume > 0;
+  double get sellVol => volume - buyVol;
 }
 
 enum Direction { buy, sell, neutral }
@@ -157,5 +160,15 @@ class MarketSymbol {
       category == 'minor' ||
       category == 'exotic' ||
       category == 'metal';
+  bool get isCrypto => category == 'crypto';
+
+  /// رمز Binance: BTC/USD -> BTCUSDT
+  String get binanceTicker {
+    final p = code.split('/');
+    final base = p[0];
+    final quote = p.length > 1 ? p[1] : 'USDT';
+    return '$base${quote == 'USD' ? 'USDT' : quote}';
+  }
+
   String fmt(double v) => v.toStringAsFixed(decimals);
-}
+} 
