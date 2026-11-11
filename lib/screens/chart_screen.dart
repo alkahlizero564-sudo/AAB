@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../analysis/chart_reader.dart';
 import '../analysis/forecast.dart';
 import '../models.dart';
 import '../state/app_state.dart';
@@ -17,6 +18,144 @@ class ChartScreen extends StatefulWidget {
 class _ChartScreenState extends State<ChartScreen> {
   final layers = ChartLayers();
   bool full = false; // وضع الشاشة الكاملة للشارت
+  int? sel; // الشمعة المختارة بالضغط المطوّل
+
+  void _showReading(AppState st, {int? upto}) {
+    final r = readChart(st.candles, st.symbol, upto: upto, htf: upto == null ? st.htf : null);
+    final when = upto == null ? 'الآن' : 'كما كان عند شمعة ${_hm(st.candles[upto].time)}';
+    Color bc(int b) => b > 0 ? AppColors.up : (b < 0 ? AppColors.down : AppColors.muted);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        maxChildSize: 0.95,
+        builder: (_, ctl) => ListView(
+          controller: ctl,
+          padding: const EdgeInsets.all(14),
+          children: [
+            Text('🧠 قراءة الشارت ($when)',
+                style: const TextStyle(
+                    color: AppColors.text, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: bc(r.bias).withOpacity(0.14),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: bc(r.bias).withOpacity(0.5)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(r.verdict,
+                    style: TextStyle(color: bc(r.bias), fontWeight: FontWeight.w800, fontSize: 14)),
+                const SizedBox(height: 6),
+                for (final sc in r.scenarios)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Text(sc,
+                        style: const TextStyle(color: AppColors.text, fontSize: 12, height: 1.4)),
+                  ),
+              ]),
+            ),
+            if (upto == null && st.forecast != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.accent.withOpacity(0.6)),
+                ),
+                child: Text(
+                    '🎯 قرار التوصيات (المحرك المُقاس): ${st.forecast!.decision.title}\n'
+                    'القراءة أعلاه تشرح من يسيطر الآن، أما الدخول فيكون فقط عند اكتمال شروط التوصية.',
+                    style: const TextStyle(color: AppColors.text, fontSize: 12, height: 1.4)),
+              ),
+            ],
+            const SizedBox(height: 10),
+            for (final sec in r.sections)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border(right: BorderSide(color: bc(sec.bias), width: 3)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Text('${sec.icon} ${sec.title}',
+                        style: const TextStyle(
+                            color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 14)),
+                    const Spacer(),
+                    Text(
+                        sec.bias > 0
+                            ? '▲ للمشترين'
+                            : sec.bias < 0
+                                ? '▼ للبائعين'
+                                : '— محايد',
+                        style: TextStyle(
+                            color: bc(sec.bias), fontSize: 11, fontWeight: FontWeight.w700)),
+                  ]),
+                  const SizedBox(height: 6),
+                  for (final l in sec.lines)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text('• $l',
+                          style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.45)),
+                    ),
+                ]),
+              ),
+            const Text(
+                'القراءة تستخدم فقط الشموع حتى اللحظة المختارة — لا تنظر للمستقبل. '
+                'هي فهم للوضع الحالي واحتمالاته، وليست ضماناً لما سيحدث.',
+                style: TextStyle(color: AppColors.muted, fontSize: 10)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _hm(DateTime t) =>
+      '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')} '
+      '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+  Widget _candlePanel(AppState st, int i) {
+    final lines = explainCandle(st.candles, i, st.symbol);
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 170),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      color: AppColors.card,
+      child: SingleChildScrollView(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Text('🕯️ شرح شمعة ${_hm(st.candles[i].time)}',
+                style: const TextStyle(
+                    color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 12)),
+            const Spacer(),
+            InkWell(
+              onTap: () => _showReading(st, upto: i),
+              child: const Text('🧠 اقرأ الشارت عندها',
+                  style: TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 11,
+                      decoration: TextDecoration.underline)),
+            ),
+          ]),
+          const SizedBox(height: 4),
+          for (final l in lines)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Text(l,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.35)),
+            ),
+        ]),
+      ),
+    );
+  }
 
   Widget _seg(List<(String, String)> items, String value, void Function(String) on) => Container(
         margin: const EdgeInsetsDirectional.only(end: 6),
@@ -53,6 +192,18 @@ class _ChartScreenState extends State<ChartScreen> {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
           children: [
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 6),
+              child: ActionChip(
+                avatar: const Text('🧠'),
+                label: const Text('قراءة الشارت',
+                    style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
+                backgroundColor: AppColors.accent,
+                side: BorderSide.none,
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _showReading(context.read<AppState>()),
+              ),
+            ),
             _seg(const [('candle', 'شموع'), ('ha', 'Heikin Ashi'), ('line', 'خطي')], layers.type,
                 (v) => layers.type = v),
             _seg(const [('rsi', 'RSI'), ('macd', 'MACD'), ('none', 'بدون')], layers.sub,
@@ -132,10 +283,14 @@ class _ChartScreenState extends State<ChartScreen> {
           sym: st.symbol,
           tf: st.tf,
           layers: layers,
+          onSelect: (i) => setState(() => sel = i),
         ),
       ),
       if (st.forecast != null) ...[
-        if (!full) _forecastBar(st.forecast!, st.symbol),
+        if (sel != null && sel! < st.candles.length)
+          _candlePanel(st, sel!)
+        else if (!full)
+          _forecastBar(st.forecast!, st.symbol),
         _decisionBar(st.forecast!.decision, st.symbol),
       ] else if (s != null)
         _bottomBar(s, st.symbol),

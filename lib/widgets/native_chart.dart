@@ -38,11 +38,13 @@ class NativeChart extends StatefulWidget {
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
+  final ValueChanged<int?>? onSelect; // رقم الشمعة تحت المؤشر المتقاطع (null عند الإخفاء)
   const NativeChart({
     super.key,
     required this.candles,
     required this.signal,
     this.forecast,
+    this.onSelect,
     required this.sym,
     required this.tf,
     required this.layers,
@@ -93,6 +95,22 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
     });
     if (_vel.abs() < 2 || shift <= -12 || shift >= _maxShift) {
       _ticker.stop();
+    }
+  }
+
+  int? _lastSel;
+  void _setCross(Offset? p) {
+    cross = p;
+    int? idx;
+    if (p != null && widget.candles.isNotEmpty) {
+      final n = widget.candles.length;
+      final barW = _chartW / visible;
+      final left = n - 1 - shift - visible + 1;
+      idx = (p.dx.clamp(0.0, _chartW) / barW + left - 0.5).round().clamp(0, n - 1).toInt();
+    }
+    if (idx != _lastSel) {
+      _lastSel = idx;
+      widget.onSelect?.call(idx);
     }
   }
 
@@ -157,16 +175,16 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
             },
             onTapDown: (_) => _stopFling(),
             onTap: () {
-              if (cross != null) setState(() => cross = null);
+              if (cross != null) setState(() => _setCross(null));
             },
-            onLongPressStart: (d) => setState(() => cross = d.localPosition),
-            onLongPressMoveUpdate: (d) => setState(() => cross = d.localPosition),
+            onLongPressStart: (d) => setState(() => _setCross(d.localPosition)),
+            onLongPressMoveUpdate: (d) => setState(() => _setCross(d.localPosition)),
             onDoubleTap: () => setState(() {
               _stopFling();
               visible = 90;
               shift = _homeShift;
               yZoom = 1;
-              cross = null;
+              _setCross(null);
             }),
             child: CustomPaint(
               size: Size.infinite,
@@ -211,7 +229,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
               child: InkWell(
                 customBorder: const CircleBorder(),
-                onTap: () => setState(() => cross = null),
+                onTap: () => setState(() => _setCross(null)),
                 child: const Padding(
                   padding: EdgeInsets.all(6),
                   child: Icon(Icons.close, size: 16, color: AppColors.muted),
