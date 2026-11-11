@@ -186,7 +186,8 @@ class AppState extends ChangeNotifier {
     if (candles.isEmpty) return;
     final prev = signal;
     final base = SignalEngine.analyze(candles, htf: htf, s: settings, sym: symbol);
-    forecast = buildForecast(candles, rr1: settings.rr1, rr2: settings.rr2);
+    forecast = buildForecast(candles,
+        rr1: settings.rr1For(symbol.category), rr2: settings.rr2);
     signal = _unify(base, forecast!);
     algo = aabAlgo(candles, sens: 2.0, withPanel: false);
     if (prev != null && prev.direction == signal!.direction) {

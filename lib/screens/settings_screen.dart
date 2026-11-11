@@ -19,7 +19,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late int refresh;
   late double atrMult, rr1, rr2, rr3, ceMult;
   late int cePeriod, pollSec;
-  late bool useAi, liveWs;
+  late bool useAi, liveWs, metalTp07;
   late String source;
 
   @override
@@ -40,6 +40,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     pollSec = s.pollSec.clamp(3, 60).toInt();
     liveWs = s.liveWs;
     useAi = s.useAi;
+    metalTp07 = s.metalTp07;
     source = s.source;
   }
 
@@ -68,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       pollSec: pollSec,
       liveWs: liveWs,
       useAi: useAi,
+      metalTp07: metalTp07,
       source: source,
       geminiModel: model.text.trim().isEmpty ? 'gemini-2.5-flash' : model.text,
     );
@@ -179,6 +181,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               (v) => v.toStringAsFixed(1), (v) => setState(() => atrMult = v)),
           _slider('الهدف 1 (R)', rr1, 0.5, 3, 25,
               (v) => '${v.toStringAsFixed(1)}R', (v) => setState(() => rr1 = v)),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('الذهب والمعادن: الهدف 1 = 0.7R تلقائياً',
+                style: TextStyle(fontSize: 13)),
+            subtitle: const Text(
+                'مقاس على ذهب حقيقي 2018–2019 (فريم الساعة): الدقة 68% بدل 54%',
+                style: TextStyle(fontSize: 11, color: AppColors.muted)),
+            value: metalTp07,
+            onChanged: (v) => setState(() => metalTp07 = v),
+          ),
           _slider('الهدف 2 (R)', rr2, 1, 5, 40,
               (v) => '${v.toStringAsFixed(1)}R', (v) => setState(() => rr2 = v)),
           _slider('الهدف 3 (R)', rr3, 1.5, 8, 65,

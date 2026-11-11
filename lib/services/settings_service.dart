@@ -12,6 +12,7 @@ class AppSettings {
   double ceMult;
   bool liveWs;
   bool useAi;
+  bool metalTp07; // الذهب والمعادن: الهدف الأول 0.7R تلقائياً (الأدق بالقياس)
   String source; // auto | twelve | tiingo
   String geminiModel;
 
@@ -29,6 +30,7 @@ class AppSettings {
     this.ceMult = 3.0,
     this.liveWs = true,
     this.useAi = true,
+    this.metalTp07 = true,
     this.source = 'auto',
     this.geminiModel = 'gemini-2.5-flash',
   })  : twelveKeys = twelveKeys ?? List.filled(4, ''),
@@ -61,6 +63,7 @@ class AppSettings {
       ceMult: p.getDouble('ceMult') ?? 3.0,
       liveWs: p.getBool('liveWs') ?? true,
       useAi: p.getBool('useAi') ?? true,
+      metalTp07: p.getBool('metalTp07') ?? true,
       source: p.getString('source') ?? 'auto',
       geminiModel: p.getString('geminiModel') ?? 'gemini-2.5-flash',
     );
@@ -81,9 +84,13 @@ class AppSettings {
     await p.setDouble('ceMult', ceMult);
     await p.setBool('liveWs', liveWs);
     await p.setBool('useAi', useAi);
+    await p.setBool('metalTp07', metalTp07);
     await p.setString('source', source);
     await p.setString('geminiModel', geminiModel.trim());
   }
+
+  /// الهدف الأول الفعلي لسوق معيّن (فئة السوق من MarketSymbol.category).
+  double rr1For(String category) => metalTp07 && category == 'metal' ? 0.7 : rr1;
 
   bool get hasTwelve => twelveKeys.any((k) => k.trim().isNotEmpty);
   bool get hasTiingo => tiingoKey.trim().isNotEmpty;
