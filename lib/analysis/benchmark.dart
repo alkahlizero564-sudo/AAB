@@ -4,6 +4,7 @@ import 'forecast.dart';
 import 'indicator_panel.dart';
 import 'indicators.dart';
 import 'smc.dart';
+import 'tv_indicators.dart';
 
 /// نتيجة مؤشر واحد في المقارنة.
 class BenchRow {
@@ -144,6 +145,9 @@ List<BenchRow> benchmark(List<Candle> c) {
     final t = panel[k];
     if (t != null) sigs[v] = t;
   });
+  for (final p in tvIndicators(c)) {
+    sigs[p.name] = p.trig;
+  }
 
   final rows = <BenchRow>[];
   sigs.forEach((k, s) {

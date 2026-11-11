@@ -132,7 +132,7 @@ class _ChartScreenState extends State<ChartScreen> {
           controller: ctl,
           padding: const EdgeInsets.all(14),
           children: [
-            Text('🏆 مقارنة مع مؤشرات TradingView — ${st.symbol.code} ${st.tf}',
+            Text('🏆 مقارنة مع 22 مؤشراً من TradingView — ${st.symbol.code} ${st.tf}',
                 style: const TextStyle(
                     color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
@@ -188,8 +188,9 @@ class _ChartScreenState extends State<ChartScreen> {
               ),
             const SizedBox(height: 6),
             const Text(
-                'على 20 سوقاً حقيقياً (فوركس، ذهب، فضة، أسهم، مؤشرات، نفط) جاء مؤشر AAB الأول: '
-                '53.8% وربح في 18 من 20 سوقاً، مقابل 51.2% لأفضل مؤشر (UT Bot) و48–50% للباقي. '
+                'على 20 سوقاً حقيقياً (فوركس، ذهب، فضة، أسهم، مؤشرات، نفط) جاء مؤشر AAB الأول بين 23 مؤشراً: '
+                '53.8% وربح في 18 من 20 سوقاً، مقابل 51.2% لـ UT Bot و50.6% لـ Volume Profile و48–50% للباقي. '
+                'سوقاً بسوق: تفوّق على UT Bot في 13 من 20 وعلى Volume Profile في 16 من 20. '
                 'على شارت واحد قصير قد يختلف الترتيب — العينة الصغيرة تتأثر بالصدفة.',
                 style: TextStyle(color: AppColors.muted, fontSize: 10, height: 1.4)),
           ],
