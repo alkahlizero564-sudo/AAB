@@ -40,8 +40,42 @@ jobs:
           fi
 
       - run: flutter pub get
-      - run: flutter build apk --release
-      - run: flutter build appbundle --release
+      # رقم الإصدار يزيد مع كل بناء حتى يُثبَّت التحديث فوق النسخة القديمة
+      - run: flutter build apk --release --build-number=${{ github.run_number }}
+      - run: flutter build appbundle --release --build-number=${{ github.run_number }}
+
+      # التوقيع بالمفتاح الثابت المحفوظ في GitHub Secrets (لا يوجد المفتاح داخل المستودع).
+      # بدون المفتاح الثابت يُوقَّع كل بناء بمفتاح عشوائي ولا يُثبَّت فوق القديم.
+      - name: Sign with the fixed release key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: aab
+          # بصمة شهادة المفتاح الثابت (عامة وليست سرية) — للتأكد أن التوقيع تم به فعلاً
+          EXPECTED_SHA256: a6cd2a42008d4058cbc8c5d33bb93cd50c840c3ff2b6a7f004dcb6c6171c400c
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::Signing secrets KEYSTORE_BASE64 / KEYSTORE_PASSWORD are missing — add them in Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          KS="$RUNNER_TEMP/release.jks"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$KS"
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          APKSIGNER="$ANDROID_HOME/build-tools/$BT/apksigner"
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          "$APKSIGNER" sign --ks "$KS" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD "$APK"
+          GOT=$("$APKSIGNER" verify --print-certs "$APK" | grep -m1 'certificate SHA-256 digest' | awk '{print $NF}')
+          echo "APK signer SHA-256: $GOT"
+          if [ "$GOT" != "$EXPECTED_SHA256" ]; then
+            echo "::error::APK is not signed with the fixed release key"
+            exit 1
+          fi
+          AAB=build/app/outputs/bundle/release/app-release.aab
+          zip -q -d "$AAB" 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.EC' 'META-INF/*.DSA' || true
+          jarsigner -keystore "$KS" -storepass "$KEYSTORE_PASSWORD" "$AAB" "$KEY_ALIAS"
+          jarsigner -verify "$AAB" | tail -1
+          rm -f "$KS"
 
       - uses: actions/upload-artifact@v4
         with:
