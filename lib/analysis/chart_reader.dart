@@ -64,10 +64,65 @@ String _f(MarketSymbol s, double v) => s.fmt(v);
 String _pct(double v) => '${v >= 0 ? '+' : ''}${v.toStringAsFixed(2)}%';
 
 /// مستوى دعم/مقاومة مع مصدره.
-class _Lvl {
+class Level {
   final double p;
   final String name;
-  const _Lvl(this.p, this.name);
+  const Level(this.p, this.name);
+}
+
+/// مستويات الدعم (تحت السعر، الأقرب أولاً) والمقاومة (فوقه، الأقرب أولاً)
+/// من القمم/القيعان، Order Blocks، FVG، EMA50/200 والأرقام المستديرة،
+/// مع دمج المستويات المتقاربة (أقل من 0.6 ATR). تعتمد فقط على الشموع [c].
+(List<Level>, List<Level>) structureLevels(List<Candle> c, double price,
+    {MarketSymbol? sym, List<double>? atrS}) {
+  final n = c.length;
+  final at = atrS ?? atr(c, 14);
+  final a = at[n - 1].isNaN ? (c[n - 1].high - c[n - 1].low) : at[n - 1];
+  final cl = c.map((e) => e.close).toList();
+  final sup = <Level>[], res = <Level>[];
+  void add(double p, String name) {
+    if (p.isNaN) return;
+    if (p < price) sup.add(Level(p, name));
+    if (p > price) res.add(Level(p, name));
+  }
+
+  final ph = pivotHighs(c, 5, 3), pl = pivotLows(c, 5, 3);
+  for (final p in ph.where((p) => p.i >= n - 150)) {
+    add(p.p, p.p > price ? 'قمة سابقة' : 'قمة سابقة تحولت لدعم');
+  }
+  for (final p in pl.where((p) => p.i >= n - 150)) {
+    add(p.p, p.p < price ? 'قاع سابق' : 'قاع سابق تحول لمقاومة');
+  }
+  for (final z in orderBlocks(c)) {
+    add(z.bias > 0 ? z.top : z.bottom, z.bias > 0 ? 'Order Block شرائي' : 'Order Block بيعي');
+  }
+  for (final z in fairValueGaps(c, at)) {
+    add(z.bias > 0 ? z.top : z.bottom, 'فجوة سعرية FVG');
+  }
+  add(ema(cl, 50)[n - 1], 'EMA50');
+  add(ema(cl, 200)[n - 1], 'EMA200');
+  if (sym != null) {
+    final (rb, ra) = roundBand(sym, price);
+    add(rb, 'رقم مستدير');
+    add(ra, 'رقم مستدير');
+  }
+  sup.sort((x, y) => y.p.compareTo(x.p));
+  res.sort((x, y) => x.p.compareTo(y.p));
+  List<Level> merge(List<Level> l) {
+    final out = <Level>[];
+    for (final x in l) {
+      if (out.isNotEmpty && (x.p - out.last.p).abs() < 0.6 * a) {
+        final last = out.removeLast();
+        final names = {...last.name.split(' + '), x.name}.take(3).join(' + ');
+        out.add(Level(last.p, names));
+      } else {
+        out.add(x);
+      }
+    }
+    return out;
+  }
+
+  return (merge(sup), merge(res));
 }
 
 /// يقرأ الشارت كما هو عند الشمعة [upto] (افتراضياً آخر شمعة) — بدون النظر لما بعدها.
@@ -170,59 +225,10 @@ ChartReading readChart(List<Candle> all, MarketSymbol sym, {int? upto, List<Cand
   }
 
   // ───── 3) الدعوم والمقاومات
-  final sup = <_Lvl>[], res = <_Lvl>[];
+  final (sup, res) = structureLevels(c, price, sym: sym, atrS: at);
   {
-    void add(double p, String name) {
-      if (p.isNaN) return;
-      if (p < price) sup.add(_Lvl(p, name));
-      if (p > price) res.add(_Lvl(p, name));
-    }
-
-    final ph = pivotHighs(c, 5, 3), pl = pivotLows(c, 5, 3);
-    for (final p in ph.where((p) => p.i >= n - 150)) {
-      add(p.p, p.p > price ? 'قمة سابقة' : 'قمة سابقة تحولت لدعم');
-    }
-    for (final p in pl.where((p) => p.i >= n - 150)) {
-      add(p.p, p.p < price ? 'قاع سابق' : 'قاع سابق تحول لمقاومة');
-    }
-    for (final z in orderBlocks(c)) {
-      add(z.bias > 0 ? z.top : z.bottom, z.bias > 0 ? 'Order Block شرائي' : 'Order Block بيعي');
-    }
-    for (final z in fairValueGaps(c, at)) {
-      add(z.bias > 0 ? z.top : z.bottom, 'فجوة سعرية FVG');
-    }
-    add(e50[i], 'EMA50');
-    add(e200[i], 'EMA200');
-    final (rb, ra) = roundBand(sym, price);
-    add(rb, 'رقم مستدير');
-    add(ra, 'رقم مستدير');
-    sup.sort((x, y) => y.p.compareTo(x.p));
-    res.sort((x, y) => x.p.compareTo(y.p));
-    // دمج المستويات المتقاربة (أقل من 0.6 ATR) في مستوى واحد يجمع أسماءها
-    List<_Lvl> merge(List<_Lvl> l) {
-      final out = <_Lvl>[];
-      for (final x in l) {
-        if (out.isNotEmpty && (x.p - out.last.p).abs() < 0.6 * a) {
-          final last = out.removeLast();
-          final names = {...last.name.split(' + '), x.name}.take(3).join(' + ');
-          out.add(_Lvl(last.p, names));
-        } else {
-          out.add(x);
-        }
-      }
-      return out;
-    }
-
-    final ms = merge(sup), mr = merge(res);
-    sup
-      ..clear()
-      ..addAll(ms);
-    res
-      ..clear()
-      ..addAll(mr);
-
     final lines = <String>[];
-    String desc(_Lvl l) {
+    String desc(Level l) {
       final d = (l.p - price).abs() / a;
       return '${_f(sym, l.p)} (${l.name}) — على بعد ${d.toStringAsFixed(1)} ATR';
     }
