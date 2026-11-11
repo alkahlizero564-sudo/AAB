@@ -373,6 +373,7 @@ class _ChartScreenState extends State<ChartScreen> {
           signal: s,
           forecast: st.forecast,
           algo: st.algo,
+          repaint: st.liveTick,
           sym: st.symbol,
           tf: st.tf,
           layers: layers,

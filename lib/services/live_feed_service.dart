@@ -11,9 +11,12 @@ import 'settings_service.dart';
 ///  • Other symbols → Twelve Data WebSocket (needs a plan that includes WS)
 ///  • Fallback      → Twelve Data /price polling every [AppSettings.pollSec]
 class LiveFeed {
-  LiveFeed({required this.onTick, required this.onStatus});
+  LiveFeed({required this.onTick, required this.onStatus, this.onCandle});
 
   final void Function(Tick) onTick;
+  /// شمعة كاملة لحظية (Binance kline): الافتتاح/الأعلى/الأدنى/الإغلاق/الحجم الحقيقي.
+  final void Function(Candle)? onCandle;
+  String _tf = '5m';
   final void Function(String status, String source) onStatus;
 
   WebSocketChannel? _ch;
@@ -36,11 +39,16 @@ class LiveFeed {
     return _pool!;
   }
 
-  void start(MarketSymbol sym, AppSettings s) {
+  void start(MarketSymbol sym, AppSettings s, {String tf = '5m'}) {
     stop();
     _sym = sym;
     _s = s;
+    _tf = tf;
     _attempt = 0;
+    if (s.liveWs && sym.isCrypto) {
+      _connect(_gen); // Binance مجاني وبدون مفتاح
+      return;
+    }
     if (!s.liveWs || (!s.hasTiingo && !s.hasTwelve)) {
       onStatus('off', 'REST');
       return;
@@ -63,7 +71,9 @@ class LiveFeed {
 
   Future<void> _connect(int gen) async {
     final sym = _sym!, s = _s!;
-    if (sym.tiingo && s.hasTiingo) {
+    if (sym.isCrypto && _attempt < 6) {
+      await _binanceWs(gen, sym);
+    } else if (sym.tiingo && s.hasTiingo) {
       await _tiingoWs(gen, sym, s);
     } else if (s.hasTwelve) {
       await _twelveWs(gen, sym, s);
@@ -78,6 +88,51 @@ class LiveFeed {
     if (src != 'Polling') _poll?.cancel();
     onTick(t);
     onStatus(src == 'Polling' ? 'poll' : 'live', src == 'Polling' ? 'Twelve Data' : src);
+  }
+
+  // ───────────── Binance kline WebSocket (العملات الرقمية) ─────────────
+  static const _binanceWsHosts = [
+    'wss://data-stream.binance.vision/ws/',
+    'wss://stream.binance.com:9443/ws/',
+  ];
+
+  Future<void> _binanceWs(int gen, MarketSymbol sym) async {
+    onStatus('connecting', 'Binance');
+    final host = _binanceWsHosts[_attempt % _binanceWsHosts.length];
+    try {
+      final stream = '${sym.binanceTicker.toLowerCase()}@kline_$_tf';
+      final ch = WebSocketChannel.connect(Uri.parse('$host$stream'));
+      await ch.ready;
+      if (gen != _gen) {
+        ch.sink.close();
+        return;
+      }
+      _ch = ch;
+      _sub = ch.stream.listen((raw) {
+        if (gen != _gen) return;
+        try {
+          final j = jsonDecode(raw as String);
+          final k = j['k'];
+          if (k is! Map) return;
+          double d(String key) => double.tryParse('${k[key]}') ?? double.nan;
+          final candle = Candle(
+            DateTime.fromMillisecondsSinceEpoch((k['t'] as num).toInt(), isUtc: true),
+            d('o'), d('h'), d('l'), d('c'), d('v'), d('V'),
+          );
+          if (candle.close.isNaN) return;
+          if (_attempt != 0) _attempt = 0;
+          _poll?.cancel();
+          if (onCandle != null) {
+            onCandle!(candle);
+          } else {
+            onTick(Tick(sym.code, candle.close, DateTime.now().toUtc()));
+          }
+          onStatus('live', 'Binance');
+        } catch (_) {}
+      }, onError: (_) => _scheduleRetry(gen), onDone: () => _scheduleRetry(gen));
+    } catch (e) {
+      _scheduleRetry(gen);
+    }
   }
 
   // ───────────── Tiingo FX WebSocket ─────────────

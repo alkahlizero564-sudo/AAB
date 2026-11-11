@@ -42,6 +42,7 @@ class NativeChart extends StatefulWidget {
   final String tf;
   final ChartLayers layers;
   final ValueChanged<int?>? onSelect; // رقم الشمعة تحت المؤشر المتقاطع (null عند الإخفاء)
+  final Listenable? repaint; // يعيد الرسم فوراً مع كل سعر لحظي
   const NativeChart({
     super.key,
     required this.candles,
@@ -49,6 +50,7 @@ class NativeChart extends StatefulWidget {
     this.forecast,
     this.algo,
     this.onSelect,
+    this.repaint,
     required this.sym,
     required this.tf,
     required this.layers,
@@ -194,7 +196,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint),
             ),
           ),
         ),
@@ -260,9 +262,12 @@ class _Painter extends CustomPainter {
   final DateTime now;
   final AlgoResult? al;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al);
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint)
+      : super(repaint: repaint);
 
-  bool get _algoOn => L.algo && al != null && al!.trend.length == c.length;
+  // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
+  bool get _algoOn =>
+      L.algo && al != null && al!.trend.length <= c.length && al!.trend.length >= c.length - 3;
 
   // ألوان AAB Algo حسب الاتجاه وقوته
   static const _algoUp = [Color(0xFF2E7D6B), Color(0xFF16C784), Color(0xFF00E676)];
@@ -600,7 +605,7 @@ class _Painter extends CustomPainter {
       for (final z in [a.zoneHi, a.zoneLo]) {
         final p = Path();
         var open = false;
-        for (var i = i0; i <= i1; i++) {
+        for (var i = i0; i <= i1 && i < z.length; i++) {
           if (z[i].isNaN) {
             open = false;
             continue;
@@ -612,7 +617,7 @@ class _Painter extends CustomPainter {
         canvas.drawPath(p, zp);
       }
       // خط الاتجاه بلون الاتجاه + تظليل خفيف بينه وبين السعر
-      for (var i = math.max(i0, 1); i <= i1; i++) {
+      for (var i = math.max(i0, 1); i <= i1 && i < a.line.length; i++) {
         final l0 = a.line[i - 1], l1 = a.line[i];
         if (l0.isNaN || l1.isNaN || a.trend[i] != a.trend[i - 1]) continue;
         final col = a.trend[i] > 0 ? _up : _down;
@@ -675,7 +680,7 @@ class _Painter extends CustomPainter {
         final q = k[i];
         final x = xOf(i.toDouble());
         final bull = q.close >= q.open;
-        if (_algoOn && al!.trend[i] != 0) {
+        if (_algoOn && i < al!.trend.length && al!.trend[i] != 0) {
           // تلوين AAB Algo: لون الاتجاه ودرجته حسب قوته
           final col = (al!.trend[i] > 0 ? _algoUp : _algoDn)[al!.power[i]];
           final fill = Paint()..color = bull ? col : col.withOpacity(0.55);

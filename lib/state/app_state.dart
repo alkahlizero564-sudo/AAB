@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -58,8 +59,12 @@ class AppState extends ChangeNotifier {
 
   static const timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
 
+  /// يزيد مع كل سعر لحظي — الشارت يعيد الرسم فوراً بدون انتظار التحليل.
+  final liveTick = ValueNotifier<int>(0);
+  bool _analyzing = false, _again = false;
+
   AppState() {
-    _feed = LiveFeed(onTick: _onTick, onStatus: _onLiveStatus);
+    _feed = LiveFeed(onTick: _onTick, onStatus: _onLiveStatus, onCandle: _onCandle);
   }
 
   Future<void> init() async {
@@ -71,7 +76,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     if (settings.hasTwelve || settings.hasTiingo) {
       await refresh();
-      _feed.start(symbol, settings);
+      _feed.start(symbol, settings, tf: tf);
     } else {
       tab = 4; // go to settings so the user can add keys
       notifyListeners();
@@ -92,8 +97,7 @@ class AppState extends ChangeNotifier {
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_dirty) {
         _dirty = false;
-        _analyze();
-        notifyListeners();
+        _analyzeAsync();
       }
     });
   }
@@ -121,9 +125,49 @@ class AppState extends ChangeNotifier {
       if (candles.length > 450) candles.removeAt(0);
     } else {
       candles[candles.length - 1] = Candle(last.time, last.open,
-          math.max(last.high, p), math.min(last.low, p), p, last.volume);
+          math.max(last.high, p), math.min(last.low, p), p, last.volume, last.buyVol);
     }
+    liveTick.value++;
     _dirty = true;
+  }
+
+  /// شمعة كاملة لحظية من Binance (العملات الرقمية).
+  void _onCandle(Candle k) {
+    if (candles.isEmpty) return;
+    lastTickAt = DateTime.now();
+    final last = candles.last;
+    if (k.ts == last.ts) {
+      candles[candles.length - 1] = k;
+    } else if (k.ts > last.ts) {
+      candles.add(k);
+      if (candles.length > 450) candles.removeAt(0);
+    } else {
+      return;
+    }
+    liveTick.value++;
+    _dirty = true;
+  }
+
+  /// يدمج بيانات الخادم مع الشموع اللحظية: الخادم قد يتأخر، فلا نعود بالشمعة للخلف.
+  List<Candle> _mergeLive(List<Candle> rest) {
+    if (rest.isEmpty || candles.isEmpty || lastTickAt == null) return rest;
+    if (DateTime.now().difference(lastTickAt!).inMinutes >= 3) return rest;
+    final lastRest = rest.last.ts;
+    final live = candles.where((k) => k.ts >= lastRest).toList();
+    if (live.isEmpty) return rest;
+    final out = rest.where((k) => k.ts < live.first.ts).toList();
+    for (final k in live) {
+      final same = rest.lastIndexWhere((r) => r.ts == k.ts);
+      if (same >= 0) {
+        final r = rest[same];
+        // نفس الشمعة: الأعلى/الأدنى من الاثنين، والإغلاق من السعر اللحظي الأحدث
+        out.add(Candle(k.time, r.open, math.max(r.high, k.high), math.min(r.low, k.low),
+            k.close, math.max(r.volume, k.volume), k.buyVol >= 0 ? k.buyVol : r.buyVol));
+      } else {
+        out.add(k);
+      }
+    }
+    return out.length > 450 ? out.sublist(out.length - 450) : out;
   }
 
   void setTab(int i) {
@@ -137,7 +181,7 @@ class AppState extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     await p.setString('symbol', s.code);
     notifyListeners();
-    _feed.start(symbol, settings);
+    _feed.start(symbol, settings, tf: tf);
     await refresh();
   }
 
@@ -148,6 +192,7 @@ class AppState extends ChangeNotifier {
     await p.setString('tf', t);
     notifyListeners();
     await refresh();
+    _feed.start(symbol, settings, tf: tf); // بث شموع الإطار الجديد (العملات الرقمية)
   }
 
   void _resetData() {
@@ -177,19 +222,52 @@ class AppState extends ChangeNotifier {
     await s.save();
     _startTimers();
     notifyListeners();
-    _feed.start(symbol, settings);
+    _feed.start(symbol, settings, tf: tf);
     await refresh();
     loadNews();
   }
 
+  /// التحليل الكامل في خيط منفصل (Isolate) حتى لا يتجمّد الشارت أثناءه.
+  Future<void> _analyzeAsync() async {
+    if (candles.isEmpty) return;
+    if (_analyzing) {
+      _again = true;
+      return;
+    }
+    _analyzing = true;
+    final gen = _gen;
+    final snap = List<Candle>.of(candles);
+    final h = htf == null ? null : List<Candle>.of(htf!);
+    final s = settings, sym = symbol, cfg = EngineConfig.current;
+    final rr1 = settings.rr1For(symbol.category), rr2 = settings.rr2;
+    (TradeSignal, Forecast, AlgoResult) res;
+    try {
+      res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2));
+    } catch (_) {
+      res = _computeAll(snap, h, s, sym, cfg, rr1, rr2); // احتياط
+    }
+    _analyzing = false;
+    if (gen != _gen) return;
+    _apply(res);
+    notifyListeners();
+    if (_again) {
+      _again = false;
+      _analyzeAsync();
+    }
+  }
+
   void _analyze() {
     if (candles.isEmpty) return;
+    _apply(_computeAll(candles, htf, settings, symbol, EngineConfig.current,
+        settings.rr1For(symbol.category), settings.rr2));
+  }
+
+  void _apply((TradeSignal, Forecast, AlgoResult) r) {
     final prev = signal;
-    final base = SignalEngine.analyze(candles, htf: htf, s: settings, sym: symbol);
-    forecast = buildForecast(candles,
-        rr1: settings.rr1For(symbol.category), rr2: settings.rr2);
-    signal = _unify(base, forecast!);
-    algo = aabAlgo(candles, sens: 2.0, withPanel: false);
+    final (base, fc, al) = r;
+    forecast = fc;
+    signal = _unify(base, fc);
+    algo = al;
     if (prev != null && prev.direction == signal!.direction) {
       signal!.aiVerdict = prev.aiVerdict;
       signal!.aiComment = prev.aiComment;
@@ -271,7 +349,8 @@ class AppState extends ChangeNotifier {
     try {
       final data = await _market.fetch(symbol, tf, settings);
       if (gen != _gen) return;
-      candles = data;
+      candles = _mergeLive(data);
+      liveTick.value++;
       final stale = _htfAt == null ||
           DateTime.now().difference(_htfAt!).inMinutes >= 5;
       if (stale) {
@@ -344,6 +423,16 @@ class AppState extends ChangeNotifier {
     _timer?.cancel();
     _newsTimer?.cancel();
     _uiTimer?.cancel();
+    liveTick.dispose();
     super.dispose();
   }
+}
+
+/// كل الحسابات الثقيلة (تعمل داخل Isolate): المحرك القديم للطبقات، محرك التوصيات، و AAB Algo.
+(TradeSignal, Forecast, AlgoResult) _computeAll(List<Candle> c, List<Candle>? htf,
+    AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2) {
+  final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
+  final fc = buildForecast(c, rr1: rr1, rr2: rr2);
+  final al = aabAlgo(c, sens: 2.0, withPanel: false);
+  return (base, fc, al);
 }
