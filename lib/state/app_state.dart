@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../analysis/aab_algo.dart';
 import '../analysis/forecast.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
@@ -28,6 +29,7 @@ class AppState extends ChangeNotifier {
   DateTime? _htfAt;
   TradeSignal? signal;
   Forecast? forecast; // توصيات الشارت + توقع الشمعة القادمة
+  AlgoResult? algo; // مؤشر AAB Algo (تلوين الشموع + خط الاتجاه + مناطق الانعكاس)
   bool loading = false;
   String? error;
   DateTime? lastUpdate;
@@ -155,6 +157,7 @@ class AppState extends ChangeNotifier {
     _htfAt = null;
     signal = null;
     forecast = null;
+    algo = null;
     error = null;
     _aiDir = null;
     _aiAt = null;
@@ -185,6 +188,7 @@ class AppState extends ChangeNotifier {
     final base = SignalEngine.analyze(candles, htf: htf, s: settings, sym: symbol);
     forecast = buildForecast(candles, rr1: settings.rr1, rr2: settings.rr2);
     signal = _unify(base, forecast!);
+    algo = aabAlgo(candles, sens: 2.0, withPanel: false);
     if (prev != null && prev.direction == signal!.direction) {
       signal!.aiVerdict = prev.aiVerdict;
       signal!.aiComment = prev.aiComment;

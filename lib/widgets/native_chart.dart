@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import '../analysis/aab_algo.dart';
 import '../analysis/forecast.dart';
 import '../analysis/indicators.dart';
 import '../models.dart';
@@ -9,7 +10,8 @@ import '../theme.dart';
 
 class ChartLayers {
   bool fib = false, vp = false, zones = true, vwap = false, levels = false, ce = false;
-  bool sigs = true, fc = true, pats = true, ema = true;
+  bool sigs = true, fc = true, pats = true, ema = false;
+  bool algo = true; // مؤشر AAB Algo: تلوين الشموع + خط الاتجاه + مناطق الانعكاس
   bool vol = true; // أعمدة الحجم أسفل الشارت
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
@@ -35,6 +37,7 @@ class NativeChart extends StatefulWidget {
   final List<Candle> candles;
   final TradeSignal? signal;
   final Forecast? forecast;
+  final AlgoResult? algo;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -44,6 +47,7 @@ class NativeChart extends StatefulWidget {
     required this.candles,
     required this.signal,
     this.forecast,
+    this.algo,
     this.onSelect,
     required this.sym,
     required this.tf,
@@ -190,7 +194,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc()),
+                  DateTime.now().toUtc(), widget.algo),
             ),
           ),
         ),
@@ -254,8 +258,15 @@ class _Painter extends CustomPainter {
   final ChartLayers L;
   final double yZoom;
   final DateTime now;
+  final AlgoResult? al;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now);
+      this.cross, this.L, this.yZoom, this.now, this.al);
+
+  bool get _algoOn => L.algo && al != null && al!.trend.length == c.length;
+
+  // ألوان AAB Algo حسب الاتجاه وقوته
+  static const _algoUp = [Color(0xFF2E7D6B), Color(0xFF16C784), Color(0xFF00E676)];
+  static const _algoDn = [Color(0xFF8E3B46), Color(0xFFEA3943), Color(0xFFFF1744)];
 
   static const _up = AppColors.up, _down = AppColors.down;
 
@@ -579,6 +590,48 @@ class _Painter extends CustomPainter {
       ln(f!.ema200, const Color(0xFFE040FB), 1.6);
     }
 
+    // ── AAB Algo: مناطق الانعكاس + خط الاتجاه
+    if (_algoOn) {
+      final a = al!;
+      final zp = Paint()
+        ..color = const Color(0xFFB388FF).withOpacity(0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1;
+      for (final z in [a.zoneHi, a.zoneLo]) {
+        final p = Path();
+        var open = false;
+        for (var i = i0; i <= i1; i++) {
+          if (z[i].isNaN) {
+            open = false;
+            continue;
+          }
+          final o = Offset(xOf(i.toDouble()), yOf(z[i]));
+          open ? p.lineTo(o.dx, o.dy) : p.moveTo(o.dx, o.dy);
+          open = true;
+        }
+        canvas.drawPath(p, zp);
+      }
+      // خط الاتجاه بلون الاتجاه + تظليل خفيف بينه وبين السعر
+      for (var i = math.max(i0, 1); i <= i1; i++) {
+        final l0 = a.line[i - 1], l1 = a.line[i];
+        if (l0.isNaN || l1.isNaN || a.trend[i] != a.trend[i - 1]) continue;
+        final col = a.trend[i] > 0 ? _up : _down;
+        final x0 = xOf(i - 1.0), x1 = xOf(i.toDouble());
+        final fill = Path()
+          ..moveTo(x0, yOf(l0))
+          ..lineTo(x1, yOf(l1))
+          ..lineTo(x1, yOf(c[i].close))
+          ..lineTo(x0, yOf(c[i - 1].close))
+          ..close();
+        canvas.drawPath(fill, Paint()..color = col.withOpacity(0.07));
+        canvas.drawLine(Offset(x0, yOf(l0)), Offset(x1, yOf(l1)),
+            Paint()
+              ..color = col
+              ..strokeWidth = 2.2
+              ..strokeCap = StrokeCap.round);
+      }
+    }
+
     // ── السعر: شموع / Heikin Ashi / خطي
     if (L.type == 'line') {
       final path = Path(), area = Path();
@@ -622,6 +675,20 @@ class _Painter extends CustomPainter {
         final q = k[i];
         final x = xOf(i.toDouble());
         final bull = q.close >= q.open;
+        if (_algoOn && al!.trend[i] != 0) {
+          // تلوين AAB Algo: لون الاتجاه ودرجته حسب قوته
+          final col = (al!.trend[i] > 0 ? _algoUp : _algoDn)[al!.power[i]];
+          final fill = Paint()..color = bull ? col : col.withOpacity(0.55);
+          canvas.drawLine(Offset(x, yOf(q.high)), Offset(x, yOf(q.low)),
+              Paint()
+                ..color = col
+                ..strokeWidth = math.max(1.0, barW * 0.08));
+          final yo = yOf(q.open), yc = yOf(q.close);
+          final top = math.min(yo, yc), bot = math.max(yo, yc);
+          canvas.drawRect(
+              Rect.fromLTRB(x - bodyW / 2, top, x + bodyW / 2, math.max(bot, top + 1)), fill);
+          continue;
+        }
         canvas.drawLine(Offset(x, yOf(q.high)), Offset(x, yOf(q.low)), bull ? wickUp : wickDn);
         final yo = yOf(q.open), yc = yOf(q.close);
         final top = math.min(yo, yc), bot = math.max(yo, yc);
@@ -1087,6 +1154,15 @@ class _Painter extends CustomPainter {
       lines.add((
         'دقة توقع اتجاه الشمعة: ${(fc.predAcc * 100).toStringAsFixed(0)}% (${fc.predN} توقع)',
         fc.predAcc >= 0.5 ? _up : _down
+      ));
+    }
+    if (_algoOn) {
+      final a = al!;
+      final t = a.trend.last, p = a.power.last;
+      lines.add((
+        'AAB Algo: اتجاه ${t > 0 ? 'صاعد' : t < 0 ? 'هابط' : '-'} '
+            '${p == 2 ? 'قوي' : p == 1 ? 'متوسط' : 'ضعيف'}',
+        t > 0 ? _up : (t < 0 ? _down : AppColors.muted)
       ));
     }
     if (L.ema) {
