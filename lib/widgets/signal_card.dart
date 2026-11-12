@@ -72,54 +72,43 @@ class SignalCard extends StatelessWidget {
       trailing: const LiveBadge(),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Container(
-            width: 86,
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: active ? col : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              border: active ? null : Border.all(color: AppColors.accent.withOpacity(0.6)),
-            ),
-            child: Column(children: [
+          GaugeRing(
+            value: sig.strength / 100,
+            color: active ? col : AppColors.accent,
+            size: 118,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(
                   sig.direction == Direction.buy
-                      ? Icons.north_east_rounded
+                      ? Icons.trending_up_rounded
                       : sig.direction == Direction.sell
-                          ? Icons.south_east_rounded
-                          : Icons.pause_rounded,
-                  size: 18,
-                  color: active ? Colors.white : AppColors.gold),
+                          ? Icons.trending_down_rounded
+                          : Icons.pause_circle_outline_rounded,
+                  size: 20,
+                  color: active ? col : AppColors.gold),
               Text(word,
                   style: TextStyle(
-                      color: active ? Colors.white : AppColors.gold,
-                      fontSize: 17,
+                      color: active ? col : AppColors.gold,
+                      fontSize: 19,
                       fontWeight: FontWeight.w800,
-                      height: 1.2)),
+                      height: 1.15)),
+              Text('${sig.strength.toStringAsFixed(0)}%',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w700)),
             ]),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(dirOutlook(sig.direction),
-                  style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 14)),
-              const SizedBox(height: 6),
-              Row(children: [
-                const Text('قوة الإشارة',
-                    style: TextStyle(color: AppColors.muted, fontSize: 11)),
-                const Spacer(),
-                Text('${sig.strength.toStringAsFixed(0)}%',
-                    style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
+                  style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w800, fontSize: 15)),
+              const SizedBox(height: 4),
+              const Text('قوة الإشارة وتوافق المؤشرات',
+                  style: TextStyle(color: AppColors.muted, fontSize: 11)),
+              const SizedBox(height: 10),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                if (active) Tag('درجة ${sig.grade}', color: col),
+                Tag('توافق ${sig.agree}/${sig.total}'),
+                if (sig.killzone.isNotEmpty) Tag(sig.killzone),
               ]),
-              const SizedBox(height: 5),
-              _meter(sig.strength / 100, col),
-              if (sig.killzone.isNotEmpty || active) ...[
-                const SizedBox(height: 8),
-                Wrap(spacing: 6, runSpacing: 4, children: [
-                  if (active) Tag('درجة ${sig.grade}', color: col),
-                  if (sig.killzone.isNotEmpty) Tag(sig.killzone),
-                ]),
-              ],
             ]),
           ),
         ]),
@@ -132,7 +121,6 @@ class SignalCard extends StatelessWidget {
           _row('الهدف 3', sig.tp3, AppColors.up),
           const SizedBox(height: 10),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            Tag('توافق ${sig.agree}/${sig.total}'),
             Tag('ATR ${sym.fmt(sig.atr)}'),
             Tag(sig.htfTrend == 0
                 ? 'الإطار الأعلى: محايد'
@@ -169,21 +157,6 @@ class SignalCard extends StatelessWidget {
       ]),
     );
   }
-
-  /// مقياس مقسّم (20 خانة) بأسلوب المنصات.
-  Widget _meter(double v, Color c) => Row(children: [
-        for (var i = 0; i < 20; i++)
-          Expanded(
-            child: Container(
-              height: 6,
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              decoration: BoxDecoration(
-                color: i < (v * 20).round() ? c : AppColors.border.withOpacity(0.6),
-                borderRadius: BorderRadius.circular(1.5),
-              ),
-            ),
-          ),
-      ]);
 
   Widget _row(String t, double v, Color c, {bool first = false}) {
     final pct = sig.price > 0 ? (v - sig.price) / sig.price * 100 : 0.0;

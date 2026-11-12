@@ -147,46 +147,66 @@ class HomeShell extends StatelessWidget {
           SettingsScreen(),
         ],
       ),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border, width: 0.7)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 60,
-            child: Row(children: [
-              for (var i = 0; i < _titles.length; i++)
-                Expanded(
-                  child: InkWell(
-                    onTap: () => st.setTab(i),
-                    child: Column(children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: st.tab == i ? 28 : 0,
-                        height: 2.5,
-                        decoration: BoxDecoration(
-                          gradient: AppColors.goldGrad,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const Spacer(),
-                      Icon(st.tab == i ? _iconsOn[i] : _icons[i],
-                          size: 22, color: st.tab == i ? AppColors.gold : AppColors.muted),
-                      const SizedBox(height: 3),
-                      Text(_titles[i],
-                          style: TextStyle(
-                              fontSize: 10.5,
-                              height: 1.1,
-                              fontWeight: st.tab == i ? FontWeight.w700 : FontWeight.w500,
-                              color: st.tab == i ? AppColors.gold : AppColors.muted)),
-                      const Spacer(),
-                    ]),
-                  ),
-                ),
-            ]),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Container(
+          height: 66,
+          margin: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppColors.border, width: 0.8),
+            boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 6))],
           ),
+          child: Row(children: [
+            for (final i in const [0, 2, 1, 3, 4])
+              Expanded(
+                child: i == 1
+                    // زر الشارت في المنتصف: دائرة ذهبية بارزة
+                    ? Center(
+                        child: GestureDetector(
+                          onTap: () => st.setTab(1),
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              gradient: AppColors.goldGrad,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: st.tab == 1 ? AppColors.text : Colors.transparent, width: 1.5),
+                              boxShadow: [
+                                BoxShadow(color: AppColors.accent.withOpacity(0.45), blurRadius: 14),
+                              ],
+                            ),
+                            child: const Icon(Icons.candlestick_chart, color: AppColors.onAccent, size: 26),
+                          ),
+                        ),
+                      )
+                    : InkWell(
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () => st.setTab(i),
+                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: st.tab == i ? AppColors.accent.withOpacity(0.16) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(st.tab == i ? _iconsOn[i] : _icons[i],
+                                size: 22, color: st.tab == i ? AppColors.gold : AppColors.muted),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(_titles[i],
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  height: 1.1,
+                                  fontWeight: st.tab == i ? FontWeight.w700 : FontWeight.w500,
+                                  color: st.tab == i ? AppColors.gold : AppColors.muted)),
+                        ]),
+                      ),
+              ),
+          ]),
         ),
       ),
     );

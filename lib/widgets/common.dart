@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data/symbols.dart';
@@ -409,5 +410,175 @@ class _MarketsListState extends State<MarketsList> {
               ),
       ),
     ]);
+  }
+}
+
+
+/// خط سعر مصغّر بتعبئة متدرجة (Sparkline).
+class Sparkline extends StatelessWidget {
+  final List<double> values;
+  final Color color;
+  final double height;
+  const Sparkline(this.values, {super.key, required this.color, this.height = 70});
+  @override
+  Widget build(BuildContext context) =>
+      SizedBox(height: height, width: double.infinity, child: CustomPaint(painter: _SparkPainter(values, color)));
+}
+
+class _SparkPainter extends CustomPainter {
+  final List<double> v;
+  final Color c;
+  _SparkPainter(this.v, this.c);
+  @override
+  void paint(Canvas cv, Size sz) {
+    if (v.length < 2) return;
+    final lo = v.reduce(math.min), hi = v.reduce(math.max);
+    final rng = hi - lo == 0 ? 1.0 : hi - lo;
+    Offset pt(int i) => Offset(i / (v.length - 1) * sz.width, sz.height - 4 - (v[i] - lo) / rng * (sz.height - 8));
+    final line = Path()..moveTo(pt(0).dx, pt(0).dy);
+    for (var i = 1; i < v.length; i++) {
+      line.lineTo(pt(i).dx, pt(i).dy);
+    }
+    final area = Path.from(line)
+      ..lineTo(sz.width, sz.height)
+      ..lineTo(0, sz.height)
+      ..close();
+    cv.drawPath(
+        area,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [c.withOpacity(0.35), c.withOpacity(0.0)],
+          ).createShader(Offset.zero & sz));
+    cv.drawPath(
+        line,
+        Paint()
+          ..color = c
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..strokeJoin = StrokeJoin.round);
+    final last = pt(v.length - 1);
+    cv.drawCircle(last, 6, Paint()..color = c.withOpacity(0.25));
+    cv.drawCircle(last, 3, Paint()..color = c);
+  }
+
+  @override
+  bool shouldRepaint(_SparkPainter o) => o.v != v || o.c != c;
+}
+
+/// حلقة قياس دائرية (قوة الإشارة).
+class GaugeRing extends StatelessWidget {
+  final double value; // 0..1
+  final Color color;
+  final Widget child;
+  final double size;
+  const GaugeRing({super.key, required this.value, required this.color, required this.child, this.size = 120});
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _RingPainter(value.clamp(0, 1).toDouble(), color),
+          child: Center(child: child),
+        ),
+      );
+}
+
+class _RingPainter extends CustomPainter {
+  final double v;
+  final Color c;
+  _RingPainter(this.v, this.c);
+  @override
+  void paint(Canvas cv, Size sz) {
+    final r = Rect.fromLTWH(7, 7, sz.width - 14, sz.height - 14);
+    const start = math.pi * 0.75, sweep = math.pi * 1.5;
+    cv.drawArc(r, start, sweep, false,
+        Paint()
+          ..color = AppColors.border
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 9
+          ..strokeCap = StrokeCap.round);
+    if (v > 0) {
+      cv.drawArc(r, start, sweep * v, false,
+          Paint()
+            ..shader = SweepGradient(
+              startAngle: start,
+              endAngle: start + sweep,
+              colors: [c.withOpacity(0.5), c],
+              transform: const GradientRotation(0),
+            ).createShader(r)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 9
+            ..strokeCap = StrokeCap.round);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RingPainter o) => o.v != v || o.c != c;
+}
+
+/// شريط الأسواق السريع (المفضلة أو أشهر الرموز).
+class WatchStrip extends StatelessWidget {
+  const WatchStrip({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final st = context.watch<AppState>();
+    final codes = <String>{
+      st.symbol.code,
+      ...st.favorites,
+      'XAU/USD', 'BTC/USD', 'EUR/USD', 'GBP/USD', 'XAG/USD', 'USD/JPY', 'ETH/USD',
+    }.where((c) => allSymbols.any((s) => s.code == c)).toList();
+    return SizedBox(
+      height: 54,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final c in codes)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () => st.setSymbol(symbolByCode(c)),
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 12, 6),
+                  decoration: BoxDecoration(
+                    gradient: c == st.symbol.code ? AppColors.goldGrad : null,
+                    color: c == st.symbol.code ? null : AppColors.card,
+                    borderRadius: BorderRadius.circular(14),
+                    border: c == st.symbol.code
+                        ? null
+                        : Border.all(color: AppColors.border.withOpacity(0.7), width: 0.8),
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: c == st.symbol.code
+                            ? AppColors.onAccent.withOpacity(0.15)
+                            : AppColors.accent.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(c.replaceAll('/', '').substring(0, 2),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: c == st.symbol.code ? AppColors.onAccent : AppColors.gold)),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(c,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: c == st.symbol.code ? AppColors.onAccent : AppColors.text)),
+                  ]),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models.dart';
@@ -19,28 +20,10 @@ class DashboardScreen extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         physics: const AlwaysScrollableScrollPhysics(),
         children: [
-          Row(children: [
-            const SymbolButton(),
-            const Spacer(),
-            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text(sig == null ? '—' : st.symbol.fmt(sig.price),
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2)),
-              if (st.lastUpdate != null)
-                Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(color: AppColors.up, shape: BoxShape.circle)),
-                  const SizedBox(width: 5),
-                  Text(_hhmmss(st.lastUpdate!),
-                      style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                ]),
-            ]),
-          ]),
-          const SizedBox(height: 8),
-          const TfChips(),
-          const SizedBox(height: 14),
+          const WatchStrip(),
+          const SizedBox(height: 12),
+          _PriceHero(st: st),
+          const SizedBox(height: 12),
           if (st.error != null) ErrorBanner(st.error!),
           if (st.loading && sig == null)
             const Padding(
@@ -66,6 +49,83 @@ class DashboardScreen extends StatelessWidget {
 }
 
 /// بطاقة القرار الرئيسية: قرار مؤشر ALL الآن (دمج AAB و Alka).
+/// بطاقة السعر: الرمز، السعر، التغير، خط السعر المصغر، والأُطر الزمنية.
+class _PriceHero extends StatelessWidget {
+  final AppState st;
+  const _PriceHero({required this.st});
+  @override
+  Widget build(BuildContext context) {
+    final c = st.candles;
+    final price = st.signal?.price ?? (c.isEmpty ? double.nan : c.last.close);
+    double chg = 0;
+    if (c.length > 2) {
+      final dayStart = c.lastIndexWhere((k) => k.time.day != c.last.time.day);
+      final ref = c[dayStart < 0 ? 0 : dayStart].close;
+      chg = (c.last.close - ref) / ref * 100;
+    }
+    final col = chg >= 0 ? AppColors.up : AppColors.down;
+    final closes = [for (final k in c.skip(math.max(0, c.length - 90))) k.close];
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1A1710), Color(0xFF111114)],
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+        ),
+        border: Border.all(color: AppColors.accent.withOpacity(0.35), width: 0.8),
+      ),
+      child: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const SymbolButton(),
+            const Spacer(),
+            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text(price.isNaN ? '—' : st.symbol.fmt(price),
+                  style: const TextStyle(
+                      fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15)),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: col.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(chg >= 0 ? Icons.arrow_drop_up_rounded : Icons.arrow_drop_down_rounded,
+                      color: col, size: 18),
+                  Text('${chg >= 0 ? '+' : ''}${chg.toStringAsFixed(2)}% اليوم',
+                      style: TextStyle(color: col, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                ]),
+              ),
+            ]),
+          ]),
+        ),
+        const SizedBox(height: 6),
+        Sparkline(closes, color: col, height: 84),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+          child: TfTabs(current: st.tf, onPick: st.setTf, height: 38),
+        ),
+        if (st.lastUpdate != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(color: AppColors.up, shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+              Text('آخر تحديث ${DashboardScreen._hhmmss(st.lastUpdate!)}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+            ]),
+          ),
+      ]),
+    );
+  }
+}
+
 class _AllHero extends StatelessWidget {
   final AppState st;
   const _AllHero({required this.st});
