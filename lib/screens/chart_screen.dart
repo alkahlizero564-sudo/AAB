@@ -268,108 +268,141 @@ class _ChartScreenState extends State<ChartScreen> {
         ]),
       );
 
+  Widget _tool(String icon, String label, VoidCallback onTap, {bool primary = false}) => Padding(
+        padding: const EdgeInsetsDirectional.only(end: 6),
+        child: Material(
+          color: primary ? AppColors.accent : AppColors.card,
+          shape: StadiumBorder(side: BorderSide(color: primary ? AppColors.accent : AppColors.border)),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(icon, style: const TextStyle(fontSize: 13)),
+                const SizedBox(width: 5),
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: primary ? Colors.white : AppColors.text,
+                        fontWeight: FontWeight.w700)),
+              ]),
+            ),
+          ),
+        ),
+      );
+
   Widget _toolbar() => SizedBox(
-        height: 36,
+        height: 38,
         child: ListView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+          padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
           children: [
-            Padding(
-              padding: const EdgeInsetsDirectional.only(end: 6),
-              child: ActionChip(
-                avatar: const Text('🧠'),
-                label: const Text('قراءة الشارت',
-                    style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
-                backgroundColor: AppColors.accent,
-                side: BorderSide.none,
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _showReading(context.read<AppState>()),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsetsDirectional.only(end: 6),
-              child: ActionChip(
-                avatar: const Text('🏆'),
-                label: const Text('مقارنة', style: TextStyle(fontSize: 11)),
-                backgroundColor: AppColors.card,
-                side: const BorderSide(color: AppColors.border),
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _showBench(context.read<AppState>()),
-              ),
-            ),
-            _seg(const [('candle', 'شموع'), ('ha', 'Heikin Ashi'), ('line', 'خطي')], layers.type,
-                (v) => layers.type = v),
-            _seg(const [('rsi', 'RSI'), ('macd', 'MACD'), ('none', 'بدون')], layers.sub,
-                (v) => layers.sub = v),
-            _seg(const [('on', 'الحجم')], layers.vol ? 'on' : '', (_) => layers.vol = !layers.vol),
-            IconButton(
-              tooltip: full ? 'إظهار الأدوات' : 'شاشة كاملة',
-              visualDensity: VisualDensity.compact,
-              iconSize: 20,
-              color: AppColors.accent,
-              icon: Icon(full ? Icons.fullscreen_exit : Icons.fullscreen),
-              onPressed: () => setState(() => full = !full),
-            ),
+            _tool('🧠', 'قراءة الشارت', () => _showReading(context.read<AppState>()), primary: true),
+            _tool('🏆', 'مقارنة', () => _showBench(context.read<AppState>())),
+            _tool('🎛️', 'طبقات', _showLayers),
+            _tool(layers.alka ? '🟢' : '⚪', 'Alka', () => setState(() => layers.alka = !layers.alka)),
+            _tool(layers.sigs ? '🟢' : '⚪', 'AAB', () => setState(() => layers.sigs = !layers.sigs)),
           ],
         ),
       );
 
-  Widget _chip(String label, bool on, VoidCallback tap) => Padding(
-        padding: const EdgeInsetsDirectional.only(end: 6),
-        child: FilterChip(
-          label: Text(label,
-              style: TextStyle(fontSize: 11, color: on ? Colors.white : AppColors.muted)),
-          selected: on,
-          onSelected: (_) => setState(tap),
-          selectedColor: AppColors.accent,
-          backgroundColor: AppColors.card,
-          showCheckmark: false,
-          visualDensity: VisualDensity.compact,
-          side: const BorderSide(color: AppColors.border),
-        ),
-      );
+  /// كل طبقات الشارت وإعداداته في قائمة واحدة مرتبة.
+  void _showLayers() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      builder: (_) => StatefulBuilder(builder: (ctx, setSheet) {
+        void upd(VoidCallback f) {
+          setState(f);
+          setSheet(() {});
+        }
+
+        Widget sw(String t, String sub, bool v, void Function(bool) on) => SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text(t, style: const TextStyle(color: AppColors.text, fontSize: 13)),
+              subtitle: sub.isEmpty
+                  ? null
+                  : Text(sub, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+              value: v,
+              onChanged: (x) => upd(() => on(x)),
+            );
+        Widget head(String t) => Padding(
+              padding: const EdgeInsets.only(top: 10, bottom: 4),
+              child: Text(t,
+                  style: const TextStyle(
+                      color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 13)),
+            );
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.75,
+          maxChildSize: 0.95,
+          builder: (_, ctl) => ListView(
+            controller: ctl,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              const Text('🎛️ طبقات الشارت',
+                  style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.bold)),
+              head('شكل الشارت'),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                _seg(const [('candle', 'شموع'), ('ha', 'Heikin Ashi'), ('line', 'خطي')], layers.type,
+                    (v) => upd(() => layers.type = v)),
+                _seg(const [('rsi', 'RSI'), ('macd', 'MACD'), ('none', 'بدون')], layers.sub,
+                    (v) => upd(() => layers.sub = v)),
+              ]),
+              sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
+              head('التوصيات والمؤشرات'),
+              sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka, (x) => layers.alka = x),
+              sw('توصيات AAB', 'أسهم الشراء/البيع ونتيجتها', layers.sigs, (x) => layers.sigs = x),
+              sw('AAB Algo', 'تلوين الشموع حسب قوة الاتجاه + خط الاتجاه', layers.algo, (x) => layers.algo = x),
+              sw('توقع الشمعة القادمة', 'يظهر فقط عندما يدعم القرار', layers.fc, (x) => layers.fc = x),
+              sw('أنماط الشموع', 'أسماء نماذج الشموع على الشارت', layers.pats, (x) => layers.pats = x),
+              head('خطوط ومستويات'),
+              sw('EMA 20/50/200', '', layers.ema, (x) => layers.ema = x),
+              sw('مناطق OB/FVG', 'Order Blocks والفجوات السعرية', layers.zones, (x) => layers.zones = x),
+              sw('مستويات اليوم والجلسات', 'PDH/PDL، آسيا، لندن...', layers.levels, (x) => layers.levels = x),
+              sw('Volume Profile', '', layers.vp, (x) => layers.vp = x),
+              sw('VWAP', '', layers.vwap, (x) => layers.vwap = x),
+              sw('Fibonacci', '', layers.fib, (x) => layers.fib = x),
+              sw('Chandelier Exit', '', layers.ce, (x) => layers.ce = x),
+            ],
+          ),
+        );
+      }),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
     final s = st.signal;
     return Column(children: [
-      if (!full) ...[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
-          child: Row(children: [
-            const SymbolButton(),
-            const SizedBox(width: 8),
-            const Flexible(child: LiveBadge()),
-          ]),
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14),
-          child: TfChips(),
-        ),
-        SizedBox(
-          height: 38,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            children: [
-              _chip('Alka', layers.alka, () => layers.alka = !layers.alka),
-            _chip('AAB Algo', layers.algo, () => layers.algo = !layers.algo),
-            _chip('توصيات', layers.sigs, () => layers.sigs = !layers.sigs),
-              _chip('توقع', layers.fc, () => layers.fc = !layers.fc),
-              _chip('أنماط الشموع', layers.pats, () => layers.pats = !layers.pats),
-              _chip('EMA 20/50/200', layers.ema, () => layers.ema = !layers.ema),
-              _chip('Fib', layers.fib, () => layers.fib = !layers.fib),
-              _chip('Volume Profile', layers.vp, () => layers.vp = !layers.vp),
-              _chip('مناطق OB/FVG', layers.zones, () => layers.zones = !layers.zones),
-              _chip('VWAP', layers.vwap, () => layers.vwap = !layers.vwap),
-              _chip('Chandelier', layers.ce, () => layers.ce = !layers.ce),
-              _chip('مستويات', layers.levels, () => layers.levels = !layers.levels),
-            ],
+      // صف 1: الرمز + حالة البث + شاشة كاملة
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 6, 2),
+        child: Row(children: [
+          const _CompactSymbol(),
+          const SizedBox(width: 8),
+          const Expanded(
+              child: Align(alignment: AlignmentDirectional.centerStart, child: LiveBadge())),
+          IconButton(
+            tooltip: full ? 'إظهار الأدوات' : 'شاشة كاملة',
+            visualDensity: VisualDensity.compact,
+            iconSize: 22,
+            color: AppColors.accent,
+            icon: Icon(full ? Icons.fullscreen_exit : Icons.fullscreen),
+            onPressed: () => setState(() => full = !full),
           ),
-        ),
+        ]),
+      ),
+      if (!full) ...[
+        // صف 2: الأُطر الزمنية (مضغوطة)
+        const _CompactTf(),
+        // صف 3: الأدوات
+        _toolbar(),
       ],
-      _toolbar(),
       Expanded(
         child: NativeChart(
           candles: st.candles,
@@ -493,6 +526,18 @@ class _ChartScreenState extends State<ChartScreen> {
 
   /// القرار الوحيد في شاشة الشارت (من محرك التوصيات المقاس).
   Widget _decisionBar(Decision d, MarketSymbol sym, {String tag = ''}) {
+    if (d.state == 0) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.border)),
+        ),
+        child: Text('${tag.isEmpty ? '' : '$tag: '}انتظار — لا توجد إشارة مكتملة الشروط',
+            style: const TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+      );
+    }
     final col = d.dir > 0
         ? AppColors.up
         : d.dir < 0
@@ -586,6 +631,74 @@ class _ChartScreenState extends State<ChartScreen> {
               child: Text('لا توجد صفقة — انتظر',
                   style: TextStyle(color: AppColors.muted, fontSize: 12))),
       ]),
+    );
+  }
+}
+
+/// زر الرمز المضغوط (يفتح قائمة الأسواق).
+class _CompactSymbol extends StatelessWidget {
+  const _CompactSymbol();
+  @override
+  Widget build(BuildContext context) {
+    final st = context.watch<AppState>();
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => showSymbolSheet(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(st.symbol.code,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.text)),
+          const Icon(Icons.keyboard_arrow_down, size: 18, color: AppColors.muted),
+        ]),
+      ),
+    );
+  }
+}
+
+/// الأُطر الزمنية في صف واحد مضغوط.
+class _CompactTf extends StatelessWidget {
+  const _CompactTf();
+  @override
+  Widget build(BuildContext context) {
+    final st = context.watch<AppState>();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+      child: Container(
+        height: 32,
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(children: [
+          for (final t in AppState.timeframes)
+            Expanded(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => st.setTf(t),
+                child: Container(
+                  margin: const EdgeInsets.all(2),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: st.tf == t ? AppColors.accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(t,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: st.tf == t ? FontWeight.w800 : FontWeight.w500,
+                          color: st.tf == t ? Colors.white : AppColors.muted)),
+                ),
+              ),
+            ),
+        ]),
+      ),
     );
   }
 }

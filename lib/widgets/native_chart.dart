@@ -10,8 +10,8 @@ import '../models.dart';
 import '../theme.dart';
 
 class ChartLayers {
-  bool fib = false, vp = false, zones = true, vwap = false, levels = false, ce = false;
-  bool sigs = true, fc = true, pats = true, ema = false;
+  bool fib = false, vp = false, zones = false, vwap = false, levels = false, ce = false;
+  bool sigs = true, fc = true, pats = false, ema = false;
   bool algo = true; // مؤشر AAB Algo: تلوين الشموع + خط الاتجاه + مناطق الانعكاس
   bool alka = true; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
   bool vol = true; // أعمدة الحجم أسفل الشارت
@@ -376,9 +376,13 @@ class _Painter extends CustomPainter {
       ..color = AppColors.border.withOpacity(0.45)
       ..strokeWidth = 1;
     final step = _niceStep((hi - lo) / 7);
+    // لا نكتب رقم المحور تحت لافتة السعر الحالي والعدّاد (حتى لا يتداخلا)
+    final lastPy = yOf(c.last.close).clamp(0.0, h - 26).toDouble();
     for (var p = (lo / step).ceil() * step; p <= hi; p += step) {
       final y = yOf(p);
       canvas.drawLine(Offset(0, y), Offset(w, y), gridP);
+      if (y > lastPy - 16 && y < lastPy + 26) continue;
+      if (y < 16) continue; // تحت شريط الأسعار العلوي
       _txt(canvas, sym.fmt(p), Offset(w + 4, y - 6));
     }
     // خطوط زمنية عمودية + محور الوقت
@@ -885,8 +889,8 @@ class _Painter extends CustomPainter {
       maxLines: 1,
       ellipsis: '…',
     )..layout(maxWidth: w - 8);
-    cv.drawRect(Rect.fromLTWH(4, 3, tp.width + 4, tp.height + 2),
-        Paint()..color = AppColors.bg.withOpacity(0.75));
+    // شريط كامل بخلفية شبه معتمة حتى لا تغطيه العلامات
+    cv.drawRect(Rect.fromLTWH(0, 0, w, tp.height + 7), Paint()..color = AppColors.bg.withOpacity(0.92));
     tp.paint(cv, const Offset(6, 4));
   }
 
@@ -1053,7 +1057,7 @@ class _Painter extends CustomPainter {
         }
         cv.drawPath(path, Paint()..color = sg.strong ? col : col.withOpacity(0.6));
         _txt(cv, buy ? 'شراء' : 'بيع',
-            Offset(xs - 10, buy ? yOf(k.low) + 14 : yOf(k.high) - 28),
+            Offset(xs - 10, buy ? yOf(k.low) + 14 : math.max(40.0, yOf(k.high) - 28)),
             color: Colors.white, size: 8, bold: true, bg: col, rtl: true);
         if (sg.total > 0) {
           _txt(cv, '${sg.agree}/${sg.total}',
@@ -1171,7 +1175,8 @@ class _Painter extends CustomPainter {
       final bw = tp.width + 10, bh = tp.height + 4;
       // سهم صغير يشير للشمعة + لافتة ملونة
       final tipY = buy ? yOf(k.low) + 3 : yOf(k.high) - 3;
-      final boxY = buy ? tipY + 7 : tipY - 7 - bh;
+      // لا ترتفع اللافتة فوق شريط الأسعار العلوي
+      final boxY = buy ? tipY + 7 : math.max(40.0, tipY - 7 - bh);
       final arrow = Path()
         ..moveTo(x, tipY)
         ..lineTo(x - 5, buy ? tipY + 7 : tipY - 7)
@@ -1226,47 +1231,44 @@ class _Painter extends CustomPainter {
     }
   }
 
+  /// سطر واحد مختصر تحت شريط الأسعار: دقة المؤشرين + اتجاه AAB Algo.
   void _legend(Canvas cv) {
     final fc = f!;
-    final lines = <(String, Color)>[];
+    final spans = <TextSpan>[];
+    void part(String t, Color col) {
+      if (spans.isNotEmpty) {
+        spans.add(const TextSpan(text: '  •  ', style: TextStyle(color: AppColors.muted)));
+      }
+      spans.add(TextSpan(text: t, style: TextStyle(color: col, fontWeight: FontWeight.w700)));
+    }
+
     if (L.alka && ak != null && ak!.closed > 0) {
       final a = ak!;
-      lines.add((
-        'دقة Alka على الشارت: ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins} ربح / ${a.losses} خسارة)',
-        a.winRate >= 0.5 ? const Color(0xFF00E676) : _down
-      ));
+      part('Alka ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? const Color(0xFF00E676) : _down);
     }
     if (L.sigs && fc.closed > 0) {
-      lines.add((
-        'دقة التوصيات على الشارت: ${(fc.winRate * 100).toStringAsFixed(0)}% '
-            '(${fc.wins} ربح / ${fc.losses} خسارة)',
-        fc.winRate >= 0.5 ? _up : _down
-      ));
-    }
-    if (L.fc && fc.predN > 0) {
-      lines.add((
-        'دقة توقع اتجاه الشمعة: ${(fc.predAcc * 100).toStringAsFixed(0)}% (${fc.predN} توقع)',
-        fc.predAcc >= 0.5 ? _up : _down
-      ));
+      part('AAB ${(fc.winRate * 100).toStringAsFixed(0)}% (${fc.wins}/${fc.closed})',
+          fc.winRate >= 0.5 ? _up : _down);
     }
     if (_algoOn) {
-      final a = al!;
-      final t = a.trend.last, p = a.power.last;
-      lines.add((
-        'AAB Algo: اتجاه ${t > 0 ? 'صاعد' : t < 0 ? 'هابط' : '-'} '
-            '${p == 2 ? 'قوي' : p == 1 ? 'متوسط' : 'ضعيف'}',
-        t > 0 ? _up : (t < 0 ? _down : AppColors.muted)
-      ));
+      final t = al!.trend.last, p = al!.power.last;
+      part('Algo ${t > 0 ? '▲' : t < 0 ? '▼' : '-'} ${p == 2 ? 'قوي' : p == 1 ? 'متوسط' : 'ضعيف'}',
+          t > 0 ? _up : (t < 0 ? _down : AppColors.muted));
     }
-    if (L.ema) {
-      lines.add(('EMA20 سماوي • EMA50 برتقالي • EMA200 بنفسجي', AppColors.muted));
-    }
-    var y = 22.0;
-    for (final (t, col) in lines) {
-      _txt(cv, t, Offset(6, y), color: col, size: 10, bg: AppColors.surface.withOpacity(0.85),
-          rtl: true);
-      y += 15;
-    }
+    if (spans.isEmpty) return;
+    final tp = TextPainter(
+      text: TextSpan(
+          style: TextStyle(fontFamily: chartFont, fontSize: 10),
+          children: spans),
+      textDirection: TextDirection.rtl,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: 420);
+    cv.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(4, 21, tp.width + 8, tp.height + 4), const Radius.circular(4)),
+        Paint()..color = AppColors.surface.withOpacity(0.9));
+    tp.paint(cv, const Offset(8, 23));
   }
 
   @override
