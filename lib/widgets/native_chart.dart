@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
+import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
 import '../analysis/indicators.dart';
 import '../models.dart';
@@ -11,15 +12,16 @@ import '../theme.dart';
 
 class ChartLayers {
   bool fib = false, vp = false, zones = false, vwap = false, levels = false, ce = false;
-  bool sigs = true, fc = true, pats = false, ema = false;
+  bool sigs = false, fc = true, pats = false, ema = false;
   bool algo = true; // مؤشر AAB Algo: تلوين الشموع + خط الاتجاه + مناطق الانعكاس
-  bool alka = true; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
+  bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
+  bool all = true; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool vol = true; // أعمدة الحجم أسفل الشارت
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -32,6 +34,7 @@ class ChartLayers {
     ..ema = ema
     ..algo = algo
     ..alka = alka ?? this.alka
+    ..all = all ?? this.all
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -59,6 +62,7 @@ class NativeChart extends StatefulWidget {
   final Forecast? forecast;
   final AlgoResult? algo;
   final AlkaResult? alka;
+  final AllResult? allR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -71,6 +75,7 @@ class NativeChart extends StatefulWidget {
     this.forecast,
     this.algo,
     this.alka,
+    this.allR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -218,7 +223,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR),
             ),
           ),
         ),
@@ -284,8 +289,9 @@ class _Painter extends CustomPainter {
   final DateTime now;
   final AlgoResult? al;
   final AlkaResult? ak;
+  final AllResult? ar;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -764,7 +770,12 @@ class _Painter extends CustomPainter {
     }
 
     if (f != null) _paintForecast(canvas, w, h, barW, xOf, yOf, inY, i0, i1);
-    if (L.alka && ak != null) _paintAlka(canvas, w, barW, xOf, yOf, inY, i0, i1);
+    if (L.alka && ak != null) {
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ak!.signals, ak!.pending, 'Alka', null);
+    }
+    if (L.all && ar != null) {
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ar!.signals, ar!.pending, 'ALL', AppColors.gold);
+    }
 
     // ── trade box (Entry / SL / TP1-3) like the QNA style
     if (f == null && s != null && s!.direction != Direction.neutral) {
@@ -1173,11 +1184,13 @@ class _Painter extends CustomPainter {
   }
 
   /// علامات Alka: "Alka شراء ▲" تحت الشمعة و "Alka بيع ▼" فوقها، مع نتيجة الصفقة.
-  void _paintAlka(Canvas cv, double w, double barW, double Function(double) xOf,
-      double Function(double) yOf, bool Function(double) inY, int i0, int i1) {
-    final a = ak!;
+  /// علامات شراء/بيع بأسلوب Alka لأي مؤشر: "TAG شراء ▲" تحت الشمعة و "TAG بيع ▼" فوقها،
+  /// مع نتيجة الصفقة، وخطوط الصفقة المفتوحة، والإشارة المنتظرة. [border] لون إطار مميز (ALL ذهبي).
+  void _paintTagged(Canvas cv, double w, double barW, double Function(double) xOf,
+      double Function(double) yOf, bool Function(double) inY, int i0, int i1,
+      List<PastSignal> signals, List<PendingSetup> pending, String tag, Color? border) {
     final n = c.length;
-    for (final sg in a.signals) {
+    for (final sg in signals) {
       if (sg.i < i0 || sg.i > i1 || sg.i >= n) continue;
       final buy = sg.dir > 0;
       final col = buy ? const Color(0xFF00C853) : const Color(0xFFFF1744);
@@ -1185,7 +1198,7 @@ class _Painter extends CustomPainter {
       final k = c[sg.i];
       final tp = TextPainter(
         text: TextSpan(
-            text: buy ? 'Alka شراء ▲' : 'Alka بيع ▼',
+            text: buy ? '$tag شراء ▲' : '$tag بيع ▼',
             style: TextStyle(
                 fontFamily: chartFont, color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
         textDirection: TextDirection.rtl,
@@ -1206,9 +1219,9 @@ class _Painter extends CustomPainter {
       cv.drawRRect(
           r,
           Paint()
-            ..color = Colors.white.withOpacity(0.85)
+            ..color = border ?? Colors.white.withOpacity(0.85)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 1);
+            ..strokeWidth = border == null ? 1 : 2);
       tp.paint(cv, Offset(x - tp.width / 2, boxY + 2));
       // النتيجة تحت/فوق اللافتة
       if (sg.result != 0 || sg.exitI >= 0) {
@@ -1221,9 +1234,9 @@ class _Painter extends CustomPainter {
             color: AppColors.gold, size: 9, bold: true, rtl: true);
       }
     }
-    // صفقة Alka مفتوحة: خطوط الدخول والوقف والهدف
-    if (a.signals.isNotEmpty && a.signals.last.exitI < 0) {
-      final sg = a.signals.last;
+    // صفقة مفتوحة: خطوط الدخول والوقف والهدف
+    if (signals.isNotEmpty && signals.last.exitI < 0) {
+      final sg = signals.last;
       final x0 = math.max(0.0, xOf(sg.i.toDouble()));
       void ln(double p, Color col, String t) {
         if (!inY(p)) return;
@@ -1233,18 +1246,18 @@ class _Painter extends CustomPainter {
         _txt(cv, '$t ${sym.fmt(p)}', Offset(w - 96, yOf(p) - 12), color: Colors.white, size: 9, bg: col.withOpacity(0.85));
       }
 
-      ln(sg.entry, const Color(0xFF9AA5B8), 'Alka دخول');
-      ln(sg.curStop.isNaN ? sg.sl : sg.curStop, _down, 'Alka وقف');
-      ln(sg.tp1, _up, 'Alka TP1');
+      ln(sg.entry, const Color(0xFF9AA5B8), '$tag دخول');
+      ln(sg.curStop.isNaN ? sg.sl : sg.curStop, _down, '$tag وقف');
+      ln(sg.tp1, _up, '$tag TP1');
     }
-    for (final p in a.pending) {
+    for (final p in pending) {
       if (!inY(p.trigger)) continue;
       final col = p.dir > 0 ? const Color(0xFF00C853) : const Color(0xFFFF1744);
       final xl = xOf((n - 1).toDouble()) - barW * 6;
       _dashed(cv, xl, w, yOf(p.trigger), Paint()
         ..color = col
         ..strokeWidth = 1.4, dash: 6, gap: 3);
-      _txt(cv, '⏳ Alka ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'} ${sym.fmt(p.trigger)}', Offset(xl, yOf(p.trigger) - 13),
+      _txt(cv, '⏳ $tag ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'} ${sym.fmt(p.trigger)}', Offset(xl, yOf(p.trigger) - 13),
           color: Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
     }
   }
@@ -1260,6 +1273,11 @@ class _Painter extends CustomPainter {
       spans.add(TextSpan(text: t, style: TextStyle(color: col, fontWeight: FontWeight.w700)));
     }
 
+    if (L.all && ar != null && ar!.closed > 0) {
+      final a = ar!;
+      part('ALL ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
     if (L.alka && ak != null && ak!.closed > 0) {
       final a = ak!;
       part('Alka ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import '../models.dart';
 import 'alka.dart';
+import 'all_indicator.dart';
 import 'forecast.dart';
 import 'indicator_panel.dart';
 import 'indicators.dart';
@@ -171,6 +172,14 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
     kr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
   }
   rows.add(BenchRow('★ مؤشر Alka', k.wins, k.closed, kr, ours: true));
+  // ALL بنفس الإدارة: دمج AAB و Alka + فلتر الشمعة الصغيرة
+  final al = combineAll(c, f.signals, const [], k.signals, const []);
+  var ar = 0.0;
+  for (final x in al.signals) {
+    if (x.result == 0) continue;
+    ar += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
+  }
+  rows.add(BenchRow('★ مؤشر ALL', al.wins, al.closed, ar, ours: true));
   rows.sort((a, b) {
     final c1 = b.winRate.compareTo(a.winRate);
     return c1 != 0 ? c1 : b.avgR.compareTo(a.avgR);

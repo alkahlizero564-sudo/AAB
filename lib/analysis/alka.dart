@@ -181,7 +181,7 @@ AlkaResult buildAlka(List<Candle> c,
         final (sl, t1, t2) = levels(i, d, trig);
         pending
           ..clear()
-          ..add(PendingSetup(d, trig, sl, t1, t2, why));
+          ..add(PendingSetup(d, trig, sl, t1, t2, why, i));
       }
       continue;
     }

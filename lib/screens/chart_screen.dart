@@ -205,7 +205,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 const Text(
                     'على 25 سوقاً حقيقياً (فوركس، ذهب، فضة، بيتكوين، أسهم، مؤشرات، نفط) وبنفس الإدارة: '
                     'AAB الأول (54.8%، رابح في 23 من 25) و Alka الثاني (54.3%، رابح في 25 من 25 وأعلى ربح إجمالي)، '
-                    'وبقية المؤشرات بين 47.6% و50.6%.',
+                    'وبقية المؤشرات بين 47.6% و50.6%. ALL (دمج الاثنين + الشمعة الصغيرة): 57.2% بنفس الهدف.',
                     style: TextStyle(color: AppColors.muted, fontSize: 10, height: 1.4)),
               ],
             );
@@ -400,6 +400,8 @@ class _ChartScreenState extends State<ChartScreen> {
             _tool('🧠', 'قراءة الشارت', () => _showReading(context.read<AppState>()), primary: true),
             _tool('🏆', 'مقارنة', () => _showBench(context.read<AppState>())),
             _tool('🎛️', 'طبقات', _showLayers),
+            _healthTool('ALL', context.read<AppState>().allHealth, layers.all,
+                () => setState(() => layers.all = !layers.all)),
             _healthTool('Alka', context.read<AppState>().alkaHealth, layers.alka,
                 () => setState(() => layers.alka = !layers.alka)),
             _healthTool('AAB', context.read<AppState>().aabHealth, layers.sigs,
@@ -454,6 +456,8 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
               head('التوصيات والمؤشرات'),
+              sw('ALL ⭐', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
+                  (x) => layers.all = x),
               sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka,
                   (x) => layers.alka = x),
               sw('توصيات AAB', 'أسهم الشراء/البيع ونتيجتها', layers.sigs, (x) => layers.sigs = x),
@@ -484,7 +488,9 @@ class _ChartScreenState extends State<ChartScreen> {
     final auto = st.settings.autoHideWeak;
     final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
     final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
-    final eff = layers.copyWith(sigs: layers.sigs && !hideAab, alka: layers.alka && !hideAlka);
+    final hideAll = auto && st.allHealth?.light == 'red' && !forceShow.contains('ALL|$mk');
+    final eff = layers.copyWith(
+        sigs: layers.sigs && !hideAab, alka: layers.alka && !hideAlka, all: layers.all && !hideAll);
     return Column(children: [
       // صف 1: الرمز + حالة البث + شاشة كاملة
       Padding(
@@ -516,6 +522,7 @@ class _ChartScreenState extends State<ChartScreen> {
           forecast: st.forecast,
           algo: st.algo,
           alka: st.alka,
+          allR: st.allR,
           repaint: st.liveTick,
           sym: st.symbol,
           tf: st.tf,
@@ -528,12 +535,14 @@ class _ChartScreenState extends State<ChartScreen> {
           _candlePanel(st, sel!)
         else if (!full)
           _forecastBar(st.forecast!, st.symbol),
+        if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
+        if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
         if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
         if (eff.alka && st.alka != null && st.alka!.decision.state != 0)
           _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
         if (hideAab && layers.sigs)
           _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
-        else
+        else if (eff.sigs || (!eff.all && !eff.alka))
           _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (s != null)
         _bottomBar(s, st.symbol),

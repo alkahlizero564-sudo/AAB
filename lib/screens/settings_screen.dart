@@ -206,7 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: autoHideWeak,
             onChanged: (v) => setState(() => autoHideWeak = v),
           ),
-          _slider('Alka — الهدف الأول (R)', alkaTp1, 0.25, 1.0, 15,
+          _slider('Alka و ALL — الهدف الأول (R)', alkaTp1, 0.25, 1.0, 15,
               (v) => '${v.toStringAsFixed(2)}R  (دقة ≈ ${v <= 0.3 ? 84 : v <= 0.4 ? 79 : v <= 0.6 ? 72 : v <= 0.8 ? 64 : 55}%)',
               (v) => setState(() => alkaTp1 = v)),
           _slider('الهدف 2 (R)', rr2, 1, 5, 40,

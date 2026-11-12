@@ -83,7 +83,8 @@ class PendingSetup {
   final int dir;
   final double trigger, sl, tp1, tp2;
   final String cond;
-  const PendingSetup(this.dir, this.trigger, this.sl, this.tp1, this.tp2, this.cond);
+  final int i; // شمعة الإشارة (-1 غير معروفة)
+  const PendingSetup(this.dir, this.trigger, this.sl, this.tp1, this.tp2, this.cond, [this.i = -1]);
 }
 
 /// توقع الشمعة القادمة.
@@ -588,7 +589,7 @@ Forecast buildForecast(List<Candle> c,
     final trig = wd > 0 ? c[wi].high : c[wi].low;
     final (sl, t1, t2, _) = levels(wi, wd, trig);
     pending.add(PendingSetup(wd, trig, sl, t1, t2,
-        '${wd > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد ($wwhy) — ادخل عند ${wd > 0 ? 'اختراق' : 'كسر'}'));
+        '${wd > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد ($wwhy) — ادخل عند ${wd > 0 ? 'اختراق' : 'كسر'}', wi));
   }
   var live = '';
   var liveDir = 0;
