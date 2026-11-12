@@ -87,15 +87,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     context.read<AppState>().setTab(0);
   }
 
-  Widget _title(IconData i, String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Row(children: [
-          Icon(i, color: AppColors.accent, size: 20),
-          const SizedBox(width: 8),
-          Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        ]),
-      );
-
   Widget _slider(String label, double v, double min, double max, int div,
       String Function(double) fmt, ValueChanged<double> on) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -114,14 +105,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return ListView(padding: const EdgeInsets.all(14), children: [
       Panel(
+        title: 'مفتاح Tiingo (فوركس + ذهب)',
+        icon: Icons.vpn_key,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _title(Icons.vpn_key, 'مفتاح Tiingo (فوركس + ذهب)'),
           KeyField(controller: tiingo, label: 'Tiingo API Key'),
         ]),
       ),
       Panel(
+        title: 'مفاتيح Twelve Data (فوركس، ذهب، أسهم)',
+        icon: Icons.vpn_key,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _title(Icons.vpn_key, 'مفاتيح Twelve Data (فوركس، ذهب، أسهم)'),
           const Text('أضف حتى 4 مفاتيح — يتم التبديل بينها تلقائياً لتفادي حد الطلبات.',
               style: TextStyle(color: AppColors.muted, fontSize: 12)),
           const SizedBox(height: 10),
@@ -133,8 +126,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ]),
       ),
       Panel(
+        title: 'مفاتيح Gemini API',
+        icon: Icons.auto_awesome,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _title(Icons.auto_awesome, 'مفاتيح Gemini API'),
           for (var i = 0; i < 4; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -156,8 +150,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ]),
       ),
       Panel(
+        title: 'إعدادات التداول والتحديث',
+        icon: Icons.tune,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _title(Icons.tune, 'إعدادات التداول والتحديث'),
           Row(children: [
             const Text('مصدر البيانات', style: TextStyle(fontSize: 13)),
             const Spacer(),

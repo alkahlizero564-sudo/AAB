@@ -21,20 +21,24 @@ class DashboardScreen extends StatelessWidget {
         children: [
           Row(children: [
             const SymbolButton(),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(st.symbol.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-            ),
-            if (st.lastUpdate != null) ...[
-              const Icon(Icons.circle, size: 9, color: AppColors.up),
-              const SizedBox(width: 5),
-              Text(_hhmmss(st.lastUpdate!),
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-            ],
+            const Spacer(),
+            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text(sig == null ? '—' : st.symbol.fmt(sig.price),
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2)),
+              if (st.lastUpdate != null)
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(color: AppColors.up, shape: BoxShape.circle)),
+                  const SizedBox(width: 5),
+                  Text(_hhmmss(st.lastUpdate!),
+                      style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                ]),
+            ]),
           ]),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           const TfChips(),
           const SizedBox(height: 14),
           if (st.error != null) ErrorBanner(st.error!),
@@ -205,17 +209,16 @@ class _ReasonsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Panel(
+      title: 'أسباب الإشارة',
+      icon: Icons.fact_check_outlined,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('أسباب الإشارة',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        const SizedBox(height: 8),
         for (final r in sig.reasons.take(8))
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Icon(Icons.circle, size: 6, color: AppColors.accent),
+                padding: EdgeInsets.only(top: 2),
+                child: Icon(Icons.chevron_left_rounded, size: 16, color: AppColors.accent),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -235,36 +238,40 @@ class _IndicatorsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Panel(
+      title: 'المؤشرات الفنية',
+      icon: Icons.speed_outlined,
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('المؤشرات الفنية',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        const SizedBox(height: 8),
-        for (final v in sig.votes)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
+        for (final (k, v) in sig.votes.indexed)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            decoration: BoxDecoration(
+              border: k == sig.votes.length - 1
+                  ? null
+                  : Border(bottom: BorderSide(color: AppColors.border.withOpacity(0.5), width: 0.6)),
+            ),
             child: Row(children: [
-              Icon(
-                v.vote > 0
-                    ? Icons.arrow_circle_up
-                    : v.vote < 0
-                        ? Icons.arrow_circle_down
-                        : Icons.remove_circle_outline,
-                size: 20,
-                color: v.vote > 0
-                    ? AppColors.up
-                    : v.vote < 0
-                        ? AppColors.down
-                        : AppColors.muted,
-              ),
-              const SizedBox(width: 10),
               SizedBox(
-                  width: 96,
+                  width: 92,
                   child: Text(v.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600))),
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
               Expanded(
                   child: Text(v.value,
-                      style: const TextStyle(
-                          color: AppColors.muted, fontSize: 12))),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppColors.muted, fontSize: 12))),
+              const SizedBox(width: 8),
+              Tag(
+                  v.vote > 0
+                      ? 'صاعد'
+                      : v.vote < 0
+                          ? 'هابط'
+                          : 'محايد',
+                  color: v.vote > 0
+                      ? AppColors.up
+                      : v.vote < 0
+                          ? AppColors.down
+                          : AppColors.muted),
             ]),
           ),
       ]),
@@ -278,36 +285,21 @@ class _PatternsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Panel(
+      title: 'نماذج الشموع اليابانية',
+      icon: Icons.candlestick_chart_outlined,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('نماذج الشموع اليابانية',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        const SizedBox(height: 8),
         if (sig.patterns.isEmpty)
           const Text('لا يوجد نموذج شموع واضح على آخر الشموع.',
               style: TextStyle(color: AppColors.muted, fontSize: 13))
         else
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final p in sig.patterns)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  color: (p.bias > 0
-                          ? AppColors.up
-                          : p.bias < 0
-                              ? AppColors.down
-                              : AppColors.gold)
-                      .withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(p.ar,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: p.bias > 0
-                            ? AppColors.up
-                            : p.bias < 0
-                                ? AppColors.down
-                                : AppColors.gold)),
-              ),
+              Tag(p.ar,
+                  color: p.bias > 0
+                      ? AppColors.up
+                      : p.bias < 0
+                          ? AppColors.down
+                          : AppColors.gold),
           ]),
       ]),
     );

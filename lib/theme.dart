@@ -21,7 +21,7 @@ class AppColors {
 }
 
 ThemeData buildTheme() {
-  const r12 = BorderRadius.all(Radius.circular(12));
+  const r12 = BorderRadius.all(Radius.circular(10));
   return ThemeData(
     useMaterial3: true,
     cardColor: AppColors.card,
@@ -48,7 +48,7 @@ ThemeData buildTheme() {
       elevation: 0,
       centerTitle: true,
       titleTextStyle: TextStyle(
-          fontFamily: 'Cairo', fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.gold),
+          fontFamily: 'Cairo', fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text),
     ),
     drawerTheme: const DrawerThemeData(backgroundColor: AppColors.surface),
     bottomSheetTheme: const BottomSheetThemeData(
@@ -108,7 +108,13 @@ ThemeData buildTheme() {
     progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.accent),
     inputDecorationTheme: const InputDecorationTheme(
       filled: true,
-      fillColor: AppColors.card,
+      fillColor: AppColors.surface,
+      isDense: true,
+      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      suffixIconColor: AppColors.muted,
+      prefixIconColor: AppColors.muted,
+      hintStyle: TextStyle(color: AppColors.muted, fontSize: 13),
+      labelStyle: TextStyle(color: AppColors.muted, fontSize: 13),
       border: OutlineInputBorder(borderRadius: r12, borderSide: BorderSide(color: AppColors.border)),
       enabledBorder:
           OutlineInputBorder(borderRadius: r12, borderSide: BorderSide(color: AppColors.border)),

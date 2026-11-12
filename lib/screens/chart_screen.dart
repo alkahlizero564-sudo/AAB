@@ -330,40 +330,66 @@ class _ChartScreenState extends State<ChartScreen> {
         ]),
       );
 
-  Widget _tool(String icon, String label, VoidCallback onTap,
-          {bool primary = false, bool dim = false, VoidCallback? onLong}) =>
-      Padding(
-        padding: const EdgeInsetsDirectional.only(end: 6),
-        child: Opacity(
-          opacity: dim ? 0.45 : 1,
-          child: Material(
-            color: primary ? AppColors.accent : AppColors.card,
-            shape: StadiumBorder(side: BorderSide(color: primary ? AppColors.accent : AppColors.border)),
-            child: InkWell(
-              customBorder: const StadiumBorder(),
-              onTap: onTap,
-              onLongPress: onLong,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(icon, style: const TextStyle(fontSize: 13)),
-                  const SizedBox(width: 5),
-                  Text(label,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: primary ? AppColors.onAccent : AppColors.text,
-                          fontWeight: FontWeight.w700)),
-                ]),
-              ),
+  Widget _tool(IconData? icon, String label, VoidCallback onTap,
+      {bool primary = false, bool dim = false, VoidCallback? onLong, Color? dot}) {
+    final fg = primary ? AppColors.onAccent : (dim ? AppColors.muted : AppColors.text);
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(end: 6),
+      child: Material(
+        color: primary ? null : (dim ? Colors.transparent : AppColors.card),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: primary
+              ? BorderSide.none
+              : BorderSide(color: dim ? AppColors.border.withOpacity(0.6) : AppColors.border, width: 0.8),
+        ),
+        child: Ink(
+          decoration: primary
+              ? BoxDecoration(gradient: AppColors.goldGrad, borderRadius: BorderRadius.circular(8))
+              : null,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            onLongPress: onLong,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (icon != null) Icon(icon, size: 16, color: primary ? fg : AppColors.accent),
+                if (dot != null)
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: dim ? Colors.transparent : dot,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: dot, width: 1.2),
+                    ),
+                  ),
+                const SizedBox(width: 6),
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: fg,
+                        fontWeight: FontWeight.w700,
+                        decoration: dim ? TextDecoration.lineThrough : null,
+                        decorationColor: AppColors.muted)),
+              ]),
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 
   Widget _healthTool(String name, IndHealth? h, bool on, VoidCallback toggle) {
     final st = context.read<AppState>();
-    final icon = h?.dot ?? (st.healthLoading ? '⏳' : '⚪');
-    return _tool(icon, name, toggle, dim: !on, onLong: () {
+    final dot = switch (h?.light) {
+      'green' => AppColors.up,
+      'yellow' => AppColors.gold,
+      'red' => AppColors.down,
+      _ => AppColors.muted,
+    };
+    return _tool(null, name, toggle, dim: !on, dot: dot, onLong: () {
       final msg = h == null
           ? '$name: جاري حساب أدائه على ${st.symbol.code} ${st.tf}…'
           : '$name على ${st.symbol.code} ${st.tf}: ${h.dot} ${h.label} — ${h.summary}';
@@ -392,14 +418,15 @@ class _ChartScreenState extends State<ChartScreen> {
       );
 
   Widget _toolbar() => SizedBox(
-        height: 38,
+        height: 42,
         child: ListView(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(12, 3, 12, 3),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
           children: [
-            _tool('🧠', 'قراءة الشارت', () => _showReading(context.read<AppState>()), primary: true),
-            _tool('🏆', 'مقارنة', () => _showBench(context.read<AppState>())),
-            _tool('🎛️', 'طبقات', _showLayers),
+            _tool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(context.read<AppState>()),
+                primary: true),
+            _tool(Icons.leaderboard_outlined, 'مقارنة', () => _showBench(context.read<AppState>())),
+            _tool(Icons.layers_outlined, 'طبقات', _showLayers),
             _healthTool('ALL', context.read<AppState>().allHealth, layers.all,
                 () => setState(() => layers.all = !layers.all)),
             _healthTool('Alka', context.read<AppState>().alkaHealth, layers.alka,
@@ -503,8 +530,8 @@ class _ChartScreenState extends State<ChartScreen> {
             tooltip: full ? 'إظهار الأدوات' : 'شاشة كاملة',
             visualDensity: VisualDensity.compact,
             iconSize: 22,
-            color: AppColors.accent,
-            icon: Icon(full ? Icons.fullscreen_exit : Icons.fullscreen),
+            color: AppColors.gold,
+            icon: Icon(full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded, size: 19),
             onPressed: () => setState(() => full = !full),
           ),
         ]),
@@ -653,8 +680,18 @@ class _ChartScreenState extends State<ChartScreen> {
           color: AppColors.surface,
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
-        child: Text('${tag.isEmpty ? '' : '$tag: '}انتظار — لا توجد إشارة مكتملة الشروط',
-            style: const TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+        child: Row(children: [
+          if (tag.isNotEmpty) ...[
+            Tag(tag, color: AppColors.gold),
+            const SizedBox(width: 8),
+          ],
+          const Icon(Icons.hourglass_empty_rounded, size: 14, color: AppColors.muted),
+          const SizedBox(width: 4),
+          const Expanded(
+            child: Text('انتظار — لا توجد إشارة مكتملة الشروط',
+                style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+        ]),
       );
     }
     final col = d.dir > 0
@@ -686,14 +723,14 @@ class _ChartScreenState extends State<ChartScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
             decoration: BoxDecoration(
-              color: col.withOpacity(0.18),
-              borderRadius: BorderRadius.circular(10),
+              color: col,
+              borderRadius: BorderRadius.circular(7),
             ),
-            child: Text(label, style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
+            child: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
           ),
           const SizedBox(width: 6),
           if (d.state == 1 || d.state == 2) ...[
-            item(d.state == 2 ? 'دخول عند' : 'دخول', d.entry, AppColors.accent),
+            item(d.state == 2 ? 'دخول عند' : 'دخول', d.entry, AppColors.text),
             item('وقف', d.sl, AppColors.down),
             item('TP1', d.tp1, AppColors.up),
             item('TP2', d.tp2, AppColors.up),
@@ -762,17 +799,14 @@ class _CompactSymbol extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: () => showSymbolSheet(context),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.border),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
+          SymbolBadge(st.symbol.code, size: 28),
+          const SizedBox(width: 8),
           Text(st.symbol.code,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.text)),
-          const Icon(Icons.keyboard_arrow_down, size: 18, color: AppColors.muted),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)),
+          const Icon(Icons.expand_more, size: 18, color: AppColors.muted),
         ]),
       ),
     );
@@ -786,37 +820,8 @@ class _CompactTf extends StatelessWidget {
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-      child: Container(
-        height: 32,
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(9),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Row(children: [
-          for (final t in AppState.timeframes)
-            Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => st.setTf(t),
-                child: Container(
-                  margin: const EdgeInsets.all(2),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: st.tf == t ? AppColors.accent : Colors.transparent,
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  child: Text(t,
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: st.tf == t ? FontWeight.w800 : FontWeight.w500,
-                          color: st.tf == t ? AppColors.onAccent : AppColors.muted)),
-                ),
-              ),
-            ),
-        ]),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: TfTabs(current: st.tf, onPick: st.setTf, height: 34),
     );
   }
 }

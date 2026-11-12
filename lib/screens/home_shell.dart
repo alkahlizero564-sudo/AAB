@@ -14,11 +14,18 @@ class HomeShell extends StatelessWidget {
 
   static const _titles = ['التوصيات', 'الشارت', 'الأسواق', 'الأخبار', 'الإعدادات'];
   static const _icons = [
+    Icons.insights_outlined,
+    Icons.candlestick_chart_outlined,
+    Icons.public_outlined,
+    Icons.article_outlined,
+    Icons.tune_outlined,
+  ];
+  static const _iconsOn = [
     Icons.insights,
     Icons.candlestick_chart,
-    Icons.currency_exchange,
-    Icons.newspaper,
-    Icons.settings,
+    Icons.public,
+    Icons.article,
+    Icons.tune,
   ];
 
   @override
@@ -26,31 +33,53 @@ class HomeShell extends StatelessWidget {
     final st = context.watch<AppState>();
     return Scaffold(
       appBar: AppBar(
-        title: Text(_titles[st.tab],
-            style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.gold)),
+        centerTitle: false,
+        titleSpacing: 4,
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              gradient: AppColors.goldGrad,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text('A',
+                style: TextStyle(
+                    color: AppColors.onAccent, fontWeight: FontWeight.w900, fontSize: 17, height: 1.1)),
+          ),
+          const SizedBox(width: 10),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(_titles[st.tab],
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 17, color: AppColors.text, height: 1.15)),
+            const Text('AAB PRO',
+                style: TextStyle(
+                    fontSize: 9.5, letterSpacing: 2, color: AppColors.accent, fontWeight: FontWeight.w700, height: 1.1)),
+          ]),
+        ]),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [
-                Colors.transparent,
-                AppColors.accent.withOpacity(0.7),
-                Colors.transparent,
-              ]),
-            ),
-          ),
+          child: Container(height: 0.7, color: AppColors.border),
         ),
         actions: [
-          IconButton(
-            tooltip: 'تحديث',
-            icon: st.loading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.refresh),
-            onPressed: st.refresh,
+          Padding(
+            padding: const EdgeInsetsDirectional.only(end: 10),
+            child: Material(
+              color: AppColors.card,
+              shape: const CircleBorder(side: BorderSide(color: AppColors.border, width: 0.8)),
+              child: IconButton(
+                tooltip: 'تحديث',
+                visualDensity: VisualDensity.compact,
+                icon: st.loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.refresh_rounded, size: 20, color: AppColors.gold),
+                onPressed: st.refresh,
+              ),
+            ),
           ),
         ],
       ),
@@ -78,7 +107,7 @@ class HomeShell extends StatelessWidget {
             ),
             for (var i = 0; i < _titles.length; i++)
               ListTile(
-                leading: Icon(_icons[i],
+                leading: Icon(st.tab == i ? _iconsOn[i] : _icons[i],
                     color: st.tab == i ? AppColors.accent : AppColors.muted),
                 title: Text(_titles[i]),
                 selected: st.tab == i,
@@ -118,13 +147,47 @@ class HomeShell extends StatelessWidget {
           SettingsScreen(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: st.tab,
-        onDestinationSelected: st.setTab,
-        destinations: [
-          for (var i = 0; i < _titles.length; i++)
-            NavigationDestination(icon: Icon(_icons[i]), label: _titles[i]),
-        ],
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.border, width: 0.7)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 60,
+            child: Row(children: [
+              for (var i = 0; i < _titles.length; i++)
+                Expanded(
+                  child: InkWell(
+                    onTap: () => st.setTab(i),
+                    child: Column(children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: st.tab == i ? 28 : 0,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          gradient: AppColors.goldGrad,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(st.tab == i ? _iconsOn[i] : _icons[i],
+                          size: 22, color: st.tab == i ? AppColors.gold : AppColors.muted),
+                      const SizedBox(height: 3),
+                      Text(_titles[i],
+                          style: TextStyle(
+                              fontSize: 10.5,
+                              height: 1.1,
+                              fontWeight: st.tab == i ? FontWeight.w700 : FontWeight.w500,
+                              color: st.tab == i ? AppColors.gold : AppColors.muted)),
+                      const Spacer(),
+                    ]),
+                  ),
+                ),
+            ]),
+          ),
+        ),
       ),
     );
   }
