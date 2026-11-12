@@ -243,11 +243,12 @@ class AppState extends ChangeNotifier {
     final h = htf == null ? null : List<Candle>.of(htf!);
     final s = settings, sym = symbol, cfg = EngineConfig.current;
     final rr1 = settings.rr1For(symbol.category), rr2 = settings.rr2;
+    final alkaTp1 = settings.alkaTp1;
     (TradeSignal, Forecast, AlgoResult, AlkaResult) res;
     try {
-      res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2));
+      res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1));
     } catch (_) {
-      res = _computeAll(snap, h, s, sym, cfg, rr1, rr2); // احتياط
+      res = _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1); // احتياط
     }
     _analyzing = false;
     if (gen != _gen) return;
@@ -262,7 +263,7 @@ class AppState extends ChangeNotifier {
   void _analyze() {
     if (candles.isEmpty) return;
     _apply(_computeAll(candles, htf, settings, symbol, EngineConfig.current,
-        settings.rr1For(symbol.category), settings.rr2));
+        settings.rr1For(symbol.category), settings.rr2, settings.alkaTp1));
   }
 
   void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult) r) {
@@ -434,10 +435,10 @@ class AppState extends ChangeNotifier {
 
 /// كل الحسابات الثقيلة (تعمل داخل Isolate): المحرك القديم للطبقات، محرك التوصيات، و AAB Algo.
 (TradeSignal, Forecast, AlgoResult, AlkaResult) _computeAll(List<Candle> c, List<Candle>? htf,
-    AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2) {
+    AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final fc = buildForecast(c, rr1: rr1, rr2: rr2);
   final al = aabAlgo(c, sens: 2.0, withPanel: false);
-  final ak = buildAlka(c, rr1: rr1, rr2: rr2, sym: sym);
+  final ak = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym);
   return (base, fc, al, ak);
 }

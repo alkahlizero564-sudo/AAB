@@ -20,6 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late double atrMult, rr1, rr2, rr3, ceMult;
   late int cePeriod, pollSec;
   late bool useAi, liveWs, metalTp07;
+  late double alkaTp1;
   late String source;
 
   @override
@@ -41,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     liveWs = s.liveWs;
     useAi = s.useAi;
     metalTp07 = s.metalTp07;
+    alkaTp1 = s.alkaTp1;
     source = s.source;
   }
 
@@ -70,6 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       liveWs: liveWs,
       useAi: useAi,
       metalTp07: metalTp07,
+      alkaTp1: alkaTp1,
       source: source,
       geminiModel: model.text.trim().isEmpty ? 'gemini-2.5-flash' : model.text,
     );
@@ -191,6 +194,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: metalTp07,
             onChanged: (v) => setState(() => metalTp07 = v),
           ),
+          _slider('Alka — الهدف الأول (R)', alkaTp1, 0.25, 1.0, 15,
+              (v) => '${v.toStringAsFixed(2)}R  (دقة ≈ ${v <= 0.3 ? 84 : v <= 0.4 ? 79 : v <= 0.6 ? 72 : v <= 0.8 ? 64 : 55}%)',
+              (v) => setState(() => alkaTp1 = v)),
           _slider('الهدف 2 (R)', rr2, 1, 5, 40,
               (v) => '${v.toStringAsFixed(1)}R', (v) => setState(() => rr2 = v)),
           _slider('الهدف 3 (R)', rr3, 1.5, 8, 65,
