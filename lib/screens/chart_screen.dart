@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../analysis/benchmark.dart';
@@ -119,8 +120,42 @@ class _ChartScreenState extends State<ChartScreen> {
     );
   }
 
+  /// المقارنة على تاريخ طويل (3000 شمعة) في خيط منفصل.
+  Future<(List<Candle>, List<BenchRow>, bool)> _benchData(AppState st) async {
+    var c = st.candles;
+    var long = false;
+    try {
+      final h = await st.fetchLong();
+      if (h.length > c.length) {
+        c = h;
+        long = true;
+      }
+    } catch (_) {
+      // نكمل بالشموع الموجودة
+    }
+    final sym = st.symbol;
+    final data = c;
+    List<BenchRow> rows;
+    try {
+      rows = await Isolate.run(() => benchmark(data, sym: sym));
+    } catch (_) {
+      rows = benchmark(data, sym: sym);
+    }
+    // الموثوق أولاً (20 صفقة فأكثر) حسب الدقة، ثم العينات الصغيرة
+    const minTrades = 20;
+    rows.sort((a, b) {
+      final ra = a.trades >= minTrades, rb = b.trades >= minTrades;
+      if (ra != rb) return ra ? -1 : 1;
+      if (!ra) return b.trades.compareTo(a.trades);
+      final c1 = b.winRate.compareTo(a.winRate);
+      return c1 != 0 ? c1 : b.avgR.compareTo(a.avgR);
+    });
+    return (data, rows, long);
+  }
+
   void _showBench(AppState st) {
-    final rows = benchmark(st.candles, sym: st.symbol);
+    final future = _benchData(st);
+    final title = '🏆 مقارنة مع 22 مؤشراً من TradingView — ${st.symbol.code} ${st.tf}';
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
@@ -128,75 +163,107 @@ class _ChartScreenState extends State<ChartScreen> {
       builder: (_) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.8,
-        builder: (_, ctl) => ListView(
-          controller: ctl,
-          padding: const EdgeInsets.all(14),
-          children: [
-            Text('🏆 مقارنة مع 22 مؤشراً من TradingView — ${st.symbol.code} ${st.tf}',
-                style: const TextStyle(
-                    color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 4),
-            Text(
-                'على آخر ${st.candles.length} شمعة من هذا الشارت. كل المؤشرات بإعداداتها الافتراضية '
-                'وبنفس الدخول والوقف والهدف (1R ثم 2R) — مقارنة عادلة. '
-                'الدقة = وصول الهدف الأول قبل الوقف.',
-                style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
-            const SizedBox(height: 10),
-            if (rows.isEmpty)
-              const Text('شموع غير كافية للمقارنة (أقل من 120).',
-                  style: TextStyle(color: AppColors.muted)),
-            for (var k = 0; k < rows.length; k++)
-              Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: rows[k].ours ? AppColors.accent.withOpacity(0.18) : AppColors.card,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: rows[k].ours ? AppColors.accent : AppColors.border),
-                ),
-                child: Row(children: [
-                  SizedBox(
-                      width: 26,
-                      child: Text('${k + 1}',
-                          style: const TextStyle(color: AppColors.muted, fontSize: 12))),
-                  Expanded(
-                      child: Text(rows[k].name,
-                          style: TextStyle(
-                              color: AppColors.text,
-                              fontSize: 13,
-                              fontWeight: rows[k].ours ? FontWeight.w800 : FontWeight.w500))),
-                  Text(
-                      rows[k].trades == 0
-                          ? 'لا صفقات'
-                          : '${(rows[k].winRate * 100).toStringAsFixed(0)}%',
-                      style: TextStyle(
-                          color: rows[k].winRate >= 0.5 ? AppColors.up : AppColors.down,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13)),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 92,
-                    child: Text(
-                        '${rows[k].trades} صفقة • ${rows[k].avgR >= 0 ? '+' : ''}${rows[k].avgR.toStringAsFixed(2)}R',
-                        textAlign: TextAlign.end,
-                        style: TextStyle(
-                            color: rows[k].avgR > 0 ? AppColors.up : AppColors.muted,
-                            fontSize: 10)),
+        builder: (_, ctl) => FutureBuilder<(List<Candle>, List<BenchRow>, bool)>(
+          future: future,
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return ListView(controller: ctl, padding: const EdgeInsets.all(14), children: [
+                Text(title,
+                    style: const TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 40),
+                const Center(child: CircularProgressIndicator()),
+                const SizedBox(height: 14),
+                const Center(
+                    child: Text('جاري جلب تاريخ أطول (3000 شمعة) وحساب 24 مؤشراً…',
+                        style: TextStyle(color: AppColors.muted, fontSize: 12))),
+              ]);
+            }
+            final (c, rows, long) = snap.data!;
+            final days = c.isEmpty ? 0 : c.last.time.difference(c.first.time).inDays;
+            final reliable = rows.where((r) => r.trades >= 20).length;
+            return ListView(
+              controller: ctl,
+              padding: const EdgeInsets.all(14),
+              children: [
+                Text(title,
+                    style: const TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(
+                    'على آخر ${c.length} شمعة (حوالي $days يوم)${long ? '' : ' — تعذر جلب تاريخ أطول'}. '
+                    'كل المؤشرات بإعداداتها الافتراضية وبنفس الدخول والوقف والهدف (1R ثم 2R) — مقارنة عادلة. '
+                    'الدقة = وصول الهدف الأول قبل الوقف. الترتيب للمؤشرات التي لها 20 صفقة فأكثر. '
+                    'تنبيه: مع أقل من 100 صفقة، فرق أقل من 8% بين مؤشرين غالباً صدفة، والترتيب يتغير من شهر لآخر.',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
+                if (reliable < 3)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text('⚠️ صفقات قليلة على هذا الشارت — جرّب فريماً أصغر للحصول على عينة أكبر.',
+                        style: TextStyle(color: AppColors.gold, fontSize: 11)),
                   ),
-                ]),
-              ),
-            const SizedBox(height: 6),
-            const Text(
-                'على 20 سوقاً حقيقياً (فوركس، ذهب، فضة، أسهم، مؤشرات، نفط) جاء مؤشر AAB الأول بين 23 مؤشراً: '
-                '53.8% وربح في 18 من 20 سوقاً، مقابل 51.2% لـ UT Bot و50.6% لـ Volume Profile و48–50% للباقي. '
-                'Alka بنفس الهدف: نفس دقة AAB (54.6% على 22 سوقاً مع البيتكوين) لكن بفرص أكثر بـ2.4 مرة '
-                'وربح إجمالي أعلى بـ2.3 مرة. AAB أفضل على الأسهم، و Alka أفضل على الذهب والبيتكوين والنفط والعملات. '
-                'على شارت واحد قصير قد يختلف الترتيب — العينة الصغيرة تتأثر بالصدفة.',
-                style: TextStyle(color: AppColors.muted, fontSize: 10, height: 1.4)),
-          ],
+                const SizedBox(height: 10),
+                for (var k = 0; k < rows.length; k++) _benchRow(k, rows[k]),
+                const SizedBox(height: 6),
+                const Text(
+                    'على 25 سوقاً حقيقياً (فوركس، ذهب، فضة، بيتكوين، أسهم، مؤشرات، نفط) وبنفس الإدارة: '
+                    'AAB الأول (54.8%، رابح في 23 من 25) و Alka الثاني (54.3%، رابح في 25 من 25 وأعلى ربح إجمالي)، '
+                    'وبقية المؤشرات بين 47.6% و50.6%.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 10, height: 1.4)),
+              ],
+            );
+          },
         ),
       ),
+    );
+  }
+
+  Widget _benchRow(int k, BenchRow r) {
+    final small = r.trades < 20;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: r.ours ? AppColors.accent.withOpacity(0.18) : AppColors.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: r.ours ? AppColors.accent : AppColors.border),
+      ),
+      child: Row(children: [
+        SizedBox(
+            width: 26,
+            child: Text(small ? '–' : '${k + 1}',
+                style: const TextStyle(color: AppColors.muted, fontSize: 12))),
+        Expanded(
+            child: Text(r.name,
+                style: TextStyle(
+                    color: small ? AppColors.muted : AppColors.text,
+                    fontSize: 13,
+                    fontWeight: r.ours ? FontWeight.w800 : FontWeight.w500))),
+        if (small)
+          Container(
+            margin: const EdgeInsetsDirectional.only(end: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: AppColors.gold.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Text('عينة صغيرة', style: TextStyle(color: AppColors.gold, fontSize: 9)),
+          ),
+        Text(r.trades == 0 ? 'لا صفقات' : '${(r.winRate * 100).toStringAsFixed(0)}%',
+            style: TextStyle(
+                color: small
+                    ? AppColors.muted
+                    : r.winRate >= 0.5
+                        ? AppColors.up
+                        : AppColors.down,
+                fontWeight: FontWeight.w800,
+                fontSize: 13)),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 92,
+          child: Text('${r.trades} صفقة • ${r.avgR >= 0 ? '+' : ''}${r.avgR.toStringAsFixed(2)}R',
+              textAlign: TextAlign.end,
+              style: TextStyle(color: r.avgR > 0 && !small ? AppColors.up : AppColors.muted, fontSize: 10)),
+        ),
+      ]),
     );
   }
 

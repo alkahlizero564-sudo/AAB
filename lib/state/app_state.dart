@@ -344,6 +344,10 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// تاريخ أطول للسوق الحالي (للمقارنة): 3000 شمعة بدل 300 حتى تكون النتائج موثوقة.
+  Future<List<Candle>> fetchLong({int count = 3000}) =>
+      _market.fetch(symbol, tf, settings, count: count);
+
   Future<void> refresh() async {
     if (_busy) return;
     if (!settings.hasTwelve && !settings.hasTiingo) return;
