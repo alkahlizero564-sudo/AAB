@@ -40,6 +40,12 @@ jobs:
           fi
 
       - run: flutter pub get
+
+      # أيقونة التطبيق (الذهبي الفاخر) واسم التطبيق على الهاتف
+      - name: App icon and label
+        run: |
+          dart run flutter_launcher_icons
+          sed -i 's/android:label="[^"]*"/android:label="AAB"/' android/app/src/main/AndroidManifest.xml
       # رقم الإصدار يزيد مع كل بناء حتى يُثبَّت التحديث فوق النسخة القديمة
       - run: flutter build apk --release --build-number=${{ github.run_number }}
       - run: flutter build appbundle --release --build-number=${{ github.run_number }}

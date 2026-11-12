@@ -41,7 +41,7 @@ class ChartLayers {
 }
 
 /// خط الكتابة في الشارت (null = خط النظام). يُغيَّر في اختبارات لقطات الشاشة فقط.
-String? chartFont;
+String? chartFont = 'Cairo';
 
 const _tfMin = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440};
 
@@ -351,8 +351,12 @@ class _Painter extends CustomPainter {
     return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
   }
 
+  /// لافتات على محور السعر (دخول/وقف/هدف) تُرسم في النهاية بدون تداخل.
+  final _axis = <(double, String, String, Color)>[];
+
   @override
   void paint(Canvas canvas, Size size) {
+    _axis.clear();
     canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.bg);
     final n = c.length;
     if (n < 2) {
@@ -393,7 +397,7 @@ class _Painter extends CustomPainter {
 
     // ── علامة مائية
     _txt(canvas, '${sym.code}  ${tf.toUpperCase()}', Offset(w / 2 - 70, h / 2 - 16),
-        color: AppColors.muted.withOpacity(0.07), size: 28, bold: true);
+        color: AppColors.accent.withOpacity(0.045), size: 26, bold: true);
 
     // ── شبكة + محور السعر بخطوات منتظمة
     final gridP = Paint()
@@ -632,7 +636,7 @@ class _Painter extends CustomPainter {
     if (_algoOn) {
       final a = al!;
       final zp = Paint()
-        ..color = const Color(0xFFB388FF).withOpacity(0.45)
+        ..color = AppColors.accent.withOpacity(0.22)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1;
       for (final z in [a.zoneHi, a.zoneLo]) {
@@ -834,6 +838,8 @@ class _Painter extends CustomPainter {
       _pill(canvas, t, Offset(w + 1, ly + 8), lastCol.withOpacity(0.55));
     }
 
+    _paintAxisTags(canvas, w, h, ly);
+
     // ── رأس الشارت: OHLC للشمعة الحالية أو التي تحت المؤشر
     int? cIdx;
     double? cx, cy;
@@ -870,7 +876,7 @@ class _Painter extends CustomPainter {
           text: t,
           style: TextStyle(
               fontFamily: chartFont,
-              color: Colors.white,
+              color: bg.computeLuminance() > 0.35 ? AppColors.onAccent : Colors.white,
               fontSize: 10,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w500)),
       textDirection: TextDirection.ltr,
@@ -1111,7 +1117,7 @@ class _Painter extends CustomPainter {
               color: Colors.white, size: 9, bold: true, bg: rc, rtl: sg.result == -2);
         } else {
           _txt(cv, '⏳ مفتوحة', Offset(xe - 40, yE - 14),
-              color: Colors.white, size: 9, bg: AppColors.accent, rtl: true);
+              color: AppColors.onAccent, size: 9, bg: AppColors.accent, rtl: true);
         }
       }
     }
@@ -1243,12 +1249,13 @@ class _Painter extends CustomPainter {
         _dashed(cv, x0, w, yOf(p), Paint()
           ..color = col
           ..strokeWidth = 1.2, dash: 5, gap: 3);
-        _txt(cv, '$t ${sym.fmt(p)}', Offset(w - 96, yOf(p) - 12), color: Colors.white, size: 9, bg: col.withOpacity(0.85));
+        _axis.add((yOf(p), sym.fmt(p), t, col));
       }
 
-      ln(sg.entry, const Color(0xFF9AA5B8), '$tag دخول');
-      ln(sg.curStop.isNaN ? sg.sl : sg.curStop, _down, '$tag وقف');
-      ln(sg.tp1, _up, '$tag TP1');
+      ln(sg.entry, const Color(0xFF9AA5B8), 'دخول');
+      ln(sg.curStop.isNaN ? sg.sl : sg.curStop, _down, 'وقف');
+      ln(sg.tp1, _up, 'TP1');
+      ln(sg.tp2, _up.withOpacity(0.8), 'TP2');
     }
     for (final p in pending) {
       if (!inY(p.trigger)) continue;
@@ -1257,8 +1264,66 @@ class _Painter extends CustomPainter {
       _dashed(cv, xl, w, yOf(p.trigger), Paint()
         ..color = col
         ..strokeWidth = 1.4, dash: 6, gap: 3);
-      _txt(cv, '⏳ $tag ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'} ${sym.fmt(p.trigger)}', Offset(xl, yOf(p.trigger) - 13),
+      _txt(cv, '⏳ $tag ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'}', Offset(xl, yOf(p.trigger) - 13),
           color: Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
+      _axis.add((yOf(p.trigger), sym.fmt(p.trigger), 'دخول', col));
+      if (inY(p.sl)) {
+        _dashed(cv, xl, w, yOf(p.sl), Paint()
+          ..color = _down.withOpacity(0.6)
+          ..strokeWidth = 1, dash: 3, gap: 3);
+        _axis.add((yOf(p.sl), sym.fmt(p.sl), 'وقف', _down));
+      }
+      if (inY(p.tp1)) {
+        _dashed(cv, xl, w, yOf(p.tp1), Paint()
+          ..color = _up.withOpacity(0.6)
+          ..strokeWidth = 1, dash: 3, gap: 3);
+        _axis.add((yOf(p.tp1), sym.fmt(p.tp1), 'TP1', _up));
+      }
+    }
+  }
+
+  /// لافتات المحور: السعر على المحور واسم المستوى بجانبه، مع إزاحة رأسية تمنع التداخل
+  /// (وتتجنب لافتة السعر الحالي).
+  void _paintAxisTags(Canvas cv, double w, double h, double lastY) {
+    if (_axis.isEmpty) return;
+    final tags = [..._axis]..sort((a, b) => a.$1.compareTo(b.$1));
+    const gap = 16.0;
+    final ys = <double>[];
+    for (final t in tags) {
+      var y = t.$1.clamp(30.0, h - 10).toDouble();
+      if (ys.isNotEmpty && y < ys.last + gap) y = ys.last + gap;
+      // تجنب لافتة السعر الحالي والعداد
+      if (y > lastY - 15 && y < lastY + 31) y = t.$1 < lastY + 6 ? lastY - 15 : lastY + 31;
+      if (ys.isNotEmpty && y < ys.last + gap) y = ys.last + gap;
+      ys.add(y);
+    }
+    for (var i = 0; i < tags.length; i++) {
+      final (py, price, name, col) = tags[i];
+      final y = ys[i];
+      // وصلة صغيرة لو أُزيحت اللافتة عن مستواها
+      if ((y - py).abs() > 2) {
+        cv.drawLine(Offset(w - 2, py), Offset(w + 2, y),
+            Paint()
+              ..color = col.withOpacity(0.7)
+              ..strokeWidth = 1);
+      }
+      _pill(cv, price, Offset(w + 1, y - 7), col, bold: true);
+      final tp = TextPainter(
+        text: TextSpan(
+            text: name,
+            style: TextStyle(fontFamily: chartFont, color: col, fontSize: 9, fontWeight: FontWeight.w800)),
+        textDirection: TextDirection.rtl,
+      )..layout();
+      final r = RRect.fromRectAndRadius(
+          Rect.fromLTWH(w - tp.width - 10, y - 7, tp.width + 8, tp.height + 1), const Radius.circular(3));
+      cv.drawRRect(r, Paint()..color = AppColors.bg.withOpacity(0.9));
+      cv.drawRRect(
+          r,
+          Paint()
+            ..color = col.withOpacity(0.8)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.8);
+      tp.paint(cv, Offset(w - tp.width - 6, y - 7));
     }
   }
 

@@ -147,7 +147,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
             onSelected: running ? null : (_) => setState(() => on(v)),
             selectedColor: AppColors.accent,
             backgroundColor: AppColors.card,
-            labelStyle: TextStyle(color: v == current ? Colors.white : AppColors.muted),
+            labelStyle: TextStyle(color: v == current ? AppColors.onAccent : AppColors.muted),
             side: const BorderSide(color: AppColors.border),
           ),
       ]),
