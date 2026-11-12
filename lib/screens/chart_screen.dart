@@ -10,7 +10,6 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/native_chart.dart';
-import '../widgets/signal_card.dart';
 
 class ChartScreen extends StatefulWidget {
   const ChartScreen({super.key});
@@ -22,6 +21,7 @@ class _ChartScreenState extends State<ChartScreen> {
   final layers = ChartLayers();
   bool full = false; // وضع الشاشة الكاملة للشارت
   int? sel; // الشمعة المختارة بالضغط المطوّل
+  bool why = false; // إظهار سبب القرار في الشريط السفلي
   final forceShow = <String>{}; // مؤشرات طلب المستخدم إظهارها رغم أنها 🔴
 
   void _showReading(AppState st, {int? upto}) {
@@ -334,7 +334,7 @@ class _ChartScreenState extends State<ChartScreen> {
       {bool primary = false, bool dim = false, VoidCallback? onLong, Color? dot}) {
     final fg = primary ? AppColors.onAccent : (dim ? AppColors.muted : AppColors.text);
     return Padding(
-      padding: const EdgeInsetsDirectional.only(end: 6),
+      padding: const EdgeInsetsDirectional.fromSTEB(0, 5, 6, 5),
       child: Material(
         color: primary ? null : (dim ? Colors.transparent : AppColors.card),
         shape: RoundedRectangleBorder(
@@ -381,6 +381,50 @@ class _ChartScreenState extends State<ChartScreen> {
     );
   }
 
+  Widget _iconTool(IconData i, String tip, VoidCallback onTap, {bool primary = false}) => Padding(
+        padding: const EdgeInsetsDirectional.only(start: 6),
+        child: Tooltip(
+          message: tip,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onTap,
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                gradient: primary ? AppColors.goldGrad : null,
+                color: primary ? null : AppColors.card,
+                borderRadius: BorderRadius.circular(10),
+                border: primary ? null : Border.all(color: AppColors.border, width: 0.8),
+              ),
+              child: Icon(i, size: 18, color: primary ? AppColors.onAccent : AppColors.gold),
+            ),
+          ),
+        ),
+      );
+
+  Widget _tfItem(AppState st, String t) {
+    final on = st.tf == t;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => st.setTf(t),
+      child: Container(
+        alignment: Alignment.center,
+        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+        decoration: BoxDecoration(
+          color: on ? AppColors.accent.withOpacity(0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          border: on ? Border.all(color: AppColors.accent.withOpacity(0.7), width: 0.8) : null,
+        ),
+        child: Text(t.toUpperCase(),
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: on ? FontWeight.w800 : FontWeight.w500,
+                color: on ? AppColors.gold : AppColors.muted)),
+      ),
+    );
+  }
+
   Widget _healthTool(String name, IndHealth? h, bool on, VoidCallback toggle) {
     final st = context.read<AppState>();
     final dot = switch (h?.light) {
@@ -415,26 +459,6 @@ class _ChartScreenState extends State<ChartScreen> {
             child: const Text('إظهار', style: TextStyle(fontSize: 12)),
           ),
         ]),
-      );
-
-  Widget _toolbar() => SizedBox(
-        height: 42,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-          children: [
-            _tool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(context.read<AppState>()),
-                primary: true),
-            _tool(Icons.leaderboard_outlined, 'مقارنة', () => _showBench(context.read<AppState>())),
-            _tool(Icons.layers_outlined, 'طبقات', _showLayers),
-            _healthTool('ALL', context.read<AppState>().allHealth, layers.all,
-                () => setState(() => layers.all = !layers.all)),
-            _healthTool('Alka', context.read<AppState>().alkaHealth, layers.alka,
-                () => setState(() => layers.alka = !layers.alka)),
-            _healthTool('AAB', context.read<AppState>().aabHealth, layers.sigs,
-                () => setState(() => layers.sigs = !layers.sigs)),
-          ],
-        ),
       );
 
   /// كل طبقات الشارت وإعداداته في قائمة واحدة مرتبة.
@@ -519,29 +543,46 @@ class _ChartScreenState extends State<ChartScreen> {
     final eff = layers.copyWith(
         sigs: layers.sigs && !hideAab, alka: layers.alka && !hideAlka, all: layers.all && !hideAll);
     return Column(children: [
-      // صف 1: الرمز + حالة البث + شاشة كاملة
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 6, 2),
+      // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
+      Container(
+        padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppColors.border, width: 0.6)),
+        ),
         child: Row(children: [
           const _CompactSymbol(),
           const SizedBox(width: 8),
-          const Expanded(child: Align(alignment: AlignmentDirectional.centerStart, child: LiveBadge())),
-          IconButton(
-            tooltip: full ? 'إظهار الأدوات' : 'شاشة كاملة',
-            visualDensity: VisualDensity.compact,
-            iconSize: 22,
-            color: AppColors.gold,
-            icon: Icon(full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded, size: 19),
-            onPressed: () => setState(() => full = !full),
+          const SizedBox(width: 6),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: st.liveStatus == 'live' ? AppColors.up : AppColors.gold,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                    color: (st.liveStatus == 'live' ? AppColors.up : AppColors.gold).withOpacity(0.6),
+                    blurRadius: 6),
+              ],
+            ),
           ),
+          const Spacer(),
+          _iconTool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(st), primary: true),
+          _iconTool(Icons.leaderboard_outlined, 'مقارنة المؤشرات', () => _showBench(st)),
+          _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
+          _iconTool(full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded,
+              full ? 'إظهار الأدوات' : 'شاشة كاملة', () => setState(() => full = !full)),
         ]),
       ),
-      if (!full) ...[
-        // صف 2: الأُطر الزمنية (مضغوطة)
-        const _CompactTf(),
-        // صف 3: الأدوات
-        _toolbar(),
-      ],
+      if (!full)
+        // صف 2: الأُطر الزمنية | المؤشرات (مع لون حالتها)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: SizedBox(
+            height: 38,
+            child: Row(children: [for (final t in AppState.timeframes) Expanded(child: _tfItem(st, t))]),
+          ),
+        ),
       Expanded(
         child: NativeChart(
           candles: st.candles,
@@ -577,33 +618,37 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   Widget _forecastBar(Forecast f, MarketSymbol sym) {
-    final nb = f.next;
-    final lines = <Widget>[];
-    if (layers.fc && nb != null && f.showNext) {
-      final up = nb.pUp >= 0.5;
-      final pct = ((up ? nb.pUp : 1 - nb.pUp) * 100).toStringAsFixed(0);
-      lines.add(Text(
-          'الشمعة القادمة تدعم القرار: ${up ? '▲ صعود' : '▼ هبوط'} $pct% (من ${nb.sample} حالة مشابهة)',
-          style: TextStyle(color: up ? AppColors.up : AppColors.down, fontSize: 11)));
-    }
+    final items = <Widget>[];
     if (f.indicators.isNotEmpty) {
       final upN = f.indicators.where((e) => e.bias > 0).length;
       final dnN = f.indicators.where((e) => e.bias < 0).length;
-      lines.add(InkWell(
+      items.add(InkWell(
+        borderRadius: BorderRadius.circular(6),
         onTap: () => _showPanel(f),
-        child: Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text('📊 لوحة المؤشرات: $upN صاعد • $dnN هابط — اضغط لشرح كل مؤشر',
-              style: const TextStyle(
-                  color: AppColors.accent, fontSize: 11, decoration: TextDecoration.underline)),
-        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.speed_rounded, size: 17, color: AppColors.gold),
+          const SizedBox(width: 5),
+          Tag('▲ $upN', color: AppColors.up),
+          const SizedBox(width: 4),
+          Tag('▼ $dnN', color: AppColors.down),
+        ]),
       ));
     }
+    final st = context.read<AppState>();
+    items.add(const Spacer());
+    items.add(_healthTool('ALL', st.allHealth, layers.all, () => setState(() => layers.all = !layers.all)));
+    items.add(_healthTool('Alka', st.alkaHealth, layers.alka, () => setState(() => layers.alka = !layers.alka)));
+    items.add(_healthTool('AAB', st.aabHealth, layers.sigs, () => setState(() => layers.sigs = !layers.sigs)));
+    if (items.isEmpty) return const SizedBox.shrink();
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      color: AppColors.card,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: lines),
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.6)),
+      ),
+      child: Row(children: items),
     );
   }
 
@@ -712,37 +757,45 @@ class _ChartScreenState extends State<ChartScreen> {
             ),
           ]),
         );
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.border)),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-            decoration: BoxDecoration(
-              color: col,
-              borderRadius: BorderRadius.circular(7),
+    return InkWell(
+      onTap: () => setState(() => why = !why),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: col.withOpacity(0.5), width: 1)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+              decoration: BoxDecoration(
+                color: col,
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: Text(label,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
             ),
-            child: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
-          ),
-          const SizedBox(width: 6),
-          if (d.state == 1 || d.state == 2) ...[
-            item(d.state == 2 ? 'دخول عند' : 'دخول', d.entry, AppColors.text),
-            item('وقف', d.sl, AppColors.down),
-            item('TP1', d.tp1, AppColors.up),
-            item('TP2', d.tp2, AppColors.up),
-          ] else
-            Expanded(
-                child:
-                    Text(d.title, style: TextStyle(color: col, fontSize: 12, fontWeight: FontWeight.w600))),
+            const SizedBox(width: 6),
+            if (d.state == 1 || d.state == 2) ...[
+              item(d.state == 2 ? 'دخول عند' : 'دخول', d.entry, AppColors.text),
+              item('وقف', d.sl, AppColors.down),
+              item('TP1', d.tp1, AppColors.up),
+              item('TP2', d.tp2, AppColors.up),
+              Icon(why ? Icons.expand_more_rounded : Icons.info_outline_rounded,
+                  size: 16, color: AppColors.muted),
+            ] else
+              Expanded(
+                  child:
+                      Text(d.title, style: TextStyle(color: col, fontSize: 12, fontWeight: FontWeight.w600))),
+          ]),
+          if (why) ...[
+            const SizedBox(height: 6),
+            Text(d.state == 1 || d.state == 2 ? '${d.title} • ${d.why}' : d.why,
+                style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
+          ],
         ]),
-        const SizedBox(height: 4),
-        Text(d.state == 1 || d.state == 2 ? '${d.title} • ${d.why}' : d.why,
-            style: const TextStyle(color: AppColors.muted, fontSize: 10)),
-      ]),
+      ),
     );
   }
 
@@ -809,19 +862,6 @@ class _CompactSymbol extends StatelessWidget {
           const Icon(Icons.expand_more, size: 18, color: AppColors.muted),
         ]),
       ),
-    );
-  }
-}
-
-/// الأُطر الزمنية في صف واحد مضغوط.
-class _CompactTf extends StatelessWidget {
-  const _CompactTf();
-  @override
-  Widget build(BuildContext context) {
-    final st = context.watch<AppState>();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: TfTabs(current: st.tf, onPick: st.setTf, height: 34),
     );
   }
 }
