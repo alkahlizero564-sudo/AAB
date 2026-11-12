@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/forecast.dart';
+import '../analysis/health.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -33,6 +34,9 @@ class AppState extends ChangeNotifier {
   Forecast? forecast; // توصيات الشارت + توقع الشمعة القادمة
   AlgoResult? algo; // مؤشر AAB Algo (تلوين الشموع + خط الاتجاه + مناطق الانعكاس)
   AlkaResult? alka; // مؤشر Alka (شموع الانعكاس عند الدعم/المقاومة و Volume Profile)
+  IndHealth? aabHealth, alkaHealth; // أداء المؤشرين على هذا السوق والفريم (آخر 3000 شمعة)
+  bool healthLoading = false;
+  final _healthCache = <String, (IndHealth, IndHealth, DateTime)>{};
   bool loading = false;
   String? error;
   DateTime? lastUpdate;
@@ -206,6 +210,9 @@ class AppState extends ChangeNotifier {
     forecast = null;
     algo = null;
     alka = null;
+    final hc = _healthCache['${symbol.code}|$tf'];
+    aabHealth = hc?.$1;
+    alkaHealth = hc?.$2;
     error = null;
     _aiDir = null;
     _aiAt = null;
@@ -348,6 +355,42 @@ class AppState extends ChangeNotifier {
   Future<List<Candle>> fetchLong({int count = 3000}) =>
       _market.fetch(symbol, tf, settings, count: count);
 
+  /// صحة AAB و Alka على هذا السوق (تُحسب في الخلفية وتُحفظ ساعتين).
+  Future<void> _loadHealth({bool force = false}) async {
+    final key = '${symbol.code}|$tf';
+    final hit = _healthCache[key];
+    if (!force && hit != null && DateTime.now().difference(hit.$3).inHours < 2) {
+      aabHealth = hit.$1;
+      alkaHealth = hit.$2;
+      return;
+    }
+    if (healthLoading) return;
+    healthLoading = true;
+    final gen = _gen;
+    try {
+      var c = candles;
+      try {
+        final h = await fetchLong();
+        if (h.length > c.length) c = h;
+      } catch (_) {}
+      if (gen != _gen || c.length < 300) return;
+      final data = List<Candle>.of(c), sym = symbol;
+      (IndHealth, IndHealth) r;
+      try {
+        r = await Isolate.run(() => computeHealth(data, sym));
+      } catch (_) {
+        r = computeHealth(data, sym);
+      }
+      if (gen != _gen) return;
+      _healthCache[key] = (r.$1, r.$2, DateTime.now());
+      aabHealth = r.$1;
+      alkaHealth = r.$2;
+    } finally {
+      healthLoading = false;
+      if (gen == _gen) notifyListeners();
+    }
+  }
+
   Future<void> refresh() async {
     if (_busy) return;
     if (!settings.hasTwelve && !settings.hasTiingo) return;
@@ -376,6 +419,7 @@ class AppState extends ChangeNotifier {
       }
       _analyze();
       error = null;
+      _loadHealth();
     } catch (e) {
       if (gen == _gen) error = e.toString().replaceFirst('Exception: ', '');
     } finally {

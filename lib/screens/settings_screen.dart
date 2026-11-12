@@ -21,6 +21,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late int cePeriod, pollSec;
   late bool useAi, liveWs, metalTp07;
   late double alkaTp1;
+  late bool autoHideWeak;
   late String source;
 
   @override
@@ -43,6 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     useAi = s.useAi;
     metalTp07 = s.metalTp07;
     alkaTp1 = s.alkaTp1;
+    autoHideWeak = s.autoHideWeak;
     source = s.source;
   }
 
@@ -73,6 +75,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       useAi: useAi,
       metalTp07: metalTp07,
       alkaTp1: alkaTp1,
+      autoHideWeak: autoHideWeak,
       source: source,
       geminiModel: model.text.trim().isEmpty ? 'gemini-2.5-flash' : model.text,
     );
@@ -193,6 +196,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(fontSize: 11, color: AppColors.muted)),
             value: metalTp07,
             onChanged: (v) => setState(() => metalTp07 = v),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('إخفاء المؤشر الضعيف حالياً تلقائياً (🔴)', style: TextStyle(fontSize: 13)),
+            subtitle: const Text(
+                'إذا كان AAB أو Alka ضعيفاً على السوق والفريم الحاليين (آخر 3000 شمعة، 30 صفقة فأكثر) تُخفى إشاراته',
+                style: TextStyle(fontSize: 11, color: AppColors.muted)),
+            value: autoHideWeak,
+            onChanged: (v) => setState(() => autoHideWeak = v),
           ),
           _slider('Alka — الهدف الأول (R)', alkaTp1, 0.25, 1.0, 15,
               (v) => '${v.toStringAsFixed(2)}R  (دقة ≈ ${v <= 0.3 ? 84 : v <= 0.4 ? 79 : v <= 0.6 ? 72 : v <= 0.8 ? 64 : 55}%)',

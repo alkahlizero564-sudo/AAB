@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../analysis/benchmark.dart';
 import '../analysis/chart_reader.dart';
 import '../analysis/forecast.dart';
+import '../analysis/health.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -21,6 +22,7 @@ class _ChartScreenState extends State<ChartScreen> {
   final layers = ChartLayers();
   bool full = false; // وضع الشاشة الكاملة للشارت
   int? sel; // الشمعة المختارة بالضغط المطوّل
+  final forceShow = <String>{}; // مؤشرات طلب المستخدم إظهارها رغم أنها 🔴
 
   void _showReading(AppState st, {int? upto}) {
     final r = readChart(st.candles, st.symbol, upto: upto, htf: upto == null ? st.htf : null);
@@ -39,8 +41,7 @@ class _ChartScreenState extends State<ChartScreen> {
           padding: const EdgeInsets.all(14),
           children: [
             Text('🧠 قراءة الشارت ($when)',
-                style: const TextStyle(
-                    color: AppColors.text, fontSize: 16, fontWeight: FontWeight.bold)),
+                style: const TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(12),
@@ -56,8 +57,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 for (final sc in r.scenarios)
                   Padding(
                     padding: const EdgeInsets.only(top: 3),
-                    child: Text(sc,
-                        style: const TextStyle(color: AppColors.text, fontSize: 12, height: 1.4)),
+                    child: Text(sc, style: const TextStyle(color: AppColors.text, fontSize: 12, height: 1.4)),
                   ),
               ]),
             ),
@@ -98,8 +98,7 @@ class _ChartScreenState extends State<ChartScreen> {
                             : sec.bias < 0
                                 ? '▼ للبائعين'
                                 : '— محايد',
-                        style: TextStyle(
-                            color: bc(sec.bias), fontSize: 11, fontWeight: FontWeight.w700)),
+                        style: TextStyle(color: bc(sec.bias), fontSize: 11, fontWeight: FontWeight.w700)),
                   ]),
                   const SizedBox(height: 6),
                   for (final l in sec.lines)
@@ -229,8 +228,8 @@ class _ChartScreenState extends State<ChartScreen> {
       child: Row(children: [
         SizedBox(
             width: 26,
-            child: Text(small ? '–' : '${k + 1}',
-                style: const TextStyle(color: AppColors.muted, fontSize: 12))),
+            child:
+                Text(small ? '–' : '${k + 1}', style: const TextStyle(color: AppColors.muted, fontSize: 12))),
         Expanded(
             child: Text(r.name,
                 style: TextStyle(
@@ -282,24 +281,20 @@ class _ChartScreenState extends State<ChartScreen> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             Text('🕯️ شرح شمعة ${_hm(st.candles[i].time)}',
-                style: const TextStyle(
-                    color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 12)),
+                style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 12)),
             const Spacer(),
             InkWell(
               onTap: () => _showReading(st, upto: i),
               child: const Text('🧠 اقرأ الشارت عندها',
-                  style: TextStyle(
-                      color: AppColors.accent,
-                      fontSize: 11,
-                      decoration: TextDecoration.underline)),
+                  style:
+                      TextStyle(color: AppColors.accent, fontSize: 11, decoration: TextDecoration.underline)),
             ),
           ]),
           const SizedBox(height: 4),
           for (final l in lines)
             Padding(
               padding: const EdgeInsets.only(bottom: 3),
-              child: Text(l,
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.35)),
+              child: Text(l, style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.35)),
             ),
         ]),
       ),
@@ -335,28 +330,65 @@ class _ChartScreenState extends State<ChartScreen> {
         ]),
       );
 
-  Widget _tool(String icon, String label, VoidCallback onTap, {bool primary = false}) => Padding(
+  Widget _tool(String icon, String label, VoidCallback onTap,
+          {bool primary = false, bool dim = false, VoidCallback? onLong}) =>
+      Padding(
         padding: const EdgeInsetsDirectional.only(end: 6),
-        child: Material(
-          color: primary ? AppColors.accent : AppColors.card,
-          shape: StadiumBorder(side: BorderSide(color: primary ? AppColors.accent : AppColors.border)),
-          child: InkWell(
-            customBorder: const StadiumBorder(),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(icon, style: const TextStyle(fontSize: 13)),
-                const SizedBox(width: 5),
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: primary ? Colors.white : AppColors.text,
-                        fontWeight: FontWeight.w700)),
-              ]),
+        child: Opacity(
+          opacity: dim ? 0.45 : 1,
+          child: Material(
+            color: primary ? AppColors.accent : AppColors.card,
+            shape: StadiumBorder(side: BorderSide(color: primary ? AppColors.accent : AppColors.border)),
+            child: InkWell(
+              customBorder: const StadiumBorder(),
+              onTap: onTap,
+              onLongPress: onLong,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(icon, style: const TextStyle(fontSize: 13)),
+                  const SizedBox(width: 5),
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: primary ? Colors.white : AppColors.text,
+                          fontWeight: FontWeight.w700)),
+                ]),
+              ),
             ),
           ),
         ),
+      );
+
+  Widget _healthTool(String name, IndHealth? h, bool on, VoidCallback toggle) {
+    final st = context.read<AppState>();
+    final icon = h?.dot ?? (st.healthLoading ? '⏳' : '⚪');
+    return _tool(icon, name, toggle, dim: !on, onLong: () {
+      final msg = h == null
+          ? '$name: جاري حساب أدائه على ${st.symbol.code} ${st.tf}…'
+          : '$name على ${st.symbol.code} ${st.tf}: ${h.dot} ${h.label} — ${h.summary}';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    });
+  }
+
+  /// سطر يشرح لماذا أُخفي مؤشر ضعيف، مع زر "إظهار".
+  Widget _hiddenNotice(String name, IndHealth h, String key) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          border: Border(top: BorderSide(color: AppColors.border)),
+        ),
+        child: Row(children: [
+          Expanded(
+            child: Text('🔴 $name ضعيف الآن على هذا السوق: ${h.summary} — إشاراته مخفية',
+                style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+          ),
+          TextButton(
+            onPressed: () => setState(() => forceShow.add(key)),
+            child: const Text('إظهار', style: TextStyle(fontSize: 12)),
+          ),
+        ]),
       );
 
   Widget _toolbar() => SizedBox(
@@ -368,8 +400,10 @@ class _ChartScreenState extends State<ChartScreen> {
             _tool('🧠', 'قراءة الشارت', () => _showReading(context.read<AppState>()), primary: true),
             _tool('🏆', 'مقارنة', () => _showBench(context.read<AppState>())),
             _tool('🎛️', 'طبقات', _showLayers),
-            _tool(layers.alka ? '🟢' : '⚪', 'Alka', () => setState(() => layers.alka = !layers.alka)),
-            _tool(layers.sigs ? '🟢' : '⚪', 'AAB', () => setState(() => layers.sigs = !layers.sigs)),
+            _healthTool('Alka', context.read<AppState>().alkaHealth, layers.alka,
+                () => setState(() => layers.alka = !layers.alka)),
+            _healthTool('AAB', context.read<AppState>().aabHealth, layers.sigs,
+                () => setState(() => layers.sigs = !layers.sigs)),
           ],
         ),
       );
@@ -399,8 +433,7 @@ class _ChartScreenState extends State<ChartScreen> {
         Widget head(String t) => Padding(
               padding: const EdgeInsets.only(top: 10, bottom: 4),
               child: Text(t,
-                  style: const TextStyle(
-                      color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 13)),
+                  style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 13)),
             );
         return DraggableScrollableSheet(
           expand: false,
@@ -421,9 +454,11 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
               head('التوصيات والمؤشرات'),
-              sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka, (x) => layers.alka = x),
+              sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka,
+                  (x) => layers.alka = x),
               sw('توصيات AAB', 'أسهم الشراء/البيع ونتيجتها', layers.sigs, (x) => layers.sigs = x),
-              sw('AAB Algo', 'تلوين الشموع حسب قوة الاتجاه + خط الاتجاه', layers.algo, (x) => layers.algo = x),
+              sw('AAB Algo', 'تلوين الشموع حسب قوة الاتجاه + خط الاتجاه', layers.algo,
+                  (x) => layers.algo = x),
               sw('توقع الشمعة القادمة', 'يظهر فقط عندما يدعم القرار', layers.fc, (x) => layers.fc = x),
               sw('أنماط الشموع', 'أسماء نماذج الشموع على الشارت', layers.pats, (x) => layers.pats = x),
               head('خطوط ومستويات'),
@@ -445,6 +480,11 @@ class _ChartScreenState extends State<ChartScreen> {
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
     final s = st.signal;
+    final mk = '${st.symbol.code}|${st.tf}';
+    final auto = st.settings.autoHideWeak;
+    final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
+    final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
+    final eff = layers.copyWith(sigs: layers.sigs && !hideAab, alka: layers.alka && !hideAlka);
     return Column(children: [
       // صف 1: الرمز + حالة البث + شاشة كاملة
       Padding(
@@ -452,8 +492,7 @@ class _ChartScreenState extends State<ChartScreen> {
         child: Row(children: [
           const _CompactSymbol(),
           const SizedBox(width: 8),
-          const Expanded(
-              child: Align(alignment: AlignmentDirectional.centerStart, child: LiveBadge())),
+          const Expanded(child: Align(alignment: AlignmentDirectional.centerStart, child: LiveBadge())),
           IconButton(
             tooltip: full ? 'إظهار الأدوات' : 'شاشة كاملة',
             visualDensity: VisualDensity.compact,
@@ -480,7 +519,7 @@ class _ChartScreenState extends State<ChartScreen> {
           repaint: st.liveTick,
           sym: st.symbol,
           tf: st.tf,
-          layers: layers,
+          layers: eff,
           onSelect: (i) => setState(() => sel = i),
         ),
       ),
@@ -489,9 +528,13 @@ class _ChartScreenState extends State<ChartScreen> {
           _candlePanel(st, sel!)
         else if (!full)
           _forecastBar(st.forecast!, st.symbol),
-        if (layers.alka && st.alka != null && st.alka!.decision.state != 0)
+        if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
+        if (eff.alka && st.alka != null && st.alka!.decision.state != 0)
           _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
-        _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
+        if (hideAab && layers.sigs)
+          _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
+        else
+          _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (s != null)
         _bottomBar(s, st.symbol),
     ]);
@@ -610,7 +653,8 @@ class _ChartScreenState extends State<ChartScreen> {
         : d.dir < 0
             ? AppColors.down
             : AppColors.muted;
-    final label = '${tag.isEmpty ? '' : '$tag '}${d.state == 0 ? 'انتظار' : d.state == 1 ? (d.dir > 0 ? 'شراء' : 'بيع') : d.state == 2 ? '⏳ ${d.dir > 0 ? 'شراء' : 'بيع'}' : '⚡ يتكوّن'}';
+    final label =
+        '${tag.isEmpty ? '' : '$tag '}${d.state == 0 ? 'انتظار' : d.state == 1 ? (d.dir > 0 ? 'شراء' : 'بيع') : d.state == 2 ? '⏳ ${d.dir > 0 ? 'شراء' : 'بيع'}' : '⚡ يتكوّن'}';
     Widget item(String t, double v, Color c) => Expanded(
           child: Column(children: [
             Text(t, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
@@ -636,8 +680,7 @@ class _ChartScreenState extends State<ChartScreen> {
               color: col.withOpacity(0.18),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Text(label,
-                style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
+            child: Text(label, style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
           ),
           const SizedBox(width: 6),
           if (d.state == 1 || d.state == 2) ...[
@@ -647,8 +690,8 @@ class _ChartScreenState extends State<ChartScreen> {
             item('TP2', d.tp2, AppColors.up),
           ] else
             Expanded(
-                child: Text(d.title,
-                    style: TextStyle(color: col, fontSize: 12, fontWeight: FontWeight.w600))),
+                child:
+                    Text(d.title, style: TextStyle(color: col, fontSize: 12, fontWeight: FontWeight.w600))),
         ]),
         const SizedBox(height: 4),
         Text(d.state == 1 || d.state == 2 ? '${d.title} • ${d.why}' : d.why,
@@ -695,8 +738,7 @@ class _ChartScreenState extends State<ChartScreen> {
           item('TP3', sym.fmt(s.tp3), AppColors.up),
         ] else
           const Expanded(
-              child: Text('لا توجد صفقة — انتظر',
-                  style: TextStyle(color: AppColors.muted, fontSize: 12))),
+              child: Text('لا توجد صفقة — انتظر', style: TextStyle(color: AppColors.muted, fontSize: 12))),
       ]),
     );
   }

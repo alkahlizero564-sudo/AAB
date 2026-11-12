@@ -17,6 +17,24 @@ class ChartLayers {
   bool vol = true; // أعمدة الحجم أسفل الشارت
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
+
+  /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
+  ChartLayers copyWith({bool? sigs, bool? alka}) => ChartLayers()
+    ..fib = fib
+    ..vp = vp
+    ..zones = zones
+    ..vwap = vwap
+    ..levels = levels
+    ..ce = ce
+    ..sigs = sigs ?? this.sigs
+    ..fc = fc
+    ..pats = pats
+    ..ema = ema
+    ..algo = algo
+    ..alka = alka ?? this.alka
+    ..vol = vol
+    ..type = type
+    ..sub = sub;
 }
 
 /// خط الكتابة في الشارت (null = خط النظام). يُغيَّر في اختبارات لقطات الشاشة فقط.

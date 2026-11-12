@@ -14,6 +14,7 @@ class AppSettings {
   bool useAi;
   bool metalTp07; // الذهب والمعادن: الهدف الأول 0.7R تلقائياً (الأدق بالقياس)
   double alkaTp1; // هدف Alka الأول بوحدات R (0.35 ≈ دقة 79% مع الوقف المتحرك)
+  bool autoHideWeak; // إخفاء إشارات المؤشر الضعيف حالياً على السوق (🔴) تلقائياً
   String source; // auto | twelve | tiingo
   String geminiModel;
 
@@ -33,6 +34,7 @@ class AppSettings {
     this.useAi = true,
     this.metalTp07 = true,
     this.alkaTp1 = 0.35,
+    this.autoHideWeak = true,
     this.source = 'auto',
     this.geminiModel = 'gemini-2.5-flash',
   })  : twelveKeys = twelveKeys ?? List.filled(4, ''),
@@ -67,6 +69,7 @@ class AppSettings {
       useAi: p.getBool('useAi') ?? true,
       metalTp07: p.getBool('metalTp07') ?? true,
       alkaTp1: p.getDouble('alkaTp1') ?? 0.35,
+      autoHideWeak: p.getBool('autoHideWeak') ?? true,
       source: p.getString('source') ?? 'auto',
       geminiModel: p.getString('geminiModel') ?? 'gemini-2.5-flash',
     );
@@ -89,6 +92,7 @@ class AppSettings {
     await p.setBool('useAi', useAi);
     await p.setBool('metalTp07', metalTp07);
     await p.setDouble('alkaTp1', alkaTp1);
+    await p.setBool('autoHideWeak', autoHideWeak);
     await p.setString('source', source);
     await p.setString('geminiModel', geminiModel.trim());
   }
