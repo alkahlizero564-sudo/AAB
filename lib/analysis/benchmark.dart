@@ -154,7 +154,8 @@ List<BenchRow> benchmark(List<Candle> c) {
     final (w, tn, tr) = _sim(c, s);
     rows.add(BenchRow(k, w, tn, tr));
   });
-  final f = buildForecast(c, history: c.length, rr1: 1, rr2: 2);
+  // نفس إدارة الصفقة للجميع (الخروج عند 2R) — مقارنة عادلة
+  final f = buildForecast(c, history: c.length, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
   var fr = 0.0;
   for (final x in f.signals) {
     if (x.result == 0) continue;

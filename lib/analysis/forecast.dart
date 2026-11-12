@@ -61,9 +61,21 @@ class PastSignal {
   final String why;
   final bool strong; // تأكيدان أو أكثر
   final int agree, total; // عدد المؤشرات المتوافقة من لوحة المؤشرات
+  final double exitPrice; // سعر الخروج الفعلي (NaN لو مفتوحة)
+  final double curStop; // الوقف الحالي للصفقة المفتوحة (متحرك بعد TP1)
   const PastSignal(this.i, this.dir, this.entry, this.sl, this.tp1, this.tp2,
       this.result, this.exitI, this.why, this.strong,
-      [this.agree = 0, this.total = 0]);
+      [this.agree = 0, this.total = 0, this.exitPrice = double.nan, this.curStop = double.nan]);
+
+  /// نتيجة الصفقة بوحدات R: نصف عند TP1 والنصف الثاني عند سعر الخروج.
+  double get rMultiple {
+    final risk = (entry - sl).abs();
+    if (risk == 0 || result == 0) return 0;
+    if (result < 0) return exitPrice.isNaN ? -1 : dir * (exitPrice - entry) / risk;
+    final r1 = dir * (tp1 - entry) / risk;
+    final r2 = exitPrice.isNaN ? 0.0 : dir * (exitPrice - entry) / risk;
+    return 0.5 * r1 + 0.5 * r2;
+  }
 }
 
 /// إشارة مرتقبة: مستوى إذا وصل له السعر تتأكد التوصية (قبل حدوثها).
@@ -117,8 +129,11 @@ class Forecast {
     if (signals.isNotEmpty && signals.last.exitI < 0) {
       final sg = signals.last;
       final side = sg.dir > 0 ? 'شراء' : 'بيع';
-      return Decision(1, sg.dir, sg.entry, sg.result == 1 ? sg.entry : sg.sl, sg.tp1, sg.tp2,
-          sg.result == 1 ? '$side مفتوح — تحقق TP1 والوقف الآن عند الدخول' : '$side — صفقة مفتوحة',
+      final st = sg.curStop.isNaN ? (sg.result >= 1 ? sg.entry : sg.sl) : sg.curStop;
+      return Decision(1, sg.dir, sg.entry, st, sg.tp1, sg.tp2,
+          sg.result >= 1
+              ? '$side مفتوح — تحقق TP1: أغلق النصف، والوقف المتحرك الآن عند هذا السعر'
+              : '$side — صفقة مفتوحة',
           sg.why, (sg.entry - sg.sl).abs(), sg.agree, sg.total);
     }
     if (pending.isNotEmpty) {
@@ -164,12 +179,14 @@ class ForecastCfg {
   final Set<String> extraTrig; // مؤشرات إضافية تُستخدم كسبب دخول
   final double confRatio; // أقل نسبة مؤشرات متوافقة مع الاتجاه (0 = بدون)
   final double confMax; // أعلى نسبة (توافق كامل غالباً = حركة منتهية ودخول متأخر)
+  final bool trail; // بعد TP1: وقف متحرك (Chandelier: أعلى قمة 22 شمعة − 3 ATR) بدل الخروج عند TP2
   final double predEdge; // أقل ميزة احتمالية لإظهار توقع الشمعة
   final int predH; // أفق التوقع بالشموع
   const ForecastCfg({
     this.extraTrig = const {'cci', 'ha', 'mfi'},
     this.confRatio = 0.6,
     this.confMax = 0.9,
+    this.trail = true,
     this.predEdge = 0.15,
     this.predH = 1,
     this.adxMin = 0,
@@ -449,34 +466,54 @@ Forecast buildForecast(List<Candle> c,
     var res = 0, exitI = -1;
     var stop = sl;
     var gotT1 = false;
+    var exitPrice = double.nan;
     for (var j = entryI; j < n; j++) {
       final k = c[j];
       // في شمعة الدخول نفسها مع التأكيد: لا نعرف الترتيب ← نفحص الوقف فقط
       final hitSl = d > 0 ? k.low <= stop : k.high >= stop;
       if (hitSl) {
-        res = gotT1 ? 1 : -1; // بعد الهدف الأول ينتقل الوقف للدخول
+        res = gotT1 ? ((stop - t2) * d >= 0 ? 2 : 1) : -1;
+        exitPrice = stop;
         exitI = j;
         break;
       }
       if (!gotT1 && (d > 0 ? k.high >= t1 : k.low <= t1)) {
         gotT1 = true;
-        stop = entry;
+        stop = entry; // بعد الهدف الأول: الوقف عند الدخول (ثم يتحرك)
+      } else if (gotT1 && cfg.trail) {
+        // وقف متحرك Chandelier: أعلى قمة (أدنى قاع) لآخر 22 شمعة − 3×ATR — من الشموع المغلقة فقط
+        var hh = d > 0 ? -double.infinity : double.infinity;
+        for (var r = math.max(0, j - 21); r <= j; r++) {
+          hh = d > 0 ? math.max(hh, c[r].high) : math.min(hh, c[r].low);
+        }
+        final a = at[j].isNaN ? (c[j].high - c[j].low) : at[j];
+        final cand = hh - d * 3 * a;
+        stop = d > 0 ? math.max(stop, cand) : math.min(stop, cand);
       }
-      if (gotT1 && (d > 0 ? k.high >= t2 : k.low <= t2)) {
+      if (!cfg.trail && gotT1 && (d > 0 ? k.high >= t2 : k.low <= t2)) {
         res = 2;
+        exitPrice = t2;
         exitI = j;
         break;
       }
-      if (j >= i + 80) {
-        // انتهت المهلة: تُغلق بسعر الإغلاق
-        res = gotT1 ? 1 : -2;
+      if (!gotT1 && j >= i + 80) {
+        // انتهت المهلة قبل الهدف الأول: تُغلق بسعر الإغلاق
+        res = -2;
+        exitPrice = k.close;
+        exitI = j;
+        break;
+      }
+      if (gotT1 && j >= i + (cfg.trail ? 300 : 80)) {
+        res = (k.close - t2) * d >= 0 ? 2 : 1;
+        exitPrice = k.close;
         exitI = j;
         break;
       }
     }
-    if (exitI < 0 && gotT1) res = 1; // تحقق الهدف الأول وما زالت مفتوحة
+    if (exitI < 0 && gotT1) res = (c[n - 1].close - t2) * d >= 0 ? 2 : 1; // ما زالت مفتوحة
     final (ag, tot) = conf(i, d);
-    signals.add(PastSignal(i, d, entry, sl, t1, t2, res, exitI, why, strong, ag, tot));
+    signals.add(PastSignal(i, d, entry, sl, t1, t2, res, exitI, why, strong, ag, tot,
+        exitPrice, exitI < 0 ? stop : double.nan));
     busyUntil = exitI < 0 ? n : exitI;
     if (exitI >= 0 || res != 0) {
       for (final k in keys) {

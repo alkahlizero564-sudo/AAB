@@ -1056,10 +1056,9 @@ class _Painter extends CustomPainter {
         }
         // النتيجة
         if (sg.exitI >= 0 || sg.result != 0) {
-          final res = sg.result == 2
-              ? '✓ TP2'
-              : sg.result == 1
-                  ? '✓ TP1'
+          final rm = sg.rMultiple;
+          final res = sg.result >= 1
+              ? '✓ ${rm >= 0 ? '+' : ''}${rm.toStringAsFixed(1)}R'
                   : sg.result == -2
                       ? '⌛ انتهت المهلة'
                       : '✗ SL';
