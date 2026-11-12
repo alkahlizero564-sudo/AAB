@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../analysis/aab_algo.dart';
+import '../analysis/alka.dart';
 import '../analysis/forecast.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
@@ -31,6 +32,7 @@ class AppState extends ChangeNotifier {
   TradeSignal? signal;
   Forecast? forecast; // توصيات الشارت + توقع الشمعة القادمة
   AlgoResult? algo; // مؤشر AAB Algo (تلوين الشموع + خط الاتجاه + مناطق الانعكاس)
+  AlkaResult? alka; // مؤشر Alka (شموع الانعكاس عند الدعم/المقاومة و Volume Profile)
   bool loading = false;
   String? error;
   DateTime? lastUpdate;
@@ -203,6 +205,7 @@ class AppState extends ChangeNotifier {
     signal = null;
     forecast = null;
     algo = null;
+    alka = null;
     error = null;
     _aiDir = null;
     _aiAt = null;
@@ -240,7 +243,7 @@ class AppState extends ChangeNotifier {
     final h = htf == null ? null : List<Candle>.of(htf!);
     final s = settings, sym = symbol, cfg = EngineConfig.current;
     final rr1 = settings.rr1For(symbol.category), rr2 = settings.rr2;
-    (TradeSignal, Forecast, AlgoResult) res;
+    (TradeSignal, Forecast, AlgoResult, AlkaResult) res;
     try {
       res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2));
     } catch (_) {
@@ -262,9 +265,10 @@ class AppState extends ChangeNotifier {
         settings.rr1For(symbol.category), settings.rr2));
   }
 
-  void _apply((TradeSignal, Forecast, AlgoResult) r) {
+  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult) r) {
     final prev = signal;
-    final (base, fc, al) = r;
+    final (base, fc, al, ak) = r;
+    alka = ak;
     forecast = fc;
     signal = _unify(base, fc);
     algo = al;
@@ -429,10 +433,11 @@ class AppState extends ChangeNotifier {
 }
 
 /// كل الحسابات الثقيلة (تعمل داخل Isolate): المحرك القديم للطبقات، محرك التوصيات، و AAB Algo.
-(TradeSignal, Forecast, AlgoResult) _computeAll(List<Candle> c, List<Candle>? htf,
+(TradeSignal, Forecast, AlgoResult, AlkaResult) _computeAll(List<Candle> c, List<Candle>? htf,
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final fc = buildForecast(c, rr1: rr1, rr2: rr2);
   final al = aabAlgo(c, sens: 2.0, withPanel: false);
-  return (base, fc, al);
+  final ak = buildAlka(c, rr1: rr1, rr2: rr2, sym: sym);
+  return (base, fc, al, ak);
 }

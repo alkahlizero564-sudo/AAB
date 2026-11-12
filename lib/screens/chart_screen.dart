@@ -352,7 +352,8 @@ class _ChartScreenState extends State<ChartScreen> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             children: [
-              _chip('AAB Algo', layers.algo, () => layers.algo = !layers.algo),
+              _chip('Alka', layers.alka, () => layers.alka = !layers.alka),
+            _chip('AAB Algo', layers.algo, () => layers.algo = !layers.algo),
             _chip('توصيات', layers.sigs, () => layers.sigs = !layers.sigs),
               _chip('توقع', layers.fc, () => layers.fc = !layers.fc),
               _chip('أنماط الشموع', layers.pats, () => layers.pats = !layers.pats),
@@ -374,6 +375,7 @@ class _ChartScreenState extends State<ChartScreen> {
           signal: s,
           forecast: st.forecast,
           algo: st.algo,
+          alka: st.alka,
           repaint: st.liveTick,
           sym: st.symbol,
           tf: st.tf,
