@@ -89,7 +89,7 @@ class TfChips extends StatelessWidget {
                 selectedColor: AppColors.accent,
                 backgroundColor: AppColors.card,
                 labelStyle: TextStyle(
-                    color: st.tf == t ? Colors.white : AppColors.muted,
+                    color: st.tf == t ? AppColors.onAccent : AppColors.muted,
                     fontWeight: FontWeight.w600),
                 side: const BorderSide(color: AppColors.border),
               ),
@@ -199,7 +199,7 @@ class _MarketsListState extends State<MarketsList> {
                   selectedColor: AppColors.accent,
                   backgroundColor: AppColors.card,
                   labelStyle: TextStyle(
-                      color: cat == e.key ? Colors.white : AppColors.muted),
+                      color: cat == e.key ? AppColors.onAccent : AppColors.muted),
                   side: const BorderSide(color: AppColors.border),
                 ),
               ),

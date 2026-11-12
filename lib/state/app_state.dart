@@ -271,6 +271,9 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  @visibleForTesting
+  void analyzeNow() => _analyze();
+
   void _analyze() {
     if (candles.isEmpty) return;
     _apply(_computeAll(candles, htf, settings, symbol, EngineConfig.current,

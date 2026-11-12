@@ -43,6 +43,7 @@ class DashboardScreen extends StatelessWidget {
               padding: EdgeInsets.all(40),
               child: Center(child: CircularProgressIndicator()),
             ),
+          if (st.allR != null) _AllHero(st: st),
           if (sig != null) ...[
             SignalCard(sig: sig, sym: st.symbol),
             _AiPanel(st: st, sig: sig),
@@ -58,6 +59,90 @@ class DashboardScreen extends StatelessWidget {
 
   static String _hhmmss(DateTime t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+}
+
+/// بطاقة القرار الرئيسية: قرار مؤشر ALL الآن (دمج AAB و Alka).
+class _AllHero extends StatelessWidget {
+  final AppState st;
+  const _AllHero({required this.st});
+
+  @override
+  Widget build(BuildContext context) {
+    final d = st.allR!.decision;
+    final sym = st.symbol;
+    final h = st.allHealth;
+    final col = d.state == 0 ? AppColors.muted : (d.dir > 0 ? AppColors.up : AppColors.down);
+    final head = d.state == 0
+        ? 'لا توجد صفقة الآن'
+        : '${d.dir > 0 ? 'شراء' : 'بيع'} • ${d.state == 1 ? 'صفقة مفتوحة' : 'ينتظر التأكيد'}';
+    Widget lv(String k, double v, Color c) => Expanded(
+          child: Column(children: [
+            Text(k, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+            const SizedBox(height: 2),
+            Text(v.isNaN ? '—' : sym.fmt(v),
+                style: TextStyle(color: c, fontWeight: FontWeight.w700, fontSize: 13)),
+          ]),
+        );
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(1.2),
+      decoration: BoxDecoration(
+        gradient: AppColors.goldGrad,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: AppColors.accent.withOpacity(0.18), blurRadius: 18)],
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(17),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1C1912), AppColors.card],
+            begin: Alignment.topRight,
+            end: Alignment.bottomLeft,
+          ),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                  gradient: AppColors.goldGrad, borderRadius: BorderRadius.circular(20)),
+              child: const Text('ALL',
+                  style: TextStyle(
+                      color: AppColors.onAccent, fontWeight: FontWeight.w800, fontSize: 12)),
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text('القرار الآن',
+                  style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w700)),
+            ),
+            if (h != null)
+              Text('${h.dot} ${h.label} • ${(h.winRate * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+          ]),
+          const SizedBox(height: 12),
+          Text(head,
+              style: TextStyle(color: col, fontSize: 22, fontWeight: FontWeight.w800)),
+          if (d.why.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(d.why,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.4)),
+          ],
+          if (d.state != 0) ...[
+            const SizedBox(height: 14),
+            Row(children: [
+              lv(d.state == 2 ? 'الدخول عند' : 'الدخول', d.entry, AppColors.text),
+              lv('الوقف', d.sl, AppColors.down),
+              lv('الهدف 1', d.tp1, AppColors.up),
+              lv('الهدف 2', d.tp2, AppColors.up),
+            ]),
+          ],
+        ]),
+      ),
+    );
+  }
 }
 
 class _AiPanel extends StatelessWidget {

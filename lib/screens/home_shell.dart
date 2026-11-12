@@ -12,7 +12,7 @@ import 'settings_screen.dart';
 class HomeShell extends StatelessWidget {
   const HomeShell({super.key});
 
-  static const _titles = ['التوصيات', 'الشارت المباشر', 'الأسواق', 'الأخبار', 'الإعدادات'];
+  static const _titles = ['التوصيات', 'الشارت', 'الأسواق', 'الأخبار', 'الإعدادات'];
   static const _icons = [
     Icons.insights,
     Icons.candlestick_chart,
@@ -27,7 +27,20 @@ class HomeShell extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(_titles[st.tab],
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+            style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.gold)),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [
+                Colors.transparent,
+                AppColors.accent.withOpacity(0.7),
+                Colors.transparent,
+              ]),
+            ),
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'تحديث',
@@ -49,7 +62,7 @@ class HomeShell extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Color(0xFF1B3A6B), AppColors.surface],
+                  colors: [Color(0xFF2B2310), AppColors.surface],
                   begin: Alignment.topRight,
                   end: Alignment.bottomLeft,
                 ),

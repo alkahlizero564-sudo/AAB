@@ -323,7 +323,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 child: Text(label,
                     style: TextStyle(
                         fontSize: 11,
-                        color: value == k ? Colors.white : AppColors.muted,
+                        color: value == k ? AppColors.onAccent : AppColors.muted,
                         fontWeight: value == k ? FontWeight.w700 : FontWeight.w400)),
               ),
             ),
@@ -351,7 +351,7 @@ class _ChartScreenState extends State<ChartScreen> {
                   Text(label,
                       style: TextStyle(
                           fontSize: 12,
-                          color: primary ? Colors.white : AppColors.text,
+                          color: primary ? AppColors.onAccent : AppColors.text,
                           fontWeight: FontWeight.w700)),
                 ]),
               ),
@@ -811,7 +811,7 @@ class _CompactTf extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: st.tf == t ? FontWeight.w800 : FontWeight.w500,
-                          color: st.tf == t ? Colors.white : AppColors.muted)),
+                          color: st.tf == t ? AppColors.onAccent : AppColors.muted)),
                 ),
               ),
             ),

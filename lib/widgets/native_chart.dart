@@ -41,7 +41,7 @@ class ChartLayers {
 }
 
 /// خط الكتابة في الشارت (null = خط النظام). يُغيَّر في اختبارات لقطات الشاشة فقط.
-String? chartFont;
+String? chartFont = 'Cairo';
 
 const _tfMin = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440};
 
@@ -870,7 +870,7 @@ class _Painter extends CustomPainter {
           text: t,
           style: TextStyle(
               fontFamily: chartFont,
-              color: Colors.white,
+              color: bg.computeLuminance() > 0.35 ? AppColors.onAccent : Colors.white,
               fontSize: 10,
               fontWeight: bold ? FontWeight.w700 : FontWeight.w500)),
       textDirection: TextDirection.ltr,
@@ -1111,7 +1111,7 @@ class _Painter extends CustomPainter {
               color: Colors.white, size: 9, bold: true, bg: rc, rtl: sg.result == -2);
         } else {
           _txt(cv, '⏳ مفتوحة', Offset(xe - 40, yE - 14),
-              color: Colors.white, size: 9, bg: AppColors.accent, rtl: true);
+              color: AppColors.onAccent, size: 9, bg: AppColors.accent, rtl: true);
         }
       }
     }
