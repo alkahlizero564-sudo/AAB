@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import '../models.dart';
+import 'alka.dart';
 import 'forecast.dart';
 import 'indicator_panel.dart';
 import 'indicators.dart';
@@ -90,7 +91,7 @@ List<int> _flips(List<int> dir) {
 }
 
 /// يقارن مؤشرنا بأشهر مؤشرات TradingView (بإعداداتها الافتراضية) على نفس الشموع.
-List<BenchRow> benchmark(List<Candle> c) {
+List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
   final n = c.length;
   if (n < 120) return const [];
   final cl = c.map((e) => e.close).toList();
@@ -162,6 +163,14 @@ List<BenchRow> benchmark(List<Candle> c) {
     fr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
   }
   rows.add(BenchRow('★ مؤشر AAB', f.wins, f.closed, fr, ours: true));
+  // Alka بنفس الهدف (1R ثم 2R) ونفس الإدارة — مقارنة عادلة
+  final k = buildAlka(c, history: c.length, rr1: 1, rr2: 2, trail: false, sym: sym);
+  var kr = 0.0;
+  for (final x in k.signals) {
+    if (x.result == 0) continue;
+    kr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
+  }
+  rows.add(BenchRow('★ مؤشر Alka', k.wins, k.closed, kr, ours: true));
   rows.sort((a, b) {
     final c1 = b.winRate.compareTo(a.winRate);
     return c1 != 0 ? c1 : b.avgR.compareTo(a.avgR);

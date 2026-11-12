@@ -120,7 +120,7 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   void _showBench(AppState st) {
-    final rows = benchmark(st.candles);
+    final rows = benchmark(st.candles, sym: st.symbol);
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surface,
@@ -190,7 +190,8 @@ class _ChartScreenState extends State<ChartScreen> {
             const Text(
                 'على 20 سوقاً حقيقياً (فوركس، ذهب، فضة، أسهم، مؤشرات، نفط) جاء مؤشر AAB الأول بين 23 مؤشراً: '
                 '53.8% وربح في 18 من 20 سوقاً، مقابل 51.2% لـ UT Bot و50.6% لـ Volume Profile و48–50% للباقي. '
-                'سوقاً بسوق: تفوّق على UT Bot في 13 من 20 وعلى Volume Profile في 16 من 20. '
+                'Alka بنفس الهدف: نفس دقة AAB (54.6% على 22 سوقاً مع البيتكوين) لكن بفرص أكثر بـ2.4 مرة '
+                'وربح إجمالي أعلى بـ2.3 مرة. AAB أفضل على الأسهم، و Alka أفضل على الذهب والبيتكوين والنفط والعملات. '
                 'على شارت واحد قصير قد يختلف الترتيب — العينة الصغيرة تتأثر بالصدفة.',
                 style: TextStyle(color: AppColors.muted, fontSize: 10, height: 1.4)),
           ],
@@ -388,7 +389,9 @@ class _ChartScreenState extends State<ChartScreen> {
           _candlePanel(st, sel!)
         else if (!full)
           _forecastBar(st.forecast!, st.symbol),
-        _decisionBar(st.forecast!.decision, st.symbol),
+        if (layers.alka && st.alka != null && st.alka!.decision.state != 0)
+          _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
+        _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (s != null)
         _bottomBar(s, st.symbol),
     ]);
@@ -489,19 +492,13 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   /// القرار الوحيد في شاشة الشارت (من محرك التوصيات المقاس).
-  Widget _decisionBar(Decision d, MarketSymbol sym) {
+  Widget _decisionBar(Decision d, MarketSymbol sym, {String tag = ''}) {
     final col = d.dir > 0
         ? AppColors.up
         : d.dir < 0
             ? AppColors.down
             : AppColors.muted;
-    final label = d.state == 0
-        ? 'انتظار'
-        : d.state == 1
-            ? (d.dir > 0 ? 'شراء' : 'بيع')
-            : d.state == 2
-                ? '⏳ ${d.dir > 0 ? 'شراء' : 'بيع'}'
-                : '⚡ يتكوّن';
+    final label = '${tag.isEmpty ? '' : '$tag '}${d.state == 0 ? 'انتظار' : d.state == 1 ? (d.dir > 0 ? 'شراء' : 'بيع') : d.state == 2 ? '⏳ ${d.dir > 0 ? 'شراء' : 'بيع'}' : '⚡ يتكوّن'}';
     Widget item(String t, double v, Color c) => Expanded(
           child: Column(children: [
             Text(t, style: const TextStyle(color: AppColors.muted, fontSize: 10)),

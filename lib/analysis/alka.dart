@@ -16,6 +16,28 @@ class AlkaResult {
   int get losses => signals.where((s) => s.result < 0).length;
   int get closed => wins + losses;
   double get winRate => closed == 0 ? 0 : wins / closed;
+
+  /// قرار Alka الحالي: 1 صفقة مفتوحة ، 2 تنتظر التأكيد ، 0 لا شيء.
+  Decision get decision {
+    if (signals.isNotEmpty && signals.last.exitI < 0) {
+      final sg = signals.last;
+      final side = sg.dir > 0 ? 'شراء' : 'بيع';
+      final st = sg.curStop.isNaN ? (sg.result >= 1 ? sg.entry : sg.sl) : sg.curStop;
+      return Decision(1, sg.dir, sg.entry, st, sg.tp1, sg.tp2,
+          sg.result >= 1
+              ? 'Alka $side مفتوح — تحقق TP1: أغلق النصف، والوقف المتحرك الآن عند هذا السعر'
+              : 'Alka $side — صفقة مفتوحة',
+          sg.why, (sg.entry - sg.sl).abs());
+    }
+    if (pending.isNotEmpty) {
+      final p = pending.first;
+      return Decision(2, p.dir, p.trigger, p.sl, p.tp1, p.tp2,
+          'Alka ${p.dir > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد — ادخل عند ${p.dir > 0 ? 'اختراق' : 'كسر'} السعر المحدد خلال 3 شموع، وألغِ لو انكسر الطرف الآخر',
+          p.cond, (p.trigger - p.sl).abs());
+    }
+    return const Decision(0, 0, double.nan, double.nan, double.nan, double.nan,
+        'Alka: لا توجد إشارة', '');
+  }
 }
 
 /// Volume Profile متحرك (150 شمعة قبل الشمعة): (VAL, POC, VAH)
@@ -159,8 +181,7 @@ AlkaResult buildAlka(List<Candle> c,
         final (sl, t1, t2) = levels(i, d, trig);
         pending
           ..clear()
-          ..add(PendingSetup(d, trig, sl, t1, t2,
-              'Alka ${d > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد ($why) — ادخل عند ${d > 0 ? 'اختراق' : 'كسر'}'));
+          ..add(PendingSetup(d, trig, sl, t1, t2, why));
       }
       continue;
     }
