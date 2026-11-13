@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
+import '../analysis/zero_one.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
 import '../analysis/indicators.dart';
@@ -16,12 +17,13 @@ class ChartLayers {
   bool algo = true; // مؤشر AAB Algo: تلوين الشموع + خط الاتجاه + مناطق الانعكاس
   bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
   bool all = true; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
+  bool zero = true; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
   bool vol = true; // أعمدة الحجم أسفل الشارت
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka, bool? all}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -35,10 +37,14 @@ class ChartLayers {
     ..algo = algo
     ..alka = alka ?? this.alka
     ..all = all ?? this.all
+    ..zero = zero ?? this.zero
     ..vol = vol
     ..type = type
     ..sub = sub;
 }
+
+/// ألوان مؤشر 0.1: أزرق للصعود وأصفر للهبوط.
+const zeroUp = Color(0xFF2E8BFF), zeroDown = Color(0xFFFFD60A);
 
 /// خط الكتابة في الشارت (null = خط النظام). يُغيَّر في اختبارات لقطات الشاشة فقط.
 String? chartFont = 'Cairo';
@@ -63,6 +69,7 @@ class NativeChart extends StatefulWidget {
   final AlgoResult? algo;
   final AlkaResult? alka;
   final AllResult? allR;
+  final ZeroResult? zero;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -76,6 +83,7 @@ class NativeChart extends StatefulWidget {
     this.algo,
     this.alka,
     this.allR,
+    this.zero,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -223,7 +231,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero),
             ),
           ),
         ),
@@ -290,8 +298,9 @@ class _Painter extends CustomPainter {
   final AlgoResult? al;
   final AlkaResult? ak;
   final AllResult? ar;
+  final ZeroResult? zr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -780,6 +789,10 @@ class _Painter extends CustomPainter {
     if (L.all && ar != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ar!.signals, ar!.pending, 'ALL', AppColors.gold);
     }
+    if (L.zero && zr != null) {
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, zr!.signals, zr!.pending, '0.1', null,
+          upCol: zeroUp, downCol: zeroDown, darkText: true);
+    }
 
     // ── trade box (Entry / SL / TP1-3) like the QNA style
     if (f == null && s != null && s!.direction != Direction.neutral) {
@@ -1194,19 +1207,21 @@ class _Painter extends CustomPainter {
   /// مع نتيجة الصفقة، وخطوط الصفقة المفتوحة، والإشارة المنتظرة. [border] لون إطار مميز (ALL ذهبي).
   void _paintTagged(Canvas cv, double w, double barW, double Function(double) xOf,
       double Function(double) yOf, bool Function(double) inY, int i0, int i1,
-      List<PastSignal> signals, List<PendingSetup> pending, String tag, Color? border) {
+      List<PastSignal> signals, List<PendingSetup> pending, String tag, Color? border,
+      {Color upCol = const Color(0xFF00C853), Color downCol = const Color(0xFFFF1744), bool darkText = false}) {
     final n = c.length;
     for (final sg in signals) {
       if (sg.i < i0 || sg.i > i1 || sg.i >= n) continue;
       final buy = sg.dir > 0;
-      final col = buy ? const Color(0xFF00C853) : const Color(0xFFFF1744);
+      final col = buy ? upCol : downCol;
+      final txtCol = darkText && !buy ? AppColors.onAccent : Colors.white;
       final x = xOf(sg.i.toDouble());
       final k = c[sg.i];
       final tp = TextPainter(
         text: TextSpan(
-            text: buy ? '$tag شراء ▲' : '$tag بيع ▼',
+            text: '${buy ? '$tag شراء ▲' : '$tag بيع ▼'}${sg.strong && tag == '0.1' ? ' ⭐' : ''}',
             style: TextStyle(
-                fontFamily: chartFont, color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                fontFamily: chartFont, color: txtCol, fontSize: 10, fontWeight: FontWeight.w800)),
         textDirection: TextDirection.rtl,
       )..layout();
       final bw = tp.width + 10, bh = tp.height + 4;
@@ -1259,13 +1274,13 @@ class _Painter extends CustomPainter {
     }
     for (final p in pending) {
       if (!inY(p.trigger)) continue;
-      final col = p.dir > 0 ? const Color(0xFF00C853) : const Color(0xFFFF1744);
+      final col = p.dir > 0 ? upCol : downCol;
       final xl = xOf((n - 1).toDouble()) - barW * 6;
       _dashed(cv, xl, w, yOf(p.trigger), Paint()
         ..color = col
         ..strokeWidth = 1.4, dash: 6, gap: 3);
       _txt(cv, '⏳ $tag ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'}', Offset(xl, yOf(p.trigger) - 13),
-          color: Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
+          color: darkText && p.dir < 0 ? AppColors.onAccent : Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
       _axis.add((yOf(p.trigger), sym.fmt(p.trigger), 'دخول', col));
       if (inY(p.sl)) {
         _dashed(cv, xl, w, yOf(p.sl), Paint()
@@ -1342,6 +1357,11 @@ class _Painter extends CustomPainter {
       final a = ar!;
       part('ALL ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
           a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
+    if (L.zero && zr != null && zr!.closed > 0) {
+      final a = zr!;
+      part('0.1 ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? zeroUp : _down);
     }
     if (L.alka && ak != null && ak!.closed > 0) {
       final a = ak!;
