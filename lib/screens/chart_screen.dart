@@ -617,6 +617,14 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
+        if (eff.mp && st.mState?.stormy == true)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            color: AppColors.down.withOpacity(0.10),
+            child: Text('⚡ ${st.mState!.advice}',
+                style: const TextStyle(color: AppColors.down, fontSize: 11.5, fontWeight: FontWeight.w600)),
+          ),
         if (eff.mp && st.mpR != null) _decisionBar(st.mpR!.decision, st.symbol, tag: 'Mp'),
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
         if (eff.zero && st.zero != null && st.zero!.decision.state != 0)

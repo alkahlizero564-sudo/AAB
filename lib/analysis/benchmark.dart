@@ -190,7 +190,7 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
   }
   rows.add(BenchRow('★ مؤشر 0.1', z.wins, z.closed, zr, ours: true));
   // Mp: دمج مؤشراتنا الأربعة (ALL + 0.1)
-  final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
+  final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp', maxVol: 1.8);
   var mr = 0.0;
   for (final x in mp.signals) {
     if (x.result == 0) continue;
