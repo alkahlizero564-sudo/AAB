@@ -16,14 +16,15 @@ class ChartLayers {
   bool sigs = false, fc = true, pats = false, ema = false;
   bool algo = true; // مؤشر AAB Algo: تلوين الشموع + خط الاتجاه + مناطق الانعكاس
   bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
-  bool all = true; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
-  bool zero = true; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
+  bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
+  bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
+  bool zero = false; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
   bool vol = true; // أعمدة الحجم أسفل الشارت
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -38,6 +39,7 @@ class ChartLayers {
     ..alka = alka ?? this.alka
     ..all = all ?? this.all
     ..zero = zero ?? this.zero
+    ..mp = mp ?? this.mp
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -70,6 +72,7 @@ class NativeChart extends StatefulWidget {
   final AlkaResult? alka;
   final AllResult? allR;
   final ZeroResult? zero;
+  final AllResult? mpR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -84,6 +87,7 @@ class NativeChart extends StatefulWidget {
     this.alka,
     this.allR,
     this.zero,
+    this.mpR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -231,7 +235,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR),
             ),
           ),
         ),
@@ -299,8 +303,9 @@ class _Painter extends CustomPainter {
   final AlkaResult? ak;
   final AllResult? ar;
   final ZeroResult? zr;
+  final AllResult? mr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -789,6 +794,10 @@ class _Painter extends CustomPainter {
     if (L.all && ar != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ar!.signals, ar!.pending, 'ALL', AppColors.gold);
     }
+    if (L.mp && mr != null) {
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, mr!.signals, mr!.pending, 'Mp', AppColors.gold,
+          sources: mr!.sources, pendingSrc: mr!.pendingSrc);
+    }
     if (L.zero && zr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, zr!.signals, zr!.pending, '0.1', null,
           upCol: zeroUp, downCol: zeroDown, darkText: true);
@@ -1208,13 +1217,19 @@ class _Painter extends CustomPainter {
   void _paintTagged(Canvas cv, double w, double barW, double Function(double) xOf,
       double Function(double) yOf, bool Function(double) inY, int i0, int i1,
       List<PastSignal> signals, List<PendingSetup> pending, String tag, Color? border,
-      {Color upCol = const Color(0xFF00C853), Color downCol = const Color(0xFFFF1744), bool darkText = false}) {
+      {Color upCol = const Color(0xFF00C853),
+      Color downCol = const Color(0xFFFF1744),
+      bool darkText = false,
+      List<String>? sources,
+      List<String>? pendingSrc}) {
     final n = c.length;
-    for (final sg in signals) {
+    for (final (si, sg) in signals.indexed) {
       if (sg.i < i0 || sg.i > i1 || sg.i >= n) continue;
       final buy = sg.dir > 0;
-      final col = buy ? upCol : downCol;
-      final txtCol = darkText && !buy ? AppColors.onAccent : Colors.white;
+      // إشارات 0.1 داخل Mp تحتفظ بلونها (أزرق/أصفر)
+      final z = sources != null && si < sources.length && sources[si] == '0.1';
+      final col = z ? (buy ? zeroUp : zeroDown) : (buy ? upCol : downCol);
+      final txtCol = (darkText || z) && !buy ? AppColors.onAccent : Colors.white;
       final x = xOf(sg.i.toDouble());
       final k = c[sg.i];
       final tp = TextPainter(
@@ -1272,15 +1287,16 @@ class _Painter extends CustomPainter {
       ln(sg.tp1, _up, 'TP1');
       ln(sg.tp2, _up.withOpacity(0.8), 'TP2');
     }
-    for (final p in pending) {
+    for (final (pi, p) in pending.indexed) {
       if (!inY(p.trigger)) continue;
-      final col = p.dir > 0 ? upCol : downCol;
+      final pz = pendingSrc != null && pi < pendingSrc.length && pendingSrc[pi] == '0.1';
+      final col = pz ? (p.dir > 0 ? zeroUp : zeroDown) : (p.dir > 0 ? upCol : downCol);
       final xl = xOf((n - 1).toDouble()) - barW * 6;
       _dashed(cv, xl, w, yOf(p.trigger), Paint()
         ..color = col
         ..strokeWidth = 1.4, dash: 6, gap: 3);
       _txt(cv, '⏳ $tag ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'}', Offset(xl, yOf(p.trigger) - 13),
-          color: darkText && p.dir < 0 ? AppColors.onAccent : Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
+          color: (darkText || pz) && p.dir < 0 ? AppColors.onAccent : Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
       _axis.add((yOf(p.trigger), sym.fmt(p.trigger), 'دخول', col));
       if (inY(p.sl)) {
         _dashed(cv, xl, w, yOf(p.sl), Paint()
@@ -1353,6 +1369,11 @@ class _Painter extends CustomPainter {
       spans.add(TextSpan(text: t, style: TextStyle(color: col, fontWeight: FontWeight.w700)));
     }
 
+    if (L.mp && mr != null && mr!.closed > 0) {
+      final a = mr!;
+      part('Mp ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
     if (L.all && ar != null && ar!.closed > 0) {
       final a = ar!;
       part('ALL ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',

@@ -38,9 +38,10 @@ class AppState extends ChangeNotifier {
   AlkaResult? alka; // مؤشر Alka (شموع الانعكاس عند الدعم/المقاومة و Volume Profile)
   AllResult? allR; // مؤشر ALL (دمج AAB و Alka + فلتر الشمعة الصغيرة)
   ZeroResult? zero; // مؤشر 0.1 (مصيدة سيولة + شمعة رفض)
-  IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
+  AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
+  IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
   bool healthLoading = false;
-  final _healthCache = <String, (IndHealth, IndHealth, IndHealth, IndHealth, DateTime)>{};
+  final _healthCache = <String, (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, DateTime)>{};
   bool loading = false;
   String? error;
   DateTime? lastUpdate;
@@ -216,11 +217,13 @@ class AppState extends ChangeNotifier {
     alka = null;
     allR = null;
     zero = null;
+    mpR = null;
     final hc = _healthCache['${symbol.code}|$tf'];
     aabHealth = hc?.$1;
     alkaHealth = hc?.$2;
     allHealth = hc?.$3;
     zeroHealth = hc?.$4;
+    mpHealth = hc?.$5;
     error = null;
     _aiDir = null;
     _aiAt = null;
@@ -259,7 +262,7 @@ class AppState extends ChangeNotifier {
     final s = settings, sym = symbol, cfg = EngineConfig.current;
     final rr1 = settings.rr1For(symbol.category), rr2 = settings.rr2;
     final alkaTp1 = settings.alkaTp1;
-    (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult) res;
+    (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) res;
     try {
       res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1));
     } catch (_) {
@@ -284,11 +287,12 @@ class AppState extends ChangeNotifier {
         settings.rr1For(symbol.category), settings.rr2, settings.alkaTp1));
   }
 
-  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult) r) {
+  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) r) {
     final prev = signal;
-    final (base, fc, al, ak, all, z) = r;
+    final (base, fc, al, ak, all, z, mp) = r;
     alka = ak;
     zero = z;
+    mpR = mp;
     allR = all;
     forecast = fc;
     signal = _unify(base, fc);
@@ -372,11 +376,12 @@ class AppState extends ChangeNotifier {
   Future<void> _loadHealth({bool force = false}) async {
     final key = '${symbol.code}|$tf';
     final hit = _healthCache[key];
-    if (!force && hit != null && DateTime.now().difference(hit.$5).inHours < 2) {
+    if (!force && hit != null && DateTime.now().difference(hit.$6).inHours < 2) {
       aabHealth = hit.$1;
       alkaHealth = hit.$2;
       allHealth = hit.$3;
       zeroHealth = hit.$4;
+      mpHealth = hit.$5;
       return;
     }
     if (healthLoading) return;
@@ -390,18 +395,19 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
       if (gen != _gen || c.length < 300) return;
       final data = List<Candle>.of(c), sym = symbol;
-      (IndHealth, IndHealth, IndHealth, IndHealth) r;
+      (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth) r;
       try {
         r = await Isolate.run(() => computeHealth(data, sym));
       } catch (_) {
         r = computeHealth(data, sym);
       }
       if (gen != _gen) return;
-      _healthCache[key] = (r.$1, r.$2, r.$3, r.$4, DateTime.now());
+      _healthCache[key] = (r.$1, r.$2, r.$3, r.$4, r.$5, DateTime.now());
       aabHealth = r.$1;
       alkaHealth = r.$2;
       allHealth = r.$3;
       zeroHealth = r.$4;
+      mpHealth = r.$5;
     } finally {
       healthLoading = false;
       if (gen == _gen) notifyListeners();
@@ -499,7 +505,7 @@ class AppState extends ChangeNotifier {
 }
 
 /// كل الحسابات الثقيلة (تعمل داخل Isolate): المحرك القديم للطبقات، محرك التوصيات، و AAB Algo.
-(TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult) _computeAll(List<Candle> c, List<Candle>? htf,
+(TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) _computeAll(List<Candle> c, List<Candle>? htf,
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final fc = buildForecast(c, rr1: rr1, rr2: rr2);
@@ -509,5 +515,8 @@ class AppState extends ChangeNotifier {
   final fAll = alkaTp1 == rr1 ? fc : buildForecast(c, rr1: alkaTp1, rr2: rr2);
   final all = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending);
   final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym);
-  return (base, fc, al, ak, all, z);
+  // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
+  final mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending,
+      zero: z.signals, zeroPending: z.pending, tag: 'Mp');
+  return (base, fc, al, ak, all, z, mp);
 }

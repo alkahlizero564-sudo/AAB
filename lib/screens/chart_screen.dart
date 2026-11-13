@@ -507,7 +507,9 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
               head('التوصيات والمؤشرات'),
-              sw('ALL ⭐', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
+              sw('Mp 👑', 'دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى: أدق وأكثر صفقات', layers.mp,
+                  (x) => layers.mp = x),
+              sw('ALL', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
                   (x) => layers.all = x),
               sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع', layers.zero,
                   (x) => layers.zero = x),
@@ -541,12 +543,14 @@ class _ChartScreenState extends State<ChartScreen> {
     final auto = st.settings.autoHideWeak;
     final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
     final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
+    final hideMp = auto && st.mpHealth?.light == 'red' && !forceShow.contains('Mp|$mk');
     final hideZero = auto && st.zeroHealth?.light == 'red' && !forceShow.contains('0.1|$mk');
     final hideAll = auto && st.allHealth?.light == 'red' && !forceShow.contains('ALL|$mk');
     final eff = layers.copyWith(
         sigs: layers.sigs && !hideAab, alka: layers.alka && !hideAlka,
         all: layers.all && !hideAll,
-        zero: layers.zero && !hideZero);
+        zero: layers.zero && !hideZero,
+        mp: layers.mp && !hideMp);
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
       Container(
@@ -596,6 +600,7 @@ class _ChartScreenState extends State<ChartScreen> {
           algo: st.algo,
           alka: st.alka,
           zero: st.zero,
+          mpR: st.mpR,
           allR: st.allR,
           repaint: st.liveTick,
           sym: st.symbol,
@@ -611,6 +616,8 @@ class _ChartScreenState extends State<ChartScreen> {
           _forecastBar(st.forecast!, st.symbol),
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
+        if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
+        if (eff.mp && st.mpR != null) _decisionBar(st.mpR!.decision, st.symbol, tag: 'Mp'),
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
         if (eff.zero && st.zero != null && st.zero!.decision.state != 0)
           _decisionBar(st.zero!.decision, st.symbol, tag: '0.1'),
@@ -619,7 +626,7 @@ class _ChartScreenState extends State<ChartScreen> {
           _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
         if (hideAab && layers.sigs)
           _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
-        else if (eff.sigs || (!eff.all && !eff.alka))
+        else if (eff.sigs || (!eff.all && !eff.alka && !eff.mp && !eff.zero))
           _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (s != null)
         _bottomBar(s, st.symbol),
@@ -650,10 +657,11 @@ class _ChartScreenState extends State<ChartScreen> {
         scrollDirection: Axis.horizontal,
         reverse: true,
         children: [
-          _healthTool('AAB', st.aabHealth, layers.sigs, () => setState(() => layers.sigs = !layers.sigs)),
-          _healthTool('Alka', st.alkaHealth, layers.alka, () => setState(() => layers.alka = !layers.alka)),
+          _healthTool('Mp', st.mpHealth, layers.mp, () => setState(() => layers.mp = !layers.mp)),
           _healthTool('0.1', st.zeroHealth, layers.zero, () => setState(() => layers.zero = !layers.zero)),
           _healthTool('ALL', st.allHealth, layers.all, () => setState(() => layers.all = !layers.all)),
+          _healthTool('Alka', st.alkaHealth, layers.alka, () => setState(() => layers.alka = !layers.alka)),
+          _healthTool('AAB', st.aabHealth, layers.sigs, () => setState(() => layers.sigs = !layers.sigs)),
         ],
       ),
     ));

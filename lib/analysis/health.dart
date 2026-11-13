@@ -37,8 +37,8 @@ class IndHealth {
 
 double _r(PastSignal s) => s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1;
 
-/// يحسب صحة AAB و Alka و ALL و 0.1 (يعمل داخل Isolate).
-(IndHealth, IndHealth, IndHealth, IndHealth) computeHealth(List<Candle> c, MarketSymbol sym) {
+/// يحسب صحة AAB و Alka و ALL و 0.1 و Mp (يعمل داخل Isolate).
+(IndHealth, IndHealth, IndHealth, IndHealth, IndHealth) computeHealth(List<Candle> c, MarketSymbol sym) {
   final days = c.isEmpty ? 0 : c.last.time.difference(c.first.time).inDays;
   final f = buildForecast(c, history: c.length, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
   final k = buildAlka(c, history: c.length, rr1: 1, rr2: 2, trail: false, sym: sym);
@@ -46,6 +46,7 @@ double _r(PastSignal s) => s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1;
       IndHealth(w, n, l.where((s) => s.result != 0).fold(0.0, (a, s) => a + _r(s)), c.length, days);
   final all = combineAll(c, f.signals, const [], k.signals, const []);
   final z = buildZeroOne(c, history: c.length, rr1: 1, rr2: 2, trail: false, sym: sym);
+  final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
   return (h(f.signals, f.wins, f.closed), h(k.signals, k.wins, k.closed), h(all.signals, all.wins, all.closed),
-      h(z.signals, z.wins, z.closed));
+      h(z.signals, z.wins, z.closed), h(mp.signals, mp.wins, mp.closed));
 }
