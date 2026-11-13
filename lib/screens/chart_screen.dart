@@ -509,6 +509,8 @@ class _ChartScreenState extends State<ChartScreen> {
               head('التوصيات والمؤشرات'),
               sw('ALL ⭐', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
                   (x) => layers.all = x),
+              sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع', layers.zero,
+                  (x) => layers.zero = x),
               sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka,
                   (x) => layers.alka = x),
               sw('توصيات AAB', 'أسهم الشراء/البيع ونتيجتها', layers.sigs, (x) => layers.sigs = x),
@@ -539,9 +541,12 @@ class _ChartScreenState extends State<ChartScreen> {
     final auto = st.settings.autoHideWeak;
     final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
     final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
+    final hideZero = auto && st.zeroHealth?.light == 'red' && !forceShow.contains('0.1|$mk');
     final hideAll = auto && st.allHealth?.light == 'red' && !forceShow.contains('ALL|$mk');
     final eff = layers.copyWith(
-        sigs: layers.sigs && !hideAab, alka: layers.alka && !hideAlka, all: layers.all && !hideAll);
+        sigs: layers.sigs && !hideAab, alka: layers.alka && !hideAlka,
+        all: layers.all && !hideAll,
+        zero: layers.zero && !hideZero);
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
       Container(
@@ -590,6 +595,7 @@ class _ChartScreenState extends State<ChartScreen> {
           forecast: st.forecast,
           algo: st.algo,
           alka: st.alka,
+          zero: st.zero,
           allR: st.allR,
           repaint: st.liveTick,
           sym: st.symbol,
@@ -605,6 +611,9 @@ class _ChartScreenState extends State<ChartScreen> {
           _forecastBar(st.forecast!, st.symbol),
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
+        if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
+        if (eff.zero && st.zero != null && st.zero!.decision.state != 0)
+          _decisionBar(st.zero!.decision, st.symbol, tag: '0.1'),
         if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
         if (eff.alka && st.alka != null && st.alka!.decision.state != 0)
           _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
@@ -635,10 +644,19 @@ class _ChartScreenState extends State<ChartScreen> {
       ));
     }
     final st = context.read<AppState>();
-    items.add(const Spacer());
-    items.add(_healthTool('ALL', st.allHealth, layers.all, () => setState(() => layers.all = !layers.all)));
-    items.add(_healthTool('Alka', st.alkaHealth, layers.alka, () => setState(() => layers.alka = !layers.alka)));
-    items.add(_healthTool('AAB', st.aabHealth, layers.sigs, () => setState(() => layers.sigs = !layers.sigs)));
+    items.add(const SizedBox(width: 8));
+    items.add(Expanded(
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        children: [
+          _healthTool('AAB', st.aabHealth, layers.sigs, () => setState(() => layers.sigs = !layers.sigs)),
+          _healthTool('Alka', st.alkaHealth, layers.alka, () => setState(() => layers.alka = !layers.alka)),
+          _healthTool('0.1', st.zeroHealth, layers.zero, () => setState(() => layers.zero = !layers.zero)),
+          _healthTool('ALL', st.allHealth, layers.all, () => setState(() => layers.all = !layers.all)),
+        ],
+      ),
+    ));
     if (items.isEmpty) return const SizedBox.shrink();
     return Container(
       width: double.infinity,

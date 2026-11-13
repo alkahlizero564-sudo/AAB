@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import '../models.dart';
 import 'alka.dart';
+import 'zero_one.dart';
 import 'all_indicator.dart';
 import 'forecast.dart';
 import 'indicator_panel.dart';
@@ -180,6 +181,14 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
     ar += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
   }
   rows.add(BenchRow('★ مؤشر ALL', al.wins, al.closed, ar, ours: true));
+  // 0.1 بنفس الإدارة: مصيدة سيولة + شمعة رفض
+  final z = buildZeroOne(c, history: c.length, rr1: 1, rr2: 2, trail: false, sym: sym);
+  var zr = 0.0;
+  for (final x in z.signals) {
+    if (x.result == 0) continue;
+    zr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
+  }
+  rows.add(BenchRow('★ مؤشر 0.1', z.wins, z.closed, zr, ours: true));
   rows.sort((a, b) {
     final c1 = b.winRate.compareTo(a.winRate);
     return c1 != 0 ? c1 : b.avgR.compareTo(a.avgR);
