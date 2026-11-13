@@ -189,6 +189,14 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
     zr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
   }
   rows.add(BenchRow('★ مؤشر 0.1', z.wins, z.closed, zr, ours: true));
+  // Mp: دمج مؤشراتنا الأربعة (ALL + 0.1)
+  final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
+  var mr = 0.0;
+  for (final x in mp.signals) {
+    if (x.result == 0) continue;
+    mr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
+  }
+  rows.add(BenchRow('★ مؤشر Mp', mp.wins, mp.closed, mr, ours: true));
   rows.sort((a, b) {
     final c1 = b.winRate.compareTo(a.winRate);
     return c1 != 0 ? c1 : b.avgR.compareTo(a.avgR);

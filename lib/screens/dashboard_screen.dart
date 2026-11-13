@@ -30,7 +30,7 @@ class DashboardScreen extends StatelessWidget {
               padding: EdgeInsets.all(40),
               child: Center(child: CircularProgressIndicator()),
             ),
-          if (st.allR != null) _AllHero(st: st),
+          if (st.mpR != null) _AllHero(st: st),
           if (sig != null) ...[
             SignalCard(sig: sig, sym: st.symbol),
             _AiPanel(st: st, sig: sig),
@@ -48,7 +48,7 @@ class DashboardScreen extends StatelessWidget {
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
 }
 
-/// بطاقة القرار الرئيسية: قرار مؤشر ALL الآن (دمج AAB و Alka).
+/// بطاقة القرار الرئيسية: قرار مؤشر Mp الآن (دمج مؤشراتنا الأربعة).
 /// بطاقة السعر: الرمز، السعر، التغير، خط السعر المصغر، والأُطر الزمنية.
 class _PriceHero extends StatelessWidget {
   final AppState st;
@@ -132,9 +132,9 @@ class _AllHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final d = st.allR!.decision;
+    final d = st.mpR!.decision;
     final sym = st.symbol;
-    final h = st.allHealth;
+    final h = st.mpHealth;
     final col = d.state == 0 ? AppColors.muted : (d.dir > 0 ? AppColors.up : AppColors.down);
     final head = d.state == 0
         ? 'لا توجد صفقة الآن'
@@ -171,7 +171,7 @@ class _AllHero extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(
                   gradient: AppColors.goldGrad, borderRadius: BorderRadius.circular(20)),
-              child: const Text('ALL',
+              child: const Text('Mp',
                   style: TextStyle(
                       color: AppColors.onAccent, fontWeight: FontWeight.w800, fontSize: 12)),
             ),

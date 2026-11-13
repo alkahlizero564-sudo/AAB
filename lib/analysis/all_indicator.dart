@@ -8,10 +8,11 @@ import 'indicators.dart';
 /// وبهدف 0.35R مع الوقف المتحرك 81% — والأدق والأربح لكل صفقة على الذهب والبيتكوين.
 class AllResult {
   final List<PastSignal> signals;
-  final List<String> sources; // مصدر كل إشارة: 'AAB' أو 'Alka'
+  final List<String> sources; // مصدر كل إشارة: 'AAB' أو 'Alka' أو '0.1'
   final List<PendingSetup> pending;
   final List<String> pendingSrc;
-  const AllResult(this.signals, this.sources, this.pending, this.pendingSrc);
+  final String tag; // اسم المؤشر في النصوص: 'ALL' أو 'Mp'
+  const AllResult(this.signals, this.sources, this.pending, this.pendingSrc, [this.tag = 'ALL']);
   static const empty = AllResult([], [], [], []);
 
   int get wins => signals.where((s) => s.result > 0).length;
@@ -27,23 +28,28 @@ class AllResult {
       final st = sg.curStop.isNaN ? (sg.result >= 1 ? sg.entry : sg.sl) : sg.curStop;
       return Decision(1, sg.dir, sg.entry, st, sg.tp1, sg.tp2,
           sg.result >= 1
-              ? 'ALL $side مفتوح — تحقق TP1: أغلق النصف، والوقف المتحرك الآن عند هذا السعر'
-              : 'ALL $side — صفقة مفتوحة',
+              ? '$tag $side مفتوح — تحقق TP1: أغلق النصف، والوقف المتحرك الآن عند هذا السعر'
+              : '$tag $side — صفقة مفتوحة',
           'من ${sources.last}: ${sg.why}', (sg.entry - sg.sl).abs());
     }
     if (pending.isNotEmpty) {
       final p = pending.first;
       return Decision(2, p.dir, p.trigger, p.sl, p.tp1, p.tp2,
-          'ALL ${p.dir > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد — ادخل عند ${p.dir > 0 ? 'اختراق' : 'كسر'} السعر المحدد خلال 3 شموع، وألغِ لو انكسر الطرف الآخر',
+          '$tag ${p.dir > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد — ادخل عند ${p.dir > 0 ? 'اختراق' : 'كسر'} السعر المحدد خلال 3 شموع، وألغِ لو انكسر الطرف الآخر',
           'من ${pendingSrc.first}: ${p.cond}', (p.trigger - p.sl).abs());
     }
-    return const Decision(0, 0, double.nan, double.nan, double.nan, double.nan, 'ALL: لا توجد إشارة', '');
+    return Decision(0, 0, double.nan, double.nan, double.nan, double.nan, '$tag: لا توجد إشارة', '');
   }
 }
 
 /// يدمج إشارات AAB و Alka (المحسوبة مسبقاً بنفس الإدارة) في مؤشر ALL.
+/// مع [zero] (إشارات 0.1، بدون فلتر الشمعة الصغيرة ولها الأولوية) يصبح مؤشر Mp.
 AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aabPending,
-    List<PastSignal> alka, List<PendingSetup> alkaPending, {double maxCandle = 0.94}) {
+    List<PastSignal> alka, List<PendingSetup> alkaPending,
+    {double maxCandle = 0.94,
+    List<PastSignal> zero = const [],
+    List<PendingSetup> zeroPending = const [],
+    String tag = 'ALL'}) {
   final n = c.length;
   if (n < 20) return AllResult.empty;
   final at = atr(c, 14);
@@ -53,12 +59,14 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
     return a > 0 && (c[i].high - c[i].low) / a <= maxCandle;
   }
 
+  const prio = {'0.1': 0, 'AAB': 1, 'Alka': 2};
   final cands = <(PastSignal, String)>[
+    for (final s in zero) (s, '0.1'),
     for (final s in aab)
       if (small(s.i)) (s, 'AAB'),
     for (final s in alka)
       if (small(s.i)) (s, 'Alka'),
-  ]..sort((x, y) => x.$1.i != y.$1.i ? x.$1.i.compareTo(y.$1.i) : (x.$2 == 'AAB' ? -1 : 1));
+  ]..sort((x, y) => x.$1.i != y.$1.i ? x.$1.i.compareTo(y.$1.i) : prio[x.$2]!.compareTo(prio[y.$2]!));
   final sigs = <PastSignal>[], src = <String>[];
   var busy = -1;
   for (final (s, from) in cands) {
@@ -69,14 +77,14 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
   }
   final pend = <PendingSetup>[], pendSrc = <String>[];
   if (busy < n) {
-    for (final (l, from) in [(aabPending, 'AAB'), (alkaPending, 'Alka')]) {
+    for (final (l, from) in [(zeroPending, '0.1'), (aabPending, 'AAB'), (alkaPending, 'Alka')]) {
       for (final p in l) {
-        if (pend.isEmpty && small(p.i) && p.i > busy) {
+        if (pend.isEmpty && (from == '0.1' || small(p.i)) && p.i > busy) {
           pend.add(p);
           pendSrc.add(from);
         }
       }
     }
   }
-  return AllResult(sigs, src, pend, pendSrc);
+  return AllResult(sigs, src, pend, pendSrc, tag);
 }
