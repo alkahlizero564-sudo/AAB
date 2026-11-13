@@ -39,9 +39,11 @@ flutter:
           weight: 800
 
 flutter_launcher_icons:
-  android: true
+  # اسم أيقونة جديد حتى يُحدّث الهاتف الأيقونة المحفوظة عنده (بدل الأيقونة القديمة)
+  android: "launcher_icon"
   ios: false
   image_path: assets/icon/icon.png
   adaptive_icon_background: "#0A0A0C"
   adaptive_icon_foreground: assets/icon/icon_fg.png
+  adaptive_icon_foreground_inset: 0
   min_sdk_android: 21
