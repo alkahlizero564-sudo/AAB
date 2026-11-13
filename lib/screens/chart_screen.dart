@@ -509,7 +509,7 @@ class _ChartScreenState extends State<ChartScreen> {
               head('التوصيات والمؤشرات'),
               sw('ALL ⭐', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
                   (x) => layers.all = x),
-              sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع، ⭐ عند توافق المؤشرات', layers.zero,
+              sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع', layers.zero,
                   (x) => layers.zero = x),
               sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka,
                   (x) => layers.alka = x),

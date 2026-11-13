@@ -1219,7 +1219,7 @@ class _Painter extends CustomPainter {
       final k = c[sg.i];
       final tp = TextPainter(
         text: TextSpan(
-            text: '${buy ? '$tag شراء ▲' : '$tag بيع ▼'}${sg.strong && tag == '0.1' ? ' ⭐' : ''}',
+            text: buy ? '$tag شراء ▲' : '$tag بيع ▼',
             style: TextStyle(
                 fontFamily: chartFont, color: txtCol, fontSize: 10, fontWeight: FontWeight.w800)),
         textDirection: TextDirection.rtl,

@@ -1,17 +1,14 @@
 import 'dart:math' as math;
 import '../models.dart';
 import 'forecast.dart';
-import 'indicator_panel.dart';
 import 'indicators.dart';
 import 'patterns.dart';
-import 'tv_indicators.dart';
 
 /// مؤشر 0.1: مصيدة سيولة + شمعة رفض.
 ///  1) السعر يكسر قاعاً/قمة متأرجحة (لم تُكسر من قبل) ليضرب أوامر الوقف، ثم يغلق راجعاً داخلها.
 ///  2) شمعة رفض على المصيدة أو خلال شمعتين بعدها: المطرقة، النجمة الهاوية، دوجي اليعسوب،
 ///     دوجي شاهد القبر، الرجل المشنوق، نجمة الصباح/المساء، الملقط.
 ///  3) الدخول عند كسر طرف شمعة الرفض خلال 3 شموع، والوقف خلف المصيدة.
-///  ⭐ قوية: 40% أو أكثر من الـ23 مؤشراً (لوحة المؤشرات + مؤشرات TradingView) توافق الاتجاه.
 /// كل شيء من الشموع المغلقة حتى لحظة الإشارة فقط (لا ينظر للمستقبل).
 class ZeroResult {
   final List<PastSignal> signals;
@@ -31,7 +28,7 @@ class ZeroResult {
       return Decision(1, sg.dir, sg.entry, st, sg.tp1, sg.tp2,
           sg.result >= 1
               ? '0.1 $side مفتوح — تحقق TP1: أغلق النصف، والوقف المتحرك الآن عند هذا السعر'
-              : '0.1 $side${sg.strong ? ' ⭐' : ''} — صفقة مفتوحة',
+              : '0.1 $side — صفقة مفتوحة',
           sg.why, (sg.entry - sg.sl).abs());
     }
     if (pending.isNotEmpty) {
@@ -57,7 +54,6 @@ ZeroResult buildZeroOne(List<Candle> c,
   if (n < 220) return const ZeroResult([], []);
   final at = atr(c, 14);
   final start = math.max(210, n - history);
-  final inds = [...buildPanel(c, at), ...tvIndicators(c)];
   const L = 3, look = 30;
 
   /// المصيدة عند الشمعة i في الاتجاه d: سعر المستوى المكسور أو null
@@ -88,17 +84,6 @@ ZeroResult buildZeroOne(List<Candle> c,
     return lvl;
   }
 
-  bool strongAt(int s, int d) {
-    var ag = 0, tot = 0;
-    for (final p in inds) {
-      final b = p.bias[s];
-      if (b == 0) continue;
-      tot++;
-      if (b == d) ag++;
-    }
-    return tot > 0 && ag / tot >= 0.4;
-  }
-
   final signals = <PastSignal>[];
   final pending = <PendingSetup>[];
   var busy = -1;
@@ -124,9 +109,7 @@ ZeroResult buildZeroOne(List<Candle> c,
       }
       if (s < 0 || !_rejection.contains(hit!.en)) continue;
       final a = at[s].isNaN ? (c[s].high - c[s].low) : at[s];
-      final strong = strongAt(s, d);
-      final why = '${hit.ar} بعد مصيدة سيولة ${d > 0 ? 'تحت قاع' : 'فوق قمة'} ${sym?.fmt(lvl) ?? lvl.toStringAsFixed(2)}'
-          '${strong ? ' • ⭐ المؤشرات توافق' : ''}';
+      final why = '${hit.ar} بعد مصيدة سيولة ${d > 0 ? 'تحت قاع' : 'فوق قمة'} ${sym?.fmt(lvl) ?? lvl.toStringAsFixed(2)}';
       var ext = d > 0 ? k.low : k.high;
       for (var q = i; q <= s; q++) {
         ext = d > 0 ? math.min(ext, c[q].low) : math.max(ext, c[q].high);
@@ -205,7 +188,7 @@ ZeroResult buildZeroOne(List<Candle> c,
         }
       }
       if (exitI < 0 && got) res = (c[n - 1].close - t2) * d >= 0 ? 2 : 1;
-      signals.add(PastSignal(s, d, entry, sl, t1, t2, res, exitI, why, strong, 0, 0, exitPrice,
+      signals.add(PastSignal(s, d, entry, sl, t1, t2, res, exitI, why, false, 0, 0, exitPrice,
           exitI < 0 ? stop : double.nan));
       busy = exitI < 0 ? n : exitI;
       break;
