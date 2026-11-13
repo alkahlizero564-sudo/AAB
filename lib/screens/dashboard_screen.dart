@@ -4,8 +4,6 @@ import 'package:provider/provider.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
-import '../analysis/health.dart';
-import '../analysis/market_state.dart';
 import '../widgets/common.dart';
 import '../widgets/signal_card.dart';
 
@@ -135,11 +133,6 @@ class _AllHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = st.mpR!.decision;
-    final mp = st.mpR!;
-    final src = d.state == 1 && mp.sources.isNotEmpty
-        ? mp.sources.last
-        : (d.state == 2 && mp.pendingSrc.isNotEmpty ? mp.pendingSrc.first : null);
-    final srcLine = src == null ? null : st.mpHealth?.sourceLine(src);
     final sym = st.symbol;
     final h = st.mpHealth;
     final col = d.state == 0 ? AppColors.muted : (d.dir > 0 ? AppColors.up : AppColors.down);
@@ -191,10 +184,6 @@ class _AllHero extends StatelessWidget {
               Text('${h.dot} ${h.label} • ${(h.winRate * 100).toStringAsFixed(0)}%',
                   style: const TextStyle(color: AppColors.muted, fontSize: 11)),
           ]),
-          if (st.mState != null) ...[
-            const SizedBox(height: 10),
-            _StateLine(ms: st.mState!),
-          ],
           const SizedBox(height: 12),
           Text(head,
               style: TextStyle(color: col, fontSize: 22, fontWeight: FontWeight.w800)),
@@ -205,11 +194,6 @@ class _AllHero extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.4)),
           ],
-          if (srcLine != null) ...[
-            const SizedBox(height: 4),
-            Text('📊 $srcLine',
-                style: const TextStyle(color: AppColors.gold, fontSize: 11.5, fontWeight: FontWeight.w600)),
-          ],
           if (d.state != 0) ...[
             const SizedBox(height: 14),
             Row(children: [
@@ -219,126 +203,10 @@ class _AllHero extends StatelessWidget {
               lv('الهدف 2', d.tp2, AppColors.up),
             ]),
           ],
-          const SizedBox(height: 10),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
-              style: TextButton.styleFrom(padding: EdgeInsets.zero, visualDensity: VisualDensity.compact),
-              onPressed: () => _showBestTf(context, st),
-              icon: const Icon(Icons.travel_explore_rounded, size: 18),
-              label: const Text('أفضل فريم لـ Mp الآن', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
-            ),
-          ),
         ]),
       ),
     );
   }
-}
-
-/// حالة السوق ونصيحة Mp
-class _StateLine extends StatelessWidget {
-  final MarketState ms;
-  const _StateLine({required this.ms});
-  @override
-  Widget build(BuildContext context) {
-    final c = ms.stormy ? AppColors.down : (ms.quiet ? AppColors.up : AppColors.gold);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: c.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: c.withOpacity(0.35), width: 0.8),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(ms.stormy ? Icons.thunderstorm_outlined : (ms.quiet ? Icons.spa_outlined : Icons.waves_rounded),
-              size: 16, color: c),
-          const SizedBox(width: 6),
-          Text('السوق ${ms.volLabel}', style: TextStyle(color: c, fontWeight: FontWeight.w800, fontSize: 12.5)),
-          const SizedBox(width: 8),
-          Tag(ms.trendLabel,
-              color: ms.trend > 0 ? AppColors.up : (ms.trend < 0 ? AppColors.down : AppColors.muted)),
-        ]),
-        const SizedBox(height: 4),
-        Text(ms.advice, style: const TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.4)),
-      ]),
-    );
-  }
-}
-
-/// فحص Mp على الفريمات واختيار الأفضل
-void _showBestTf(BuildContext context, AppState st) {
-  final fut = st.scanTimeframes();
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: AppColors.surface,
-    builder: (ctx) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const SheetHandle(),
-          const SizedBox(height: 12),
-          Text('أفضل فريم لـ Mp على ${st.symbol.code}',
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 4),
-          const Text('أداء Mp على آخر 3000 شمعة في كل فريم (الهدف 1R ثم 2R)',
-              style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
-          const SizedBox(height: 12),
-          FutureBuilder<List<(String, IndHealth)>>(
-            future: fut,
-            builder: (_, snap) {
-              if (!snap.hasData) {
-                return const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              final l = snap.data!;
-              if (l.isEmpty) {
-                return const Text('تعذّر جلب البيانات — تأكد من الاتصال والمفاتيح.',
-                    style: TextStyle(color: AppColors.muted));
-              }
-              return Column(children: [
-                for (final (k, (tf, h)) in l.indexed)
-                  InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () {
-                      st.setTf(tf);
-                      Navigator.of(ctx).pop();
-                    },
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: k == 0 ? AppColors.accent.withOpacity(0.12) : AppColors.card,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: k == 0 ? AppColors.accent : AppColors.border, width: 0.8),
-                      ),
-                      child: Row(children: [
-                        Text(k == 0 ? '👑' : '${k + 1}', style: const TextStyle(fontSize: 15)),
-                        const SizedBox(width: 10),
-                        Text(tf.toUpperCase(),
-                            style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                                color: k == 0 ? AppColors.gold : AppColors.text)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text('${h.dot} ${h.summary}',
-                              style: const TextStyle(color: AppColors.muted, fontSize: 11.5)),
-                        ),
-                        if (st.tf == tf) const Tag('الحالي'),
-                      ]),
-                    ),
-                  ),
-              ]);
-            },
-          ),
-        ]),
-      ),
-    ),
-  );
 }
 
 class _AiPanel extends StatelessWidget {

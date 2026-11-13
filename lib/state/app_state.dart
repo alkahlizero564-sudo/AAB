@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/zero_one.dart';
-import '../analysis/market_state.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
 import '../analysis/health.dart';
@@ -370,32 +369,6 @@ class AppState extends ChangeNotifier {
   }
 
   /// تاريخ أطول للسوق الحالي (للمقارنة): 3000 شمعة بدل 300 حتى تكون النتائج موثوقة.
-  /// حالة السوق الآن (هادئ/عادي/نشِط/عاصف + الاتجاه) كما يفهمها Mp.
-  MarketState? get mState => marketState(candles);
-
-  /// يفحص Mp على عدة فريمات لنفس السوق (آخر 3000 شمعة لكل فريم) ويرتبها من الأفضل.
-  Future<List<(String, IndHealth)>> scanTimeframes() async {
-    final out = <(String, IndHealth)>[];
-    final sym = symbol;
-    for (final t in const ['15m', '1h', '4h']) {
-      try {
-        final c = await _market.fetch(sym, t, settings, count: 3000);
-        if (c.length < 300) continue;
-        final data = List<Candle>.of(c);
-        IndHealth h;
-        try {
-          h = await Isolate.run(() => computeMpHealth(data, sym));
-        } catch (_) {
-          h = computeMpHealth(data, sym);
-        }
-        out.add((t, h));
-      } catch (_) {}
-    }
-    double score(IndHealth h) => h.trades < 20 ? -1 : h.winRate + (h.avgR > 0 ? 0 : -0.1);
-    out.sort((a, b) => score(b.$2).compareTo(score(a.$2)));
-    return out;
-  }
-
   Future<List<Candle>> fetchLong({int count = 3000}) =>
       _market.fetch(symbol, tf, settings, count: count);
 
@@ -544,6 +517,6 @@ class AppState extends ChangeNotifier {
   final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym);
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
   final mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending,
-      zero: z.signals, zeroPending: z.pending, tag: 'Mp', maxVol: 1.8);
+      zero: z.signals, zeroPending: z.pending, tag: 'Mp');
   return (base, fc, al, ak, all, z, mp);
 }

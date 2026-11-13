@@ -1,7 +1,6 @@
 import '../models.dart';
 import 'forecast.dart';
 import 'indicators.dart';
-import 'market_state.dart';
 
 /// مؤشر ALL: يجمع إشارات AAB و Alka، ويقبل فقط إشارات "الشمعة الصغيرة"
 /// (مدى شمعة الإشارة ≤ 0.94 × ATR)، مع صفقة واحدة في كل مرة.
@@ -50,14 +49,10 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
     {double maxCandle = 0.94,
     List<PastSignal> zero = const [],
     List<PendingSetup> zeroPending = const [],
-    String tag = 'ALL',
-    double maxVol = double.infinity}) {
+    String tag = 'ALL'}) {
   final n = c.length;
   if (n < 20) return AllResult.empty;
   final at = atr(c, 14);
-  // Mp الذكي: لا إشارات في السوق العاصف (تذبذب ≥ maxVol × المعتاد)
-  final vr = maxVol.isFinite ? volRatios(c) : const <double>[];
-  bool calm(int i) => !maxVol.isFinite || i < 0 || i >= n || vr[i].isNaN || vr[i] < maxVol;
   bool small(int i) {
     if (i < 0 || i >= n) return false;
     final a = at[i].isNaN ? (c[i].high - c[i].low) : at[i];
@@ -66,12 +61,11 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
 
   const prio = {'0.1': 0, 'AAB': 1, 'Alka': 2};
   final cands = <(PastSignal, String)>[
-    for (final s in zero)
-      if (calm(s.i)) (s, '0.1'),
+    for (final s in zero) (s, '0.1'),
     for (final s in aab)
-      if (small(s.i) && calm(s.i)) (s, 'AAB'),
+      if (small(s.i)) (s, 'AAB'),
     for (final s in alka)
-      if (small(s.i) && calm(s.i)) (s, 'Alka'),
+      if (small(s.i)) (s, 'Alka'),
   ]..sort((x, y) => x.$1.i != y.$1.i ? x.$1.i.compareTo(y.$1.i) : prio[x.$2]!.compareTo(prio[y.$2]!));
   final sigs = <PastSignal>[], src = <String>[];
   var busy = -1;
@@ -85,7 +79,7 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
   if (busy < n) {
     for (final (l, from) in [(zeroPending, '0.1'), (aabPending, 'AAB'), (alkaPending, 'Alka')]) {
       for (final p in l) {
-        if (pend.isEmpty && (from == '0.1' || small(p.i)) && calm(p.i) && p.i > busy) {
+        if (pend.isEmpty && (from == '0.1' || small(p.i)) && p.i > busy) {
           pend.add(p);
           pendSrc.add(from);
         }
