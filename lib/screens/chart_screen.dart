@@ -606,22 +606,33 @@ class _ChartScreenState extends State<ChartScreen> {
           ),
         ),
       Expanded(
-        child: NativeChart(
-          candles: st.candles,
-          signal: s,
-          forecast: st.forecast,
-          algo: st.algo,
-          alka: st.alka,
-          zero: st.zero,
-          mpR: st.mpR,
-          smR: st.smR,
-          allR: st.allR,
-          repaint: st.liveTick,
-          sym: st.symbol,
-          tf: st.tf,
-          layers: eff,
-          onSelect: (i) => setState(() => sel = i),
-        ),
+        child: Stack(children: [
+          Positioned.fill(
+            child: NativeChart(
+              candles: st.candles,
+              signal: s,
+              forecast: st.forecast,
+              algo: st.algo,
+              alka: st.alka,
+              zero: st.zero,
+              mpR: st.mpR,
+              smR: st.smR,
+              allR: st.allR,
+              repaint: st.liveTick,
+              sym: st.symbol,
+              tf: st.tf,
+              layers: eff,
+              onSelect: (i) => setState(() => sel = i),
+            ),
+          ),
+          // لوحة الاتجاهات (مثل DTC) عند تشغيل SM
+          if (eff.sm && st.board.isNotEmpty)
+            Positioned(
+              top: 44,
+              left: 8,
+              child: IgnorePointer(child: _TrendBoard(board: st.board)),
+            ),
+        ]),
       ),
       if (st.forecast != null) ...[
         if (sel != null && sel! < st.candles.length)
@@ -909,6 +920,54 @@ class _CompactSymbol extends StatelessWidget {
           Text(st.symbol.code,
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)),
           const Icon(Icons.expand_more, size: 18, color: AppColors.muted),
+        ]),
+      ),
+    );
+  }
+}
+
+
+/// لوحة اتجاهات الفريمات الكبيرة (مثل DTC): صاعد/هابط لكل فريم.
+class _TrendBoard extends StatelessWidget {
+  final Map<String, int> board;
+  const _TrendBoard({required this.board});
+  @override
+  Widget build(BuildContext context) {
+    Widget row(String k, int v) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 1.5),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(
+              width: 34,
+              child: Text(k.toUpperCase(),
+                  style: const TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w700)),
+            ),
+            Container(
+              width: 50,
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: (v > 0 ? AppColors.up : v < 0 ? AppColors.down : AppColors.muted).withOpacity(0.85),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(v > 0 ? 'صاعد' : v < 0 ? 'هابط' : '—',
+                  style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)),
+            ),
+          ]),
+        );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.border, width: 0.8),
+      ),
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('SM TREND', style: TextStyle(color: AppColors.gold, fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1)),
+          const SizedBox(height: 2),
+          for (final k in const ['1h', '4h', '1d'])
+            if (board.containsKey(k)) row(k, board[k]!),
         ]),
       ),
     );
