@@ -26,6 +26,9 @@ List<int> smDir(List<List<double>> rib, int n) {
   return out;
 }
 
+/// الشريط السريع: أول 4 متوسطات (20–35) مرتبة → يلتقط بداية الاتجاه أبكر من الشريط الكامل.
+List<int> smDirFast(List<List<double>> rib, int n) => smDir(rib.sublist(0, 4), n);
+
 /// اتجاه فريم أكبر ([mins] دقيقة) عند كل شمعة: EMA20 مقابل EMA50 على إغلاقات
 /// الشموع الكبيرة المكتملة فقط (+1 صاعد ، -1 هابط ، 0 غير معروف).
 List<int> htfTrend(List<Candle> c, int mins) {
@@ -66,14 +69,19 @@ int trendOf(List<Candle> c) {
 
 /// مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات فقط.
 /// وعلى الفريمات الأقل من ساعة: يجب أن يوافقها أيضاً اتجاه الساعة (مثل لوحة DTC).
-/// مقاس على 26 سوقاً (1R ثم 2R): 58.3% (بدون فلتر الساعة 57.9%، و Mp 57.1%).
+/// الشريط السريع + منع المطاردة: الإشارة أبكر بحوالي 30% (2.25 ATR بدل 3.2 من بداية الحركة).
+/// مقاس على 26 سوقاً (1R ثم 2R): 58.2% ، رابح في 24 من 26 (Mp 57.1%).
 AllResult buildSm(List<Candle> c, AllResult mp) {
   final n = c.length;
-  final d = smDir(smRibbon(c), n);
+  final rib = smRibbon(c);
+  final d = smDirFast(rib, n);
+  final at = atr(c, 14);
+  // منع المطاردة: لا إشارة إذا ابتعد السعر عن EMA20 أكثر من 1.5 ATR في اتجاه الصفقة
+  bool notLate(int i, int dir) => at[i].isNaN || at[i] <= 0 || (c[i].close - rib.first[i]) * dir / at[i] < 1.5;
   final baseMin = n > 1 ? c[n - 1].time.difference(c[n - 2].time).inMinutes.abs() : 60;
   final h1 = baseMin > 0 && baseMin < 60 ? htfTrend(c, 60) : null;
   bool ok(int i, int dir) =>
-      i >= 0 && i < n && d[i] == dir && (h1 == null || h1[i] == 0 || h1[i] == dir);
+      i >= 0 && i < n && d[i] == dir && notLate(i, dir) && (h1 == null || h1[i] == 0 || h1[i] == dir);
   final sigs = <PastSignal>[], src = <String>[];
   for (final (q, s) in mp.signals.indexed) {
     if (ok(s.i, s.dir)) {
