@@ -30,6 +30,7 @@ class AppState extends ChangeNotifier {
   MarketSymbol symbol = allSymbols.first;
   String tf = '5m';
   int tab = 0;
+  bool chartFull = false; // شاشة كاملة للشارت: يخفي شريط التنقل أيضاً
 
   List<Candle> candles = [];
   List<Candle>? htf;
@@ -185,6 +186,11 @@ class AppState extends ChangeNotifier {
       }
     }
     return out.length > 450 ? out.sublist(out.length - 450) : out;
+  }
+
+  void setChartFull(bool v) {
+    chartFull = v;
+    notifyListeners();
   }
 
   void setTab(int i) {

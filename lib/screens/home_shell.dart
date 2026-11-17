@@ -31,58 +31,70 @@ class HomeShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
+    final onChart = st.tab == 1;
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: false,
-        titleSpacing: 4,
-        title: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 30,
-            height: 30,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              gradient: AppColors.goldGrad,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text('A',
-                style: TextStyle(
-                    color: AppColors.onAccent, fontWeight: FontWeight.w900, fontSize: 17, height: 1.1)),
-          ),
-          const SizedBox(width: 10),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(_titles[st.tab],
-                style: const TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 17, color: AppColors.text, height: 1.15)),
-            const Text('AAB PRO',
-                style: TextStyle(
-                    fontSize: 9.5, letterSpacing: 2, color: AppColors.accent, fontWeight: FontWeight.w700, height: 1.1)),
-          ]),
-        ]),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 0.7, color: AppColors.border),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsetsDirectional.only(end: 10),
-            child: Material(
-              color: AppColors.card,
-              shape: const CircleBorder(side: BorderSide(color: AppColors.border, width: 0.8)),
-              child: IconButton(
-                tooltip: 'تحديث',
-                visualDensity: VisualDensity.compact,
-                icon: st.loading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.refresh_rounded, size: 20, color: AppColors.gold),
-                onPressed: st.refresh,
+      // صفحة الشارت لها رأسها الخاص (الرمز والأدوات): نخفي الشريط العلوي لنكسب مساحة
+      appBar: onChart
+          ? null
+          : AppBar(
+              centerTitle: false,
+              titleSpacing: 4,
+              title: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    gradient: AppColors.goldGrad,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text('A',
+                      style: TextStyle(
+                          color: AppColors.onAccent, fontWeight: FontWeight.w900, fontSize: 17, height: 1.1)),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_titles[st.tab],
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17,
+                              color: AppColors.text,
+                              height: 1.15)),
+                      const Text('AAB PRO',
+                          style: TextStyle(
+                              fontSize: 9.5,
+                              letterSpacing: 2,
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w700,
+                              height: 1.1)),
+                    ]),
+              ]),
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Container(height: 0.7, color: AppColors.border),
               ),
+              actions: [
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 10),
+                  child: Material(
+                    color: AppColors.card,
+                    shape: const CircleBorder(side: BorderSide(color: AppColors.border, width: 0.8)),
+                    child: IconButton(
+                      tooltip: 'تحديث',
+                      visualDensity: VisualDensity.compact,
+                      icon: st.loading
+                          ? const SizedBox(
+                              width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.refresh_rounded, size: 20, color: AppColors.gold),
+                      onPressed: st.refresh,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
       drawer: Drawer(
         child: SafeArea(
           child: Column(children: [
@@ -99,8 +111,7 @@ class HomeShell extends StatelessWidget {
               child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Icon(Icons.candlestick_chart, size: 40, color: AppColors.gold),
                 SizedBox(height: 10),
-                Text('AAB',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+                Text('AAB', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
                 Text('توصيات فوركس • ذهب • أسهم • كريبتو',
                     style: TextStyle(color: AppColors.muted, fontSize: 12)),
               ]),
@@ -121,8 +132,7 @@ class HomeShell extends StatelessWidget {
               title: const Text('اختبار المحرك (Backtest)'),
               onTap: () {
                 Navigator.of(context).pop();
-                Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const BacktestScreen()));
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BacktestScreen()));
               },
             ),
             const Spacer(),
@@ -137,78 +147,86 @@ class HomeShell extends StatelessWidget {
           ]),
         ),
       ),
-      body: IndexedStack(
-        index: st.tab,
-        children: const [
-          DashboardScreen(),
-          ChartScreen(),
-          MarketsScreen(),
-          NewsScreen(),
-          SettingsScreen(),
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Container(
-          height: 66,
-          margin: const EdgeInsets.fromLTRB(14, 4, 14, 10),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.border, width: 0.8),
-            boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 6))],
-          ),
-          child: Row(children: [
-            for (final i in const [0, 2, 1, 3, 4])
-              Expanded(
-                child: i == 1
-                    // زر الشارت في المنتصف: دائرة ذهبية بارزة
-                    ? Center(
-                        child: GestureDetector(
-                          onTap: () => st.setTab(1),
-                          child: Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              gradient: AppColors.goldGrad,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: st.tab == 1 ? AppColors.text : Colors.transparent, width: 1.5),
-                              boxShadow: [
-                                BoxShadow(color: AppColors.accent.withOpacity(0.45), blurRadius: 14),
-                              ],
-                            ),
-                            child: const Icon(Icons.candlestick_chart, color: AppColors.onAccent, size: 26),
-                          ),
-                        ),
-                      )
-                    : InkWell(
-                        borderRadius: BorderRadius.circular(20),
-                        onTap: () => st.setTab(i),
-                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: st.tab == i ? AppColors.accent.withOpacity(0.16) : Colors.transparent,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(st.tab == i ? _iconsOn[i] : _icons[i],
-                                size: 22, color: st.tab == i ? AppColors.gold : AppColors.muted),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(_titles[i],
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  height: 1.1,
-                                  fontWeight: st.tab == i ? FontWeight.w700 : FontWeight.w500,
-                                  color: st.tab == i ? AppColors.gold : AppColors.muted)),
-                        ]),
-                      ),
-              ),
-          ]),
+      body: SafeArea(
+        top: onChart,
+        bottom: false,
+        child: IndexedStack(
+          index: st.tab,
+          children: const [
+            DashboardScreen(),
+            ChartScreen(),
+            MarketsScreen(),
+            NewsScreen(),
+            SettingsScreen(),
+          ],
         ),
       ),
+      bottomNavigationBar: onChart && st.chartFull
+          ? null
+          : SafeArea(
+              top: false,
+              child: Container(
+                height: 66,
+                margin: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: AppColors.border, width: 0.8),
+                  boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 6))],
+                ),
+                child: Row(children: [
+                  for (final i in const [0, 2, 1, 3, 4])
+                    Expanded(
+                      child: i == 1
+                          // زر الشارت في المنتصف: دائرة ذهبية بارزة
+                          ? Center(
+                              child: GestureDetector(
+                                onTap: () => st.setTab(1),
+                                child: Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    gradient: AppColors.goldGrad,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: st.tab == 1 ? AppColors.text : Colors.transparent, width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(color: AppColors.accent.withOpacity(0.45), blurRadius: 14),
+                                    ],
+                                  ),
+                                  child: const Icon(Icons.candlestick_chart,
+                                      color: AppColors.onAccent, size: 26),
+                                ),
+                              ),
+                            )
+                          : InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () => st.setTab(i),
+                              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        st.tab == i ? AppColors.accent.withOpacity(0.16) : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(st.tab == i ? _iconsOn[i] : _icons[i],
+                                      size: 22, color: st.tab == i ? AppColors.gold : AppColors.muted),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(_titles[i],
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        height: 1.1,
+                                        fontWeight: st.tab == i ? FontWeight.w700 : FontWeight.w500,
+                                        color: st.tab == i ? AppColors.gold : AppColors.muted)),
+                              ]),
+                            ),
+                    ),
+                ]),
+              ),
+            ),
     );
   }
 }
