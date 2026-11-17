@@ -41,6 +41,8 @@ class AppState extends ChangeNotifier {
   ZeroResult? zero; // مؤشر 0.1 (مصيدة سيولة + شمعة رفض)
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
+  Map<String, int> board = {}; // لوحة الاتجاهات (مثل DTC): 1h / 4h / 1d → +1 صاعد ، -1 هابط
+  DateTime? _boardAt;
   IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
   bool healthLoading = false;
   final _healthCache = <String, (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, DateTime)>{};
@@ -221,6 +223,8 @@ class AppState extends ChangeNotifier {
     zero = null;
     mpR = null;
     smR = null;
+    board = {};
+    _boardAt = null;
     final hc = _healthCache['${symbol.code}|$tf'];
     aabHealth = hc?.$1;
     alkaHealth = hc?.$2;
@@ -374,6 +378,24 @@ class AppState extends ChangeNotifier {
   }
 
   /// تاريخ أطول للسوق الحالي (للمقارنة): 3000 شمعة بدل 300 حتى تكون النتائج موثوقة.
+  /// لوحة الاتجاهات: اتجاه الساعة و4 ساعات واليومي لنفس السوق (تُحدّث كل 15 دقيقة).
+  Future<void> _loadBoard() async {
+    if (_boardAt != null && DateTime.now().difference(_boardAt!).inMinutes < 15) return;
+    _boardAt = DateTime.now();
+    final gen = _gen, sym = symbol;
+    final out = <String, int>{};
+    for (final t in const ['1h', '4h', '1d']) {
+      try {
+        final c = await _market.fetch(sym, t, settings, count: 120);
+        if (gen != _gen) return;
+        out[t] = trendOf(c);
+      } catch (_) {}
+    }
+    if (gen != _gen) return;
+    board = out;
+    notifyListeners();
+  }
+
   Future<List<Candle>> fetchLong({int count = 3000}) =>
       _market.fetch(symbol, tf, settings, count: count);
 
@@ -450,6 +472,7 @@ class AppState extends ChangeNotifier {
       _analyze();
       error = null;
       _loadHealth();
+      _loadBoard();
     } catch (e) {
       if (gen == _gen) error = e.toString().replaceFirst('Exception: ', '');
     } finally {

@@ -830,6 +830,20 @@ class _Painter extends CustomPainter {
     if (L.all && ar != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ar!.signals, ar!.pending, 'ALL', AppColors.gold);
     }
+    // صندوق صفقة SM المفتوحة (مثل DTC): أحمر للوقف، أخضر للأهداف
+    if (L.sm && smr != null && smr!.signals.isNotEmpty && smr!.signals.last.exitI < 0) {
+      final sg = smr!.signals.last;
+      // الصندوق بعرض 110 بكسل على الأقل حتى يظهر واضحاً حتى لو كانت الصفقة حديثة
+      final x0 = math.max(0.0, math.min(xOf(sg.i.toDouble()), w - 110));
+      if (x0 < w) {
+        final st = sg.curStop.isNaN ? sg.sl : sg.curStop;
+        final yE = yOf(sg.entry), yS = yOf(st), yT = yOf(sg.tp2);
+        canvas.drawRect(Rect.fromLTRB(x0, math.min(yE, yS), w, math.max(yE, yS)),
+            Paint()..color = _down.withOpacity(0.13));
+        canvas.drawRect(Rect.fromLTRB(x0, math.min(yE, yT), w, math.max(yE, yT)),
+            Paint()..color = _up.withOpacity(0.11));
+      }
+    }
     if (L.sm && smr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, smr!.signals, smr!.pending, 'SM', Colors.white,
           sources: smr!.sources, pendingSrc: smr!.pendingSrc);
