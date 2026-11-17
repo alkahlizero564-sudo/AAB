@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import '../models.dart';
 import 'alka.dart';
 import 'zero_one.dart';
+import 'sm_indicator.dart';
 import 'all_indicator.dart';
 import 'forecast.dart';
 import 'indicator_panel.dart';
@@ -197,6 +198,14 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
     mr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
   }
   rows.add(BenchRow('★ مؤشر Mp', mp.wins, mp.closed, mr, ours: true));
+  // SM: إشارات Mp التي يوافقها شريط المتوسطات
+  final sm = buildSm(c, mp);
+  var smr = 0.0;
+  for (final x in sm.signals) {
+    if (x.result == 0) continue;
+    smr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
+  }
+  rows.add(BenchRow('★ مؤشر SM', sm.wins, sm.closed, smr, ours: true));
   rows.sort((a, b) {
     final c1 = b.winRate.compareTo(a.winRate);
     return c1 != 0 ? c1 : b.avgR.compareTo(a.avgR);
