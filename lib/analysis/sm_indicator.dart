@@ -100,3 +100,29 @@ AllResult buildSm(List<Candle> c, AllResult mp) {
   final open = sigs.isNotEmpty && sigs.last.exitI < 0;
   return AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'SM');
 }
+
+/// مؤشر KM: إشارات SM في السوق الهادئ فقط (تذبذب الآن أقل من 0.9 من متوسطه على 100 شمعة).
+/// مقاس على 26 سوقاً (1R ثم 2R): 61.8% (SM 58.2%)، والربح لكل صفقة 0.26R (SM 0.18R)،
+/// رابح في 21 من 26 — بثلث صفقات SM تقريباً.
+AllResult buildKm(List<Candle> c, AllResult sm) {
+  final n = c.length;
+  final at = atr(c, 14);
+  final m = sma(at.map((v) => v.isNaN ? 0.0 : v).toList(), 100);
+  bool calm(int i) => i >= 0 && i < n && !at[i].isNaN && !m[i].isNaN && m[i] > 0 && at[i] / m[i] < 0.9;
+  final sigs = <PastSignal>[], src = <String>[];
+  for (final (q, s) in sm.signals.indexed) {
+    if (calm(s.i)) {
+      sigs.add(s);
+      src.add(sm.sources[q]);
+    }
+  }
+  final pend = <PendingSetup>[], pSrc = <String>[];
+  for (final (q, p) in sm.pending.indexed) {
+    if (calm(p.i)) {
+      pend.add(p);
+      pSrc.add(sm.pendingSrc[q]);
+    }
+  }
+  final open = sigs.isNotEmpty && sigs.last.exitI < 0;
+  return AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'KM');
+}

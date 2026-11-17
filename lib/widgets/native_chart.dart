@@ -19,6 +19,7 @@ class ChartLayers {
   bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
+  bool km = false; // مؤشر KM: إشارات SM في السوق الهادئ (الأدق، صفقات قليلة)
   bool sm = false; // مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات + رسم الشريط
   bool zero = false; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
   bool vol = true; // أعمدة الحجم أسفل الشارت
@@ -26,7 +27,7 @@ class ChartLayers {
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -43,6 +44,7 @@ class ChartLayers {
     ..zero = zero ?? this.zero
     ..mp = mp ?? this.mp
     ..sm = sm ?? this.sm
+    ..km = km ?? this.km
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -77,6 +79,7 @@ class NativeChart extends StatefulWidget {
   final ZeroResult? zero;
   final AllResult? mpR;
   final AllResult? smR;
+  final AllResult? kmR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -93,6 +96,7 @@ class NativeChart extends StatefulWidget {
     this.zero,
     this.mpR,
     this.smR,
+    this.kmR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -240,7 +244,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR),
             ),
           ),
         ),
@@ -310,8 +314,9 @@ class _Painter extends CustomPainter {
   final ZeroResult? zr;
   final AllResult? mr;
   final AllResult? smr;
+  final AllResult? kmr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -653,7 +658,7 @@ class _Painter extends CustomPainter {
     }
 
     // ── شريط SM (8 متوسطات): أخضر صاعد، أحمر هابط، رمادي متشابك
-    if (L.sm) {
+    if (L.sm || L.km) {
       final rib = smRibbon(c);
       final rd = smDirFast(rib, n);
       Color col(int i) => rd[i] > 0
@@ -831,8 +836,9 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ar!.signals, ar!.pending, 'ALL', AppColors.gold);
     }
     // صندوق صفقة SM المفتوحة (مثل DTC): أحمر للوقف، أخضر للأهداف
-    if (L.sm && smr != null && smr!.signals.isNotEmpty && smr!.signals.last.exitI < 0) {
-      final sg = smr!.signals.last;
+    final boxR = L.km ? kmr : (L.sm ? smr : null);
+    if (boxR != null && boxR.signals.isNotEmpty && boxR.signals.last.exitI < 0) {
+      final sg = boxR.signals.last;
       // الصندوق بعرض 110 بكسل على الأقل حتى يظهر واضحاً حتى لو كانت الصفقة حديثة
       final x0 = math.max(0.0, math.min(xOf(sg.i.toDouble()), w - 110));
       if (x0 < w) {
@@ -843,6 +849,10 @@ class _Painter extends CustomPainter {
         canvas.drawRect(Rect.fromLTRB(x0, math.min(yE, yT), w, math.max(yE, yT)),
             Paint()..color = _up.withOpacity(0.11));
       }
+    }
+    if (L.km && kmr != null) {
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, kmr!.signals, kmr!.pending, 'KM', AppColors.gold,
+          sources: kmr!.sources, pendingSrc: kmr!.pendingSrc);
     }
     if (L.sm && smr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, smr!.signals, smr!.pending, 'SM', Colors.white,
@@ -1431,6 +1441,11 @@ class _Painter extends CustomPainter {
       spans.add(TextSpan(text: t, style: TextStyle(color: col, fontWeight: FontWeight.w700)));
     }
 
+    if (L.km && kmr != null && kmr!.closed > 0) {
+      final a = kmr!;
+      part('KM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
     if (L.sm && smr != null && smr!.closed > 0) {
       final a = smr!;
       part('SM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
