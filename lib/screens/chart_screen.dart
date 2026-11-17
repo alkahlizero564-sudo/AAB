@@ -511,9 +511,15 @@ class _ChartScreenState extends State<ChartScreen> {
               sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
               head('التوصيات والمؤشرات'),
               sw('SM', 'إشارات Mp التي يوافقها شريط المتوسطات (الأدق، صفقات أقل) + رسم الشريط', layers.sm,
-                  (x) => layers.sm = x),
+                  (x) {
+                    layers.sm = x;
+                    if (x) layers.mp = false;
+                  }),
               sw('Mp 👑', 'دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى: أدق وأكثر صفقات', layers.mp,
-                  (x) => layers.mp = x),
+                  (x) {
+                    layers.mp = x;
+                    if (x) layers.sm = false;
+                  }),
               sw('ALL', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
                   (x) => layers.all = x),
               sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع', layers.zero,
@@ -667,8 +673,14 @@ class _ChartScreenState extends State<ChartScreen> {
         scrollDirection: Axis.horizontal,
         reverse: true,
         children: [
-          _healthTool('SM', st.smHealth, layers.sm, () => setState(() => layers.sm = !layers.sm)),
-          _healthTool('Mp', st.mpHealth, layers.mp, () => setState(() => layers.mp = !layers.mp)),
+          _healthTool('SM', st.smHealth, layers.sm, () => setState(() {
+                layers.sm = !layers.sm;
+                if (layers.sm) layers.mp = false; // إشارات SM جزء من Mp: لا نرسمهما فوق بعض
+              })),
+          _healthTool('Mp', st.mpHealth, layers.mp, () => setState(() {
+                layers.mp = !layers.mp;
+                if (layers.mp) layers.sm = false;
+              })),
           _healthTool('0.1', st.zeroHealth, layers.zero, () => setState(() => layers.zero = !layers.zero)),
           _healthTool('ALL', st.allHealth, layers.all, () => setState(() => layers.all = !layers.all)),
           _healthTool('Alka', st.alkaHealth, layers.alka, () => setState(() => layers.alka = !layers.alka)),
