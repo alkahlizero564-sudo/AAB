@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/zero_one.dart';
+import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
 import '../analysis/indicators.dart';
@@ -18,13 +19,14 @@ class ChartLayers {
   bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
+  bool sm = false; // مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات + رسم الشريط
   bool zero = false; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
   bool vol = true; // أعمدة الحجم أسفل الشارت
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -40,6 +42,7 @@ class ChartLayers {
     ..all = all ?? this.all
     ..zero = zero ?? this.zero
     ..mp = mp ?? this.mp
+    ..sm = sm ?? this.sm
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -73,6 +76,7 @@ class NativeChart extends StatefulWidget {
   final AllResult? allR;
   final ZeroResult? zero;
   final AllResult? mpR;
+  final AllResult? smR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -88,6 +92,7 @@ class NativeChart extends StatefulWidget {
     this.allR,
     this.zero,
     this.mpR,
+    this.smR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -235,7 +240,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR),
             ),
           ),
         ),
@@ -304,8 +309,9 @@ class _Painter extends CustomPainter {
   final AllResult? ar;
   final ZeroResult? zr;
   final AllResult? mr;
+  final AllResult? smr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -646,6 +652,36 @@ class _Painter extends CustomPainter {
       ln(f!.ema200, const Color(0xFFE040FB), 1.6);
     }
 
+    // ── شريط SM (8 متوسطات): أخضر صاعد، أحمر هابط، رمادي متشابك
+    if (L.sm) {
+      final rib = smRibbon(c);
+      final rd = smDir(rib, n);
+      Color col(int i) => rd[i] > 0
+          ? const Color(0xFF00C853)
+          : rd[i] < 0
+              ? const Color(0xFFFF1744)
+              : AppColors.muted;
+      for (var i = math.max(i0, 1); i <= i1; i++) {
+        final top = rib.first[i], bot = rib.last[i], top0 = rib.first[i - 1], bot0 = rib.last[i - 1];
+        if (top.isNaN || bot.isNaN || top0.isNaN || bot0.isNaN) continue;
+        final x0 = xOf(i - 1.0), x1 = xOf(i.toDouble());
+        final fill = Path()
+          ..moveTo(x0, yOf(top0))
+          ..lineTo(x1, yOf(top))
+          ..lineTo(x1, yOf(bot))
+          ..lineTo(x0, yOf(bot0))
+          ..close();
+        canvas.drawPath(fill, Paint()..color = col(i).withOpacity(0.10));
+        for (final r in rib) {
+          if (r[i].isNaN || r[i - 1].isNaN) continue;
+          canvas.drawLine(Offset(x0, yOf(r[i - 1])), Offset(x1, yOf(r[i])),
+              Paint()
+                ..color = col(i).withOpacity(0.55)
+                ..strokeWidth = 1);
+        }
+      }
+    }
+
     // ── AAB Algo: مناطق الانعكاس + خط الاتجاه
     if (_algoOn) {
       final a = al!;
@@ -793,6 +829,10 @@ class _Painter extends CustomPainter {
     }
     if (L.all && ar != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ar!.signals, ar!.pending, 'ALL', AppColors.gold);
+    }
+    if (L.sm && smr != null) {
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, smr!.signals, smr!.pending, 'SM', Colors.white,
+          sources: smr!.sources, pendingSrc: smr!.pendingSrc);
     }
     if (L.mp && mr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, mr!.signals, mr!.pending, 'Mp', AppColors.gold,
@@ -1369,6 +1409,11 @@ class _Painter extends CustomPainter {
       spans.add(TextSpan(text: t, style: TextStyle(color: col, fontWeight: FontWeight.w700)));
     }
 
+    if (L.sm && smr != null && smr!.closed > 0) {
+      final a = smr!;
+      part('SM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? const Color(0xFF00E676) : _down);
+    }
     if (L.mp && mr != null && mr!.closed > 0) {
       final a = mr!;
       part('Mp ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
