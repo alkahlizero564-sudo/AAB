@@ -655,7 +655,7 @@ class _Painter extends CustomPainter {
     // ── شريط SM (8 متوسطات): أخضر صاعد، أحمر هابط، رمادي متشابك
     if (L.sm) {
       final rib = smRibbon(c);
-      final rd = smDir(rib, n);
+      final rd = smDirFast(rib, n);
       Color col(int i) => rd[i] > 0
           ? const Color(0xFF00C853)
           : rd[i] < 0

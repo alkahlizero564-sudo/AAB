@@ -26,6 +26,7 @@ class AppState extends ChangeNotifier {
   late final LiveFeed _feed;
 
   AppSettings settings = AppSettings();
+  bool settingsLoaded = false; // صار true بعد قراءة الإعدادات والمفاتيح المحفوظة
   MarketSymbol symbol = allSymbols.first;
   String tf = '5m';
   int tab = 0;
@@ -84,6 +85,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     settings = await AppSettings.load();
+    settingsLoaded = true;
     final p = await SharedPreferences.getInstance();
     favorites = (p.getStringList('favs') ?? []).toSet();
     symbol = symbolByCode(p.getString('symbol') ?? allSymbols.first.code);
