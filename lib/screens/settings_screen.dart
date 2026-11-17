@@ -24,14 +24,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool autoHideWeak;
   late String source;
 
+  bool _synced = false;
+  // المفاتيح التي طلب المستخدم حذفها صراحةً (زر الحذف) — غير ذلك لا يُحذف أي مفتاح
+  final _deleted = <String>{};
+
   @override
   void initState() {
     super.initState();
-    final s = context.read<AppState>().settings;
-    tiingo = TextEditingController(text: s.tiingoKey);
-    twelve = [for (final k in s.twelveKeys) TextEditingController(text: k)];
-    gemini = [for (final k in s.geminiKeys) TextEditingController(text: k)];
-    model = TextEditingController(text: s.geminiModel);
+    final st = context.read<AppState>();
+    tiingo = TextEditingController();
+    twelve = [for (var i = 0; i < 4; i++) TextEditingController()];
+    gemini = [for (var i = 0; i < 4; i++) TextEditingController()];
+    model = TextEditingController();
+    _syncFrom(st.settings);
+    _synced = st.settingsLoaded;
+  }
+
+  /// يملأ الحقول من الإعدادات المحفوظة
+  void _syncFrom(AppSettings s) {
+    tiingo.text = s.tiingoKey;
+    for (var i = 0; i < 4; i++) {
+      twelve[i].text = s.twelveKeys[i];
+      gemini[i].text = s.geminiKeys[i];
+    }
+    model.text = s.geminiModel;
     refresh = s.refreshSec.clamp(15, 120).toInt();
     atrMult = s.atrMult;
     rr1 = s.rr1;
@@ -59,10 +75,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _save() async {
+    final st = context.read<AppState>();
+    if (!st.settingsLoaded) return; // لا نحفظ قبل قراءة المفاتيح المحفوظة
+    final old = st.settings;
+    // حقل فارغ لا يحذف مفتاحاً محفوظاً — الحذف فقط بزر الحذف 🗑️
+    String keep(String id, String now, String before) =>
+        now.trim().isEmpty && !_deleted.contains(id) ? before : now;
     final s = AppSettings(
-      tiingoKey: tiingo.text,
-      twelveKeys: twelve.map((e) => e.text).toList(),
-      geminiKeys: gemini.map((e) => e.text).toList(),
+      tiingoKey: keep('tiingo', tiingo.text, old.tiingoKey),
+      twelveKeys: [for (var i = 0; i < 4; i++) keep('twelve$i', twelve[i].text, old.twelveKeys[i])],
+      geminiKeys: [for (var i = 0; i < 4; i++) keep('gemini$i', gemini[i].text, old.geminiKeys[i])],
       refreshSec: refresh,
       atrMult: atrMult,
       rr1: rr1,
@@ -103,12 +125,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final st = context.watch<AppState>();
+    if (!_synced && st.settingsLoaded) {
+      _synced = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _syncFrom(st.settings));
+      });
+    }
     return ListView(padding: const EdgeInsets.all(14), children: [
       Panel(
         title: 'مفتاح Tiingo (فوركس + ذهب)',
         icon: Icons.vpn_key,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          KeyField(controller: tiingo, label: 'Tiingo API Key'),
+          KeyField(controller: tiingo, label: 'Tiingo API Key', onDelete: () => _deleted.add('tiingo')),
         ]),
       ),
       Panel(
@@ -121,7 +150,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           for (var i = 0; i < 4; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: KeyField(controller: twelve[i], label: 'Twelve Data ${i + 1}'),
+              child: KeyField(
+                  controller: twelve[i], label: 'Twelve Data ${i + 1}', onDelete: () => _deleted.add('twelve$i')),
             ),
         ]),
       ),
@@ -132,7 +162,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           for (var i = 0; i < 4; i++)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: KeyField(controller: gemini[i], label: 'Gemini ${i + 1}'),
+              child: KeyField(
+                  controller: gemini[i], label: 'Gemini ${i + 1}', onDelete: () => _deleted.add('gemini$i')),
             ),
           const SizedBox(height: 4),
           TextField(
@@ -231,13 +262,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
 class KeyField extends StatefulWidget {
   final TextEditingController controller;
   final String label;
-  const KeyField({super.key, required this.controller, required this.label});
+  final VoidCallback? onDelete; // يُستدعى عندما يؤكد المستخدم حذف المفتاح
+  const KeyField({super.key, required this.controller, required this.label, this.onDelete});
   @override
   State<KeyField> createState() => _KeyFieldState();
 }
 
 class _KeyFieldState extends State<KeyField> {
   bool hide = true;
+
+  Future<void> _confirmDelete() async {
+    if (widget.controller.text.trim().isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف المفتاح؟'),
+        content: Text('سيُحذف ${widget.label} بعد الضغط على "حفظ الإعدادات".'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حذف', style: TextStyle(color: AppColors.down))),
+        ],
+      ),
+    );
+    if (ok == true) {
+      widget.controller.clear();
+      widget.onDelete?.call();
+      setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return TextField(
@@ -249,10 +304,19 @@ class _KeyFieldState extends State<KeyField> {
       decoration: InputDecoration(
         labelText: widget.label,
         isDense: true,
-        suffixIcon: IconButton(
-          icon: Icon(hide ? Icons.visibility : Icons.visibility_off, size: 20),
-          onPressed: () => setState(() => hide = !hide),
-        ),
+        suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(
+            tooltip: 'إظهار/إخفاء',
+            icon: Icon(hide ? Icons.visibility : Icons.visibility_off, size: 20),
+            onPressed: () => setState(() => hide = !hide),
+          ),
+          if (widget.onDelete != null)
+            IconButton(
+              tooltip: 'حذف المفتاح',
+              icon: const Icon(Icons.delete_outline_rounded, size: 20, color: AppColors.down),
+              onPressed: _confirmDelete,
+            ),
+        ]),
       ),
     );
   }

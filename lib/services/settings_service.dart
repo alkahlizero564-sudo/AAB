@@ -53,10 +53,21 @@ class AppSettings {
   static Future<AppSettings> load() async {
     await EngineConfig.load();
     final p = await SharedPreferences.getInstance();
+    // نسخة احتياطية للمفاتيح: لو ضاعت النسخة الأساسية لأي سبب نسترجعها
+    String key1(String k) {
+      final v = p.getString(k) ?? '';
+      return v.trim().isNotEmpty ? v : (p.getString('${k}_bak') ?? '');
+    }
+
+    List<String> keys4(String k) {
+      final a = _four(p.getStringList(k)), b = _four(p.getStringList('${k}_bak'));
+      return [for (var i = 0; i < 4; i++) a[i].trim().isNotEmpty ? a[i] : b[i]];
+    }
+
     return AppSettings(
-      tiingoKey: p.getString('tiingo') ?? '',
-      twelveKeys: _four(p.getStringList('twelve')),
-      geminiKeys: _four(p.getStringList('gemini')),
+      tiingoKey: key1('tiingo'),
+      twelveKeys: keys4('twelve'),
+      geminiKeys: keys4('gemini'),
       refreshSec: p.getInt('refreshSec') ?? 60,
       pollSec: p.getInt('pollSec') ?? 10,
       atrMult: p.getDouble('atrMult') ?? 1.5,
@@ -80,6 +91,9 @@ class AppSettings {
     await p.setString('tiingo', tiingoKey.trim());
     await p.setStringList('twelve', twelveKeys.map((e) => e.trim()).toList());
     await p.setStringList('gemini', geminiKeys.map((e) => e.trim()).toList());
+    await p.setString('tiingo_bak', tiingoKey.trim());
+    await p.setStringList('twelve_bak', twelveKeys.map((e) => e.trim()).toList());
+    await p.setStringList('gemini_bak', geminiKeys.map((e) => e.trim()).toList());
     await p.setInt('refreshSec', refreshSec);
     await p.setInt('pollSec', pollSec);
     await p.setDouble('atrMult', atrMult);
