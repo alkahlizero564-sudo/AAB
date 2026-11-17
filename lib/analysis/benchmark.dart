@@ -206,6 +206,14 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
     smr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
   }
   rows.add(BenchRow('★ مؤشر SM', sm.wins, sm.closed, smr, ours: true));
+  // KM: إشارات SM في السوق الهادئ
+  final km = buildKm(c, sm);
+  var kmr = 0.0;
+  for (final x in km.signals) {
+    if (x.result == 0) continue;
+    kmr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
+  }
+  rows.add(BenchRow('★ مؤشر KM', km.wins, km.closed, kmr, ours: true));
   rows.sort((a, b) {
     final c1 = b.winRate.compareTo(a.winRate);
     return c1 != 0 ? c1 : b.avgR.compareTo(a.avgR);

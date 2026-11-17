@@ -19,6 +19,7 @@ class ChartLayers {
   bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
+  bool km = false; // مؤشر KM: إشارات SM في السوق الهادئ (الأدق، صفقات قليلة)
   bool sm = false; // مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات + رسم الشريط
   bool zero = false; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
   bool vol = true; // أعمدة الحجم أسفل الشارت
@@ -26,7 +27,7 @@ class ChartLayers {
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -43,6 +44,7 @@ class ChartLayers {
     ..zero = zero ?? this.zero
     ..mp = mp ?? this.mp
     ..sm = sm ?? this.sm
+    ..km = km ?? this.km
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -77,6 +79,7 @@ class NativeChart extends StatefulWidget {
   final ZeroResult? zero;
   final AllResult? mpR;
   final AllResult? smR;
+  final AllResult? kmR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -93,6 +96,7 @@ class NativeChart extends StatefulWidget {
     this.zero,
     this.mpR,
     this.smR,
+    this.kmR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -106,7 +110,7 @@ class NativeChart extends StatefulWidget {
 
 class _NativeChartState extends State<NativeChart> with SingleTickerProviderStateMixin {
   static const _homeShift = -6.0;
-  double visible = 90, shift = _homeShift, _baseVisible = 90;
+  double visible = 70, shift = _homeShift, _baseVisible = 70;
   double yZoom = 1, _baseYZoom = 1; // تكبير عمودي يدوي (اسحب على محور السعر)
   bool _axisDrag = false;
   double _chartW = 1;
@@ -231,7 +235,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
             onLongPressMoveUpdate: (d) => setState(() => _setCross(d.localPosition)),
             onDoubleTap: () => setState(() {
               _stopFling();
-              visible = 90;
+              visible = 70;
               shift = _homeShift;
               yZoom = 1;
               _setCross(null);
@@ -240,7 +244,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR),
             ),
           ),
         ),
@@ -310,8 +314,9 @@ class _Painter extends CustomPainter {
   final ZeroResult? zr;
   final AllResult? mr;
   final AllResult? smr;
+  final AllResult? kmr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -385,7 +390,7 @@ class _Painter extends CustomPainter {
       return;
     }
     final fullH = size.height - timeH;
-    final subH = L.sub == 'none' ? 0.0 : math.max(60.0, fullH * 0.22);
+    final subH = L.sub == 'none' ? 0.0 : math.max(50.0, fullH * 0.16);
     final w = size.width - axisW, h = fullH - subH;
     final rightIdx = n - 1 - shift;
     final leftIdx = rightIdx - visible + 1;
@@ -653,7 +658,7 @@ class _Painter extends CustomPainter {
     }
 
     // ── شريط SM (8 متوسطات): أخضر صاعد، أحمر هابط، رمادي متشابك
-    if (L.sm) {
+    if (L.sm || L.km) {
       final rib = smRibbon(c);
       final rd = smDirFast(rib, n);
       Color col(int i) => rd[i] > 0
@@ -831,8 +836,9 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ar!.signals, ar!.pending, 'ALL', AppColors.gold);
     }
     // صندوق صفقة SM المفتوحة (مثل DTC): أحمر للوقف، أخضر للأهداف
-    if (L.sm && smr != null && smr!.signals.isNotEmpty && smr!.signals.last.exitI < 0) {
-      final sg = smr!.signals.last;
+    final boxR = L.km ? kmr : (L.sm ? smr : null);
+    if (boxR != null && boxR.signals.isNotEmpty && boxR.signals.last.exitI < 0) {
+      final sg = boxR.signals.last;
       // الصندوق بعرض 110 بكسل على الأقل حتى يظهر واضحاً حتى لو كانت الصفقة حديثة
       final x0 = math.max(0.0, math.min(xOf(sg.i.toDouble()), w - 110));
       if (x0 < w) {
@@ -843,6 +849,10 @@ class _Painter extends CustomPainter {
         canvas.drawRect(Rect.fromLTRB(x0, math.min(yE, yT), w, math.max(yE, yT)),
             Paint()..color = _up.withOpacity(0.11));
       }
+    }
+    if (L.km && kmr != null) {
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, kmr!.signals, kmr!.pending, 'KM', AppColors.gold,
+          sources: kmr!.sources, pendingSrc: kmr!.pendingSrc);
     }
     if (L.sm && smr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, smr!.signals, smr!.pending, 'SM', Colors.white,
@@ -1179,10 +1189,10 @@ class _Painter extends CustomPainter {
         if (sg.exitI >= 0 || sg.result != 0) {
           final rm = sg.rMultiple;
           final res = sg.result >= 1
-              ? '✓ ${rm >= 0 ? '+' : ''}${rm.toStringAsFixed(1)}R'
+              ? '${rm >= 0 ? '+' : ''}${rm.toStringAsFixed(1)}R'
                   : sg.result == -2
                       ? '⌛ انتهت المهلة'
-                      : '✗ SL';
+                      : 'SL';
           final rc = sg.result > 0
               ? _up
               : sg.result == -2
@@ -1192,7 +1202,7 @@ class _Painter extends CustomPainter {
           _txt(cv, res, Offset(xe - 28, ry - 14),
               color: Colors.white, size: 9, bold: true, bg: rc, rtl: sg.result == -2);
         } else {
-          _txt(cv, '⏳ مفتوحة', Offset(xe - 40, yE - 14),
+          _txt(cv, 'مفتوحة', Offset(xe - 34, yE - 14),
               color: AppColors.onAccent, size: 9, bg: AppColors.accent, rtl: true);
         }
       }
@@ -1219,7 +1229,7 @@ class _Painter extends CustomPainter {
           ..color = col
           ..strokeWidth = 1.4, dash: 6, gap: 3);
         _txt(cv,
-            '⏳ ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'} ${sym.fmt(p.trigger)}',
+            '${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'} ${sym.fmt(p.trigger)}',
             Offset(xLast - barW * 6, y - 13),
             color: Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
       }
@@ -1258,7 +1268,7 @@ class _Painter extends CustomPainter {
               ..style = PaintingStyle.stroke
               ..strokeWidth = 1);
         final pct = ((up ? nb.pUp : 1 - nb.pUp) * 100).toStringAsFixed(0);
-        _txt(cv, nb.clear ? '${up ? '▲' : '▼'} $pct%' : '؟',
+        _txt(cv, nb.clear ? '${up ? '+' : '-'} $pct%' : '؟',
             Offset(x - 12, up ? yOf(nb.high) - 14 : yOf(nb.low) + 3),
             color: col, size: 10, bold: true);
       }
@@ -1277,6 +1287,7 @@ class _Painter extends CustomPainter {
       List<String>? sources,
       List<String>? pendingSrc}) {
     final n = c.length;
+    final placed = <Rect>[]; // لافتات مرسومة: نزيح الجديدة حتى لا تتراكب
     for (final (si, sg) in signals.indexed) {
       if (sg.i < i0 || sg.i > i1 || sg.i >= n) continue;
       final buy = sg.dir > 0;
@@ -1288,7 +1299,7 @@ class _Painter extends CustomPainter {
       final k = c[sg.i];
       final tp = TextPainter(
         text: TextSpan(
-            text: buy ? '$tag شراء ▲' : '$tag بيع ▼',
+            text: buy ? '$tag شراء' : '$tag بيع',
             style: TextStyle(
                 fontFamily: chartFont, color: txtCol, fontSize: 10, fontWeight: FontWeight.w800)),
         textDirection: TextDirection.rtl,
@@ -1296,8 +1307,15 @@ class _Painter extends CustomPainter {
       final bw = tp.width + 10, bh = tp.height + 4;
       // سهم صغير يشير للشمعة + لافتة ملونة
       final tipY = buy ? yOf(k.low) + 3 : yOf(k.high) - 3;
-      // لا ترتفع اللافتة فوق شريط الأسعار العلوي
-      final boxY = buy ? tipY + 7 : math.max(40.0, tipY - 7 - bh);
+      // لا ترتفع اللافتة فوق شريط الأسعار العلوي، ونزيحها إذا تراكبت مع لافتة سابقة
+      var boxY = buy ? tipY + 7 : math.max(40.0, tipY - 7 - bh);
+      for (var guard = 0; guard < 6; guard++) {
+        final rr = Rect.fromLTWH(x - bw / 2, boxY, bw, bh + 13);
+        final hit = placed.where((p) => p.overlaps(rr)).toList();
+        if (hit.isEmpty) break;
+        boxY = buy ? hit.map((p) => p.bottom).reduce(math.max) + 2 : hit.map((p) => p.top).reduce(math.min) - bh - 15;
+      }
+      placed.add(Rect.fromLTWH(x - bw / 2, buy ? boxY : boxY - 13, bw, bh + 13));
       final arrow = Path()
         ..moveTo(x, tipY)
         ..lineTo(x - 5, buy ? tipY + 7 : tipY - 7)
@@ -1316,11 +1334,11 @@ class _Painter extends CustomPainter {
       // النتيجة تحت/فوق اللافتة
       if (sg.result != 0 || sg.exitI >= 0) {
         final rm = sg.rMultiple;
-        final txt = sg.result > 0 ? '✓ +${rm.toStringAsFixed(1)}R' : '✗ ${rm.toStringAsFixed(1)}R';
+        final txt = '${rm >= 0 ? '+' : ''}${rm.toStringAsFixed(1)}R';
         _txt(cv, txt, Offset(x - 18, buy ? boxY + bh + 2 : boxY - 13),
             color: sg.result > 0 ? const Color(0xFF00E676) : const Color(0xFFFF8A80), size: 9, bold: true);
       } else {
-        _txt(cv, '⏳ مفتوحة', Offset(x - 22, buy ? boxY + bh + 2 : boxY - 13),
+        _txt(cv, 'مفتوحة', Offset(x - 16, buy ? boxY + bh + 2 : boxY - 13),
             color: AppColors.gold, size: 9, bold: true, rtl: true);
       }
     }
@@ -1349,7 +1367,7 @@ class _Painter extends CustomPainter {
       _dashed(cv, xl, w, yOf(p.trigger), Paint()
         ..color = col
         ..strokeWidth = 1.4, dash: 6, gap: 3);
-      _txt(cv, '⏳ $tag ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'}', Offset(xl, yOf(p.trigger) - 13),
+      _txt(cv, '$tag ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'}', Offset(xl, yOf(p.trigger) - 13),
           color: (darkText || pz) && p.dir < 0 ? AppColors.onAccent : Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
       _axis.add((yOf(p.trigger), sym.fmt(p.trigger), 'دخول', col));
       if (inY(p.sl)) {
@@ -1423,6 +1441,11 @@ class _Painter extends CustomPainter {
       spans.add(TextSpan(text: t, style: TextStyle(color: col, fontWeight: FontWeight.w700)));
     }
 
+    if (L.km && kmr != null && kmr!.closed > 0) {
+      final a = kmr!;
+      part('KM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
     if (L.sm && smr != null && smr!.closed > 0) {
       final a = smr!;
       part('SM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
@@ -1454,7 +1477,7 @@ class _Painter extends CustomPainter {
     }
     if (_algoOn) {
       final t = al!.trend.last, p = al!.power.last;
-      part('Algo ${t > 0 ? '▲' : t < 0 ? '▼' : '-'} ${p == 2 ? 'قوي' : p == 1 ? 'متوسط' : 'ضعيف'}',
+      part('Algo ${t > 0 ? 'صاعد' : t < 0 ? 'هابط' : '-'} ${p == 2 ? 'قوي' : p == 1 ? 'متوسط' : 'ضعيف'}',
           t > 0 ? _up : (t < 0 ? _down : AppColors.muted));
     }
     if (spans.isEmpty) return;
