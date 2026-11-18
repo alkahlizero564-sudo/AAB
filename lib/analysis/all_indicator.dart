@@ -12,7 +12,9 @@ class AllResult {
   final List<PendingSetup> pending;
   final List<String> pendingSrc;
   final String tag; // اسم المؤشر في النصوص: 'ALL' أو 'Mp'
-  const AllResult(this.signals, this.sources, this.pending, this.pendingSrc, [this.tag = 'ALL']);
+  /// إشارات عكسية ظهرت أثناء صفقة مفتوحة فلم تُنفَّذ (للعرض فقط كدائرة رمادية — لا تدخل في الدقة).
+  final List<PastSignal> blocked;
+  const AllResult(this.signals, this.sources, this.pending, this.pendingSrc, [this.tag = 'ALL', this.blocked = const []]);
   static const empty = AllResult([], [], [], []);
 
   int get wins => signals.where((s) => s.result > 0).length;
@@ -67,10 +69,13 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
     for (final s in alka)
       if (small(s.i)) (s, 'Alka'),
   ]..sort((x, y) => x.$1.i != y.$1.i ? x.$1.i.compareTo(y.$1.i) : prio[x.$2]!.compareTo(prio[y.$2]!));
-  final sigs = <PastSignal>[], src = <String>[];
+  final sigs = <PastSignal>[], src = <String>[], blocked = <PastSignal>[];
   var busy = -1;
   for (final (s, from) in cands) {
-    if (s.i <= busy) continue;
+    if (s.i <= busy) {
+      if (sigs.isNotEmpty && s.dir != sigs.last.dir && (blocked.isEmpty || blocked.last.i != s.i)) blocked.add(s);
+      continue;
+    }
     sigs.add(s);
     src.add(from);
     busy = s.exitI < 0 ? n : s.exitI;
@@ -86,5 +91,5 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
       }
     }
   }
-  return AllResult(sigs, src, pend, pendSrc, tag);
+  return AllResult(sigs, src, pend, pendSrc, tag, blocked);
 }

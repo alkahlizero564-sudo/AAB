@@ -22,6 +22,7 @@ class ChartLayers {
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
   bool dm = false; // مؤشر DM: خاص بالذهب (Mp مع الترند اليومي في السوق الهادئ)
+  bool blocked = true; // دوائر رمادية: إشارات عكسية ظهرت أثناء صفقة مفتوحة ولم تُنفَّذ (للعرض فقط)
   bool star = false; // مؤشر النجوم: كل إشارات Mp مع نجوم بعدد المؤشرات الموافقة (SM و KM و ST و DM)
   bool st = false; // مؤشر ST: إشارات Mp عالية الثقة حسب النموذج المتعلّم
   bool km = false; // مؤشر KM: إشارات SM في السوق الهادئ (الأدق، صفقات قليلة)
@@ -53,6 +54,7 @@ class ChartLayers {
     ..dm = dm ?? this.dm
     ..st = st ?? this.st
     ..star = star ?? this.star
+    ..blocked = blocked
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -930,6 +932,21 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, sigs, pends, groups.first.$1, AppColors.gold,
           sources: srcs, pendingSrc: pSrcs, tagPer: names, pendTagPer: pNames);
     }
+    // دوائر رمادية: إشارات عكسية لم تُنفَّذ لأن صفقة كانت مفتوحة (معلومة فقط)
+    if (L.blocked && mr != null && (L.mp || L.sm || L.km || L.st || L.dm || L.star)) {
+      final ring = Paint()
+        ..color = const Color(0xFF9AA5B8)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6;
+      final fill = Paint()..color = const Color(0xFF9AA5B8).withOpacity(0.18);
+      for (final b in mr!.blocked) {
+        if (b.i < i0 || b.i > i1 || b.i >= c.length) continue;
+        final k = c[b.i];
+        final x = xOf(b.i.toDouble());
+        final y = b.dir > 0 ? yOf(k.low) + 10 : yOf(k.high) - 10;
+        cv0(canvas, Offset(x, y), fill, ring);
+      }
+    }
     if (L.star && starr != null) {
       final r = starr!.res;
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'نجوم', AppColors.gold,
@@ -1487,6 +1504,11 @@ class _Painter extends CustomPainter {
         _axis.add((yOf(p.tp1), sym.fmt(p.tp1), 'TP1', _up));
       }
     }
+  }
+
+  void cv0(Canvas cv, Offset o, Paint fill, Paint ring) {
+    cv.drawCircle(o, 5.5, fill);
+    cv.drawCircle(o, 5.5, ring);
   }
 
   Path _starPath(double cx, double cy, double r) {
