@@ -6,6 +6,7 @@ import '../analysis/benchmark.dart';
 import '../analysis/chart_reader.dart';
 import '../analysis/forecast.dart';
 import '../analysis/health.dart';
+import '../analysis/trade_check.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -870,6 +871,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
         if (_familyBar(st, eff) case final w?) w,
+        if (_openTrade(st, eff) case final ot?) _checkButton(st, ot.$1, ot.$2),
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
         if (eff.zero && st.zero != null && st.zero!.decision.state != 0)
           _decisionBar(st.zero!.decision, st.symbol, tag: '0.1'),
@@ -885,6 +887,157 @@ class _ChartScreenState extends State<ChartScreen> {
         _bottomBar(s, st.symbol),
     ]);
   }
+
+  /// أول صفقة مفتوحة في المؤشرات المشغّلة (للزر "افحص صفقتي").
+  (String, PastSignal)? _openTrade(AppState st, ChartLayers eff) {
+    final l = <(String, List<PastSignal>?)>[
+      if (eff.star) ('نجوم', st.starR?.res.signals),
+      if (eff.km) ('KM', st.kmR?.signals),
+      if (eff.dm) ('DM', st.dmR?.signals),
+      if (eff.st) ('ST', st.stR?.res.signals),
+      if (eff.sm) ('SM', st.smR?.signals),
+      if (eff.mp) ('Mp', st.mpR?.signals),
+      if (eff.all) ('ALL', st.allR?.signals),
+      if (eff.zero) ('0.1', st.zero?.signals),
+      if (eff.alka) ('Alka', st.alka?.signals),
+    ];
+    for (final (t, sg) in l) {
+      if (sg != null && sg.isNotEmpty && sg.last.exitI < 0) return (t, sg.last);
+    }
+    return null;
+  }
+
+  Widget _checkButton(AppState st, String tag, PastSignal sg) => Padding(
+        padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
+        child: SizedBox(
+          width: double.infinity,
+          height: 36,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.gold,
+              side: const BorderSide(color: AppColors.gold, width: 1),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.manage_search_rounded, size: 18),
+            label: Text('افحص صفقتي ($tag ${sg.dir > 0 ? 'شراء' : 'بيع'})',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+            onPressed: () => _showTradeCheck(st, tag, sg),
+          ),
+        ),
+      );
+
+  void _showTradeCheck(AppState st, String tag, PastSignal sg) {
+    final r = checkTrade(st.candles, sg);
+    if (r == null) return;
+    String fr(double x) => '${x >= 0 ? '+' : ''}${x.toStringAsFixed(2)}R';
+    final (col, title, odds) = switch (r.state) {
+      'strong' => (
+          AppColors.up,
+          '🟢 زخم قوي — خليها تجري',
+          'تاريخياً (ذهب 10 سنوات): النصف الباقي وصل +1R أو أكثر في ~1 من كل 4 صفقات بهذا الوضع، ومتوسطه ~+0.8R'
+        ),
+      'weak' => (
+          AppColors.down,
+          '🔴 الحركة تضعف',
+          'تاريخياً (ذهب 10 سنوات): النصف الباقي وصل +1R في ~1 من كل 10، ومتوسطه ~+0.3R — الوقف المتحرك يحمي ربحك، ويمكنك تأمينه يدوياً'
+        ),
+      'normal' => (
+          AppColors.gold,
+          '🟡 عادية',
+          'تاريخياً (ذهب 10 سنوات): النصف الباقي وصل +1R في ~1 من كل 6، ومتوسطه ~+0.5R'
+        ),
+      _ => (
+          AppColors.muted,
+          '⏳ لم يتحقق TP1 بعد',
+          'الوقف الأصلي ما زال قائماً. بعد TP1 يُغلق النصف ويصبح الوقف عند الدخول، ويظهر هنا تقييم الاستمرار'
+        ),
+    };
+    final board = st.board;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(
+                child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 10),
+            Text('فحص الصفقة — $tag ${sg.dir > 0 ? 'شراء' : 'بيع'}',
+                style: const TextStyle(color: AppColors.text, fontSize: 17, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: _kv('الآن', fr(r.nowR), r.nowR >= 0 ? AppColors.up : AppColors.down)),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: _kv(r.tp1Hit ? 'مضمون (لو ضُرب الوقف)' : 'أقصى خسارة', fr(r.securedR),
+                      r.securedR >= 0 ? AppColors.up : AppColors.down)),
+            ]),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: col.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: col.withOpacity(0.7)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: TextStyle(color: col, fontSize: 15, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 4),
+                Text(odds, style: const TextStyle(color: AppColors.text, fontSize: 12, height: 1.4)),
+              ]),
+            ),
+            if (r.reasons.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              for (final (pos, t) in r.reasons)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Row(children: [
+                    Icon(pos ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+                        size: 16, color: pos ? AppColors.up : AppColors.down),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(t, style: const TextStyle(color: AppColors.text, fontSize: 12))),
+                  ]),
+                ),
+            ],
+            if (board.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(spacing: 6, children: [
+                for (final e in board.entries)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: e.value == sg.dir ? AppColors.up : AppColors.down),
+                    ),
+                    child: Text('${e.key.toUpperCase()} ${e.value == sg.dir ? 'مع صفقتك' : 'ضدها'}',
+                        style: TextStyle(color: e.value == sg.dir ? AppColors.up : AppColors.down, fontSize: 11)),
+                  ),
+              ]),
+            ],
+            const SizedBox(height: 10),
+            const Text('تقدير من التاريخ وليس ضماناً — الوقف المتحرك يبقى الحماية الأساسية.',
+                style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _kv(String k, String v, Color col) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(10)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(k, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+          const SizedBox(height: 2),
+          Text(v, textDirection: TextDirection.ltr, style: TextStyle(color: col, fontSize: 16, fontWeight: FontWeight.w800)),
+        ]),
+      );
 
   /// قرار مؤشر النجوم مع عدد نجوم الإشارة الحالية.
   Widget _starBar(AppState st) {
