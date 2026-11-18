@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
+import '../analysis/st_indicator.dart';
 import '../analysis/zero_one.dart';
 import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
@@ -19,7 +20,8 @@ class ChartLayers {
   bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
-  bool dm = false; // مؤشر DM: خاص بالذهب (Mp بدون الجمعة + مع الترند اليومي)
+  bool dm = false; // مؤشر DM: خاص بالذهب (Mp مع الترند اليومي في السوق الهادئ)
+  bool st = false; // مؤشر ST: إشارات Mp عالية الثقة حسب النموذج المتعلّم
   bool km = false; // مؤشر KM: إشارات SM في السوق الهادئ (الأدق، صفقات قليلة)
   bool sm = false; // مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات + رسم الشريط
   bool zero = false; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
@@ -28,7 +30,7 @@ class ChartLayers {
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km, bool? dm}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km, bool? dm, bool? st}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -47,6 +49,7 @@ class ChartLayers {
     ..sm = sm ?? this.sm
     ..km = km ?? this.km
     ..dm = dm ?? this.dm
+    ..st = st ?? this.st
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -83,6 +86,7 @@ class NativeChart extends StatefulWidget {
   final AllResult? smR;
   final AllResult? kmR;
   final AllResult? dmR;
+  final StResult? stR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -101,6 +105,7 @@ class NativeChart extends StatefulWidget {
     this.smR,
     this.kmR,
     this.dmR,
+    this.stR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -261,7 +266,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR),
             ),
           ),
         ),
@@ -333,8 +338,9 @@ class _Painter extends CustomPainter {
   final AllResult? smr;
   final AllResult? kmr;
   final AllResult? dmr;
+  final StResult? str;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -859,6 +865,7 @@ class _Painter extends CustomPainter {
     final groups = <(String, AllResult)>[
       if (L.km && kmr != null) ('KM', kmr!),
       if (L.dm && dmr != null) ('DM', dmr!),
+      if (L.st && str != null) ('ST', str!.res),
       if (L.sm && smr != null) ('SM', smr!),
       if (L.mp && mr != null) ('Mp', mr!),
     ];
@@ -886,18 +893,23 @@ class _Painter extends CustomPainter {
         }
       }
       // ترتيب العلامات داخل الاسم من الأعم للأدق: Mp·SM·KM
-      const order = ['Mp', 'SM', 'DM', 'KM'];
-      String nameOf(List<String> t) => (List.of(t)..sort((x, y) => order.indexOf(x).compareTo(order.indexOf(y)))).join('·');
+      const order = ['Mp', 'SM', 'ST', 'DM', 'KM'];
+      // ST يُظهر درجة ثقته بعد الأسماء (مثل "Mp·ST 58%")
+      String nameOf(List<String> t, int i) {
+        final j = (List.of(t)..sort((x, y) => order.indexOf(x).compareTo(order.indexOf(y)))).join('·');
+        final cf = t.contains('ST') ? str?.conf[i] : null;
+        return cf == null ? j : '$j ${(cf * 100).round()}%';
+      }
       final keys = bySig.keys.toList()..sort((x, y) => x.$1.compareTo(y.$1));
       final sigs = [for (final k in keys) bySig[k]!.$1];
       final srcs = [for (final k in keys) bySig[k]!.$2];
-      final names = [for (final k in keys) nameOf(bySig[k]!.$3)];
+      final names = [for (final k in keys) nameOf(bySig[k]!.$3, k.$1)];
       final pk = byPend.keys.toList();
       final pends = [for (final k in pk) byPend[k]!.$1];
       final pSrcs = [for (final k in pk) byPend[k]!.$2];
-      final pNames = [for (final k in pk) nameOf(byPend[k]!.$3)];
+      final pNames = [for (final k in pk) nameOf(byPend[k]!.$3, k.$1)];
       // صندوق الصفقة المفتوحة (مرة واحدة)
-      if (sigs.isNotEmpty && sigs.last.exitI < 0 && (L.sm || L.km || L.dm)) {
+      if (sigs.isNotEmpty && sigs.last.exitI < 0 && (L.sm || L.km || L.dm || L.st)) {
         final sg = sigs.last;
         final x0 = math.max(0.0, math.min(xOf(sg.i.toDouble()), w - 110));
         if (x0 < w) {
@@ -1497,6 +1509,11 @@ class _Painter extends CustomPainter {
     if (L.dm && dmr != null && dmr!.closed > 0) {
       final a = dmr!;
       part('DM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
+    if (L.st && str != null && str!.res.closed > 0) {
+      final a = str!.res;
+      part('ST ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
           a.winRate >= 0.5 ? AppColors.gold : _down);
     }
     if (L.km && kmr != null && kmr!.closed > 0) {

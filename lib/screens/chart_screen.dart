@@ -55,8 +55,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 border: Border.all(color: bc(r.bias).withOpacity(0.5)),
               ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(r.verdict,
-                    style: TextStyle(color: bc(r.bias), fontWeight: FontWeight.w800, fontSize: 14)),
+                Text(r.verdict, style: TextStyle(color: bc(r.bias), fontWeight: FontWeight.w800, fontSize: 14)),
                 const SizedBox(height: 6),
                 for (final sc in r.scenarios)
                   Padding(
@@ -93,8 +92,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [
                     Text('${sec.icon} ${sec.title}',
-                        style: const TextStyle(
-                            color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 14)),
+                        style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 14)),
                     const Spacer(),
                     Text(
                         sec.bias > 0
@@ -108,8 +106,7 @@ class _ChartScreenState extends State<ChartScreen> {
                   for (final l in sec.lines)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
-                      child: Text('• $l',
-                          style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.45)),
+                      child: Text('• $l', style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.45)),
                     ),
                 ]),
               ),
@@ -172,8 +169,7 @@ class _ChartScreenState extends State<ChartScreen> {
           builder: (context, snap) {
             if (!snap.hasData) {
               return ListView(controller: ctl, padding: const EdgeInsets.all(14), children: [
-                Text(title,
-                    style: const TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
+                Text(title, style: const TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 40),
                 const Center(child: CircularProgressIndicator()),
                 const SizedBox(height: 14),
@@ -189,8 +185,7 @@ class _ChartScreenState extends State<ChartScreen> {
               controller: ctl,
               padding: const EdgeInsets.all(14),
               children: [
-                Text(title,
-                    style: const TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
+                Text(title, style: const TextStyle(color: AppColors.text, fontSize: 15, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 Text(
                     'على آخر ${c.length} شمعة (حوالي $days يوم)${long ? '' : ' — تعذر جلب تاريخ أطول'}. '
@@ -233,8 +228,7 @@ class _ChartScreenState extends State<ChartScreen> {
       child: Row(children: [
         SizedBox(
             width: 26,
-            child:
-                Text(small ? '–' : '${k + 1}', style: const TextStyle(color: AppColors.muted, fontSize: 12))),
+            child: Text(small ? '–' : '${k + 1}', style: const TextStyle(color: AppColors.muted, fontSize: 12))),
         Expanded(
             child: Text(r.name,
                 style: TextStyle(
@@ -271,8 +265,7 @@ class _ChartScreenState extends State<ChartScreen> {
     );
   }
 
-  static String _hm(DateTime t) =>
-      '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')} '
+  static String _hm(DateTime t) => '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')} '
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
   Widget _candlePanel(AppState st, int i) {
@@ -291,8 +284,7 @@ class _ChartScreenState extends State<ChartScreen> {
             InkWell(
               onTap: () => _showReading(st, upto: i),
               child: const Text('🧠 اقرأ الشارت عندها',
-                  style:
-                      TextStyle(color: AppColors.accent, fontSize: 11, decoration: TextDecoration.underline)),
+                  style: TextStyle(color: AppColors.accent, fontSize: 11, decoration: TextDecoration.underline)),
             ),
           ]),
           const SizedBox(height: 4),
@@ -334,57 +326,6 @@ class _ChartScreenState extends State<ChartScreen> {
             ),
         ]),
       );
-
-  Widget _tool(IconData? icon, String label, VoidCallback onTap,
-      {bool primary = false, bool dim = false, VoidCallback? onLong, Color? dot}) {
-    final fg = primary ? AppColors.onAccent : (dim ? AppColors.muted : AppColors.text);
-    return Padding(
-      padding: const EdgeInsetsDirectional.fromSTEB(0, 5, 6, 5),
-      child: Material(
-        color: primary ? null : (dim ? Colors.transparent : AppColors.card),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: primary
-              ? BorderSide.none
-              : BorderSide(color: dim ? AppColors.border.withOpacity(0.6) : AppColors.border, width: 0.8),
-        ),
-        child: Ink(
-          decoration: primary
-              ? BoxDecoration(gradient: AppColors.goldGrad, borderRadius: BorderRadius.circular(8))
-              : null,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: onTap,
-            onLongPress: onLong,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                if (icon != null) Icon(icon, size: 16, color: primary ? fg : AppColors.accent),
-                if (dot != null)
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: dim ? Colors.transparent : dot,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: dot, width: 1.2),
-                    ),
-                  ),
-                const SizedBox(width: 6),
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: fg,
-                        fontWeight: FontWeight.w700,
-                        decoration: dim ? TextDecoration.lineThrough : null,
-                        decorationColor: AppColors.muted)),
-              ]),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _iconTool(IconData i, String tip, VoidCallback onTap, {bool primary = false}) => Padding(
         padding: const EdgeInsetsDirectional.only(start: 6),
@@ -430,20 +371,238 @@ class _ChartScreenState extends State<ChartScreen> {
     );
   }
 
-  Widget _healthTool(String name, IndHealth? h, bool on, VoidCallback toggle) {
-    final st = context.read<AppState>();
-    final dot = switch (h?.light) {
-      'green' => AppColors.up,
-      'yellow' => AppColors.gold,
-      'red' => AppColors.down,
-      _ => AppColors.muted,
-    };
-    return _tool(null, name, toggle, dim: !on, dot: dot, onLong: () {
-      final msg = h == null
-          ? '$name: جاري حساب أدائه على ${st.symbol.code} ${st.tf}…'
-          : '$name على ${st.symbol.code} ${st.tf}: ${h.dot} ${h.label} — ${h.summary}';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-    });
+  /// كل مؤشراتنا بترتيب واحد (من الأدق للأعم) — للشريط وللوحة المؤشرات.
+  List<({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle})> _indicators(
+          AppState st) =>
+      [
+        if (st.symbol.category == 'metal')
+          (
+            name: 'DM',
+            emoji: '🥇',
+            desc: 'خاص بالذهب: مع الترند اليومي في السوق الهادئ',
+            health: st.dmHealth,
+            on: layers.dm,
+            toggle: () => layers.dm = !layers.dm
+          ),
+        (
+          name: 'KM',
+          emoji: '💎',
+          desc: 'الأدق بهدف 1R — صفقات قليلة في السوق الهادئ',
+          health: st.kmHealth,
+          on: layers.km,
+          toggle: () => layers.km = !layers.km
+        ),
+        (
+          name: 'ST',
+          emoji: '🧠',
+          desc: 'نموذج متعلّم: أعلى 30% من إشارات Mp مع درجة الثقة',
+          health: st.stHealth,
+          on: layers.st,
+          toggle: () => layers.st = !layers.st
+        ),
+        (
+          name: 'SM',
+          emoji: '〰️',
+          desc: 'Mp مع شريط المتوسطات واتجاه الساعة',
+          health: st.smHealth,
+          on: layers.sm,
+          toggle: () => layers.sm = !layers.sm
+        ),
+        (
+          name: 'Mp',
+          emoji: '👑',
+          desc: 'دمج مؤشراتنا — أكثر صفقات وأكبر ربح',
+          health: st.mpHealth,
+          on: layers.mp,
+          toggle: () => layers.mp = !layers.mp
+        ),
+        (
+          name: 'ALL',
+          emoji: '🔗',
+          desc: 'دمج AAB و Alka',
+          health: st.allHealth,
+          on: layers.all,
+          toggle: () => layers.all = !layers.all
+        ),
+        (
+          name: '0.1',
+          emoji: '🎯',
+          desc: 'مصيدة سيولة + شمعة رفض',
+          health: st.zeroHealth,
+          on: layers.zero,
+          toggle: () => layers.zero = !layers.zero
+        ),
+        (
+          name: 'Alka',
+          emoji: '🕯️',
+          desc: 'شموع الانعكاس عند الدعم والمقاومة',
+          health: st.alkaHealth,
+          on: layers.alka,
+          toggle: () => layers.alka = !layers.alka
+        ),
+        (
+          name: 'AAB',
+          emoji: '📈',
+          desc: 'توصيات AAB الأساسية',
+          health: st.aabHealth,
+          on: layers.sigs,
+          toggle: () => layers.sigs = !layers.sigs
+        ),
+      ];
+
+  /// زر "المؤشرات": أسماء المشغّل منها (كل اسم بلون حالته على هذا السوق) — يفتح لوحة كل المؤشرات.
+  Widget _indButton(
+      List<({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle})> on) {
+    Color col(IndHealth? h) => switch (h?.light) {
+          'green' => AppColors.up,
+          'yellow' => AppColors.gold,
+          'red' => AppColors.down,
+          _ => AppColors.muted,
+        };
+    // كل اسم بلون حالته على هذا السوق (أخضر قوي، ذهبي متوسط، أحمر ضعيف)
+    final spans = <InlineSpan>[
+      for (final (q, x) in on.indexed) ...[
+        if (q > 0) const TextSpan(text: ' · ', style: TextStyle(color: AppColors.muted)),
+        TextSpan(text: x.name, style: TextStyle(color: x.health == null ? AppColors.text : col(x.health))),
+      ],
+    ];
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Material(
+        color: AppColors.card,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(9), side: const BorderSide(color: AppColors.gold, width: 0.9)),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: _showIndicators,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            child: Row(children: [
+              const Icon(Icons.tune_rounded, size: 16, color: AppColors.gold),
+              const SizedBox(width: 7),
+              Expanded(
+                child: on.isEmpty
+                    ? const Text('المؤشرات — اختر مؤشراً',
+                        style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w700))
+                    : Text.rich(TextSpan(children: spans),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w800)),
+              ),
+              const Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: AppColors.gold),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// لوحة المؤشرات: بطاقة لكل مؤشر (لمسة = تشغيل/إيقاف) مع حالته ودقته على هذا السوق.
+  void _showIndicators() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (_) => StatefulBuilder(builder: (ctx, setSheet) {
+        final st = context.watch<AppState>();
+        final inds = _indicators(st);
+        Widget card(({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle}) x) {
+          final h = x.health;
+          final col = switch (h?.light) {
+            'green' => AppColors.up,
+            'yellow' => AppColors.gold,
+            'red' => AppColors.down,
+            _ => AppColors.muted,
+          };
+          return Material(
+            color: x.on ? AppColors.gold.withOpacity(0.10) : AppColors.card,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: x.on ? AppColors.gold : AppColors.border, width: x.on ? 1.4 : 0.8),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                setState(x.toggle);
+                setSheet(() {});
+              },
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Text(x.emoji, style: const TextStyle(fontSize: 15)),
+                    const SizedBox(width: 6),
+                    Text(x.name,
+                        style: TextStyle(
+                            color: x.on ? AppColors.gold : AppColors.text, fontSize: 15, fontWeight: FontWeight.w800)),
+                    const Spacer(),
+                    Icon(x.on ? Icons.check_circle_rounded : Icons.circle_outlined,
+                        size: 18, color: x.on ? AppColors.gold : AppColors.muted),
+                  ]),
+                  const SizedBox(height: 3),
+                  Text(x.desc,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppColors.muted, fontSize: 10.5, height: 1.3)),
+                  const Spacer(),
+                  Row(children: [
+                    Container(width: 7, height: 7, decoration: BoxDecoration(color: col, shape: BoxShape.circle)),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        h == null
+                            ? 'جاري الحساب…'
+                            : h.trades < 20
+                                ? 'عينة صغيرة'
+                                : '${h.label} • ${(h.winRate * 100).toStringAsFixed(0)}% من ${h.trades}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: col, fontSize: 10.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ]),
+                ]),
+              ),
+            ),
+          );
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(
+                child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+              ),
+              const SizedBox(height: 10),
+              Row(children: [
+                const Text('المؤشرات',
+                    style: TextStyle(color: AppColors.text, fontSize: 17, fontWeight: FontWeight.w800)),
+                const SizedBox(width: 8),
+                Text('${st.symbol.code} • ${st.tf}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+              ]),
+              const SizedBox(height: 2),
+              const Text('شغّل أي عدد معاً — الإشارة المشتركة تظهر بعلامة واحدة. الدقة من آخر 3000 شمعة على هذا السوق.',
+                  style: TextStyle(color: AppColors.muted, fontSize: 11)),
+              const SizedBox(height: 10),
+              Flexible(
+                  child: GridView.count(
+                crossAxisCount: 2,
+                shrinkWrap: true,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1.75,
+                children: [for (final x in inds) card(x)],
+              )),
+            ]),
+          ),
+        );
+      }),
+    );
   }
 
   /// سطر يشرح لماذا أُخفي مؤشر ضعيف، مع زر "إظهار".
@@ -482,16 +641,14 @@ class _ChartScreenState extends State<ChartScreen> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: Text(t, style: const TextStyle(color: AppColors.text, fontSize: 13)),
-              subtitle: sub.isEmpty
-                  ? null
-                  : Text(sub, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+              subtitle: sub.isEmpty ? null : Text(sub, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
               value: v,
               onChanged: (x) => upd(() => on(x)),
             );
         Widget head(String t) => Padding(
               padding: const EdgeInsets.only(top: 10, bottom: 4),
-              child: Text(t,
-                  style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 13)),
+              child:
+                  Text(t, style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 13)),
             );
         return DraggableScrollableSheet(
           expand: false,
@@ -512,14 +669,19 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
               head('التوصيات والمؤشرات'),
-              sw('DM 🥇', 'خاص بالذهب: إشارات Mp بدون الجمعة ومع الترند اليومي', layers.dm, (x) {
+              sw('DM 🥇', 'خاص بالذهب: إشارات Mp مع الترند اليومي في السوق الهادئ — 59% بهدف 1R على ذهب 2021-2026', layers.dm, (x) {
                 layers.dm = x;
+              }),
+              sw(
+                  'ST 🧠',
+                  'نموذج تعلّم من 10 سنوات: إشارات Mp عالية الثقة فقط (أعلى 30%) مع درجة الثقة — بدقة KM وضعف صفقاته',
+                  layers.st, (x) {
+                layers.st = x;
               }),
               sw('KM 💎', 'إشارات SM في السوق الهادئ فقط — الأدق (62%) لكن صفقات قليلة', layers.km, (x) {
                 layers.km = x;
               }),
-              sw('SM', 'إشارات Mp التي يوافقها شريط المتوسطات (الأدق، صفقات أقل) + رسم الشريط', layers.sm,
-                  (x) {
+              sw('SM', 'إشارات Mp التي يوافقها شريط المتوسطات (الأدق، صفقات أقل) + رسم الشريط', layers.sm, (x) {
                 layers.sm = x;
               }),
               sw('Mp 👑', 'دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى: أدق وأكثر صفقات', layers.mp, (x) {
@@ -528,11 +690,9 @@ class _ChartScreenState extends State<ChartScreen> {
               sw('ALL', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
                   (x) => layers.all = x),
               sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع', layers.zero, (x) => layers.zero = x),
-              sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka,
-                  (x) => layers.alka = x),
+              sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka, (x) => layers.alka = x),
               sw('توصيات AAB', 'أسهم الشراء/البيع ونتيجتها', layers.sigs, (x) => layers.sigs = x),
-              sw('AAB Algo', 'تلوين الشموع حسب قوة الاتجاه + خط الاتجاه', layers.algo,
-                  (x) => layers.algo = x),
+              sw('AAB Algo', 'تلوين الشموع حسب قوة الاتجاه + خط الاتجاه', layers.algo, (x) => layers.algo = x),
               sw('توقع الشمعة القادمة', 'يظهر فقط عندما يدعم القرار', layers.fc, (x) => layers.fc = x),
               sw('أنماط الشموع', 'أسماء نماذج الشموع على الشارت', layers.pats, (x) => layers.pats = x),
               head('خطوط ومستويات'),
@@ -559,6 +719,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
     final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
     final hideDm = auto && st.dmHealth?.light == 'red' && !forceShow.contains('DM|$mk');
+    final hideSt = auto && st.stHealth?.light == 'red' && !forceShow.contains('ST|$mk');
     final hideKm = auto && st.kmHealth?.light == 'red' && !forceShow.contains('KM|$mk');
     final hideSm = auto && st.smHealth?.light == 'red' && !forceShow.contains('SM|$mk');
     final hideMp = auto && st.mpHealth?.light == 'red' && !forceShow.contains('Mp|$mk');
@@ -572,7 +733,8 @@ class _ChartScreenState extends State<ChartScreen> {
         mp: layers.mp && !hideMp,
         sm: layers.sm && !hideSm,
         km: layers.km && !hideKm,
-        dm: layers.dm && !hideDm);
+        dm: layers.dm && !hideDm,
+        st: layers.st && !hideSt);
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
       Container(
@@ -592,8 +754,7 @@ class _ChartScreenState extends State<ChartScreen> {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                    color: (st.liveStatus == 'live' ? AppColors.up : AppColors.gold).withOpacity(0.6),
-                    blurRadius: 6),
+                    color: (st.liveStatus == 'live' ? AppColors.up : AppColors.gold).withOpacity(0.6), blurRadius: 6),
               ],
             ),
           ),
@@ -601,8 +762,9 @@ class _ChartScreenState extends State<ChartScreen> {
           _iconTool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(st), primary: true),
           _iconTool(Icons.leaderboard_outlined, 'مقارنة المؤشرات', () => _showBench(st)),
           _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
-          _iconTool(full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded,
-              full ? 'إظهار الأدوات' : 'شاشة كاملة', () {
+          _iconTool(
+              full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded, full ? 'إظهار الأدوات' : 'شاشة كاملة',
+              () {
             setState(() => full = !full);
             st.setChartFull(full);
           }),
@@ -631,6 +793,7 @@ class _ChartScreenState extends State<ChartScreen> {
               smR: st.smR,
               kmR: st.kmR,
               dmR: st.dmR,
+              stR: st.stR,
               allR: st.allR,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -657,6 +820,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
+        if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
         if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
@@ -669,7 +833,8 @@ class _ChartScreenState extends State<ChartScreen> {
           _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
         if (hideAab && layers.sigs)
           _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
-        else if (eff.sigs || (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm))
+        else if (eff.sigs ||
+            (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st))
           _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
@@ -681,6 +846,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final fam = <(String, AllResult)>[
       if (eff.km && st.kmR != null) ('KM', st.kmR!),
       if (eff.dm && st.dmR != null) ('DM', st.dmR!),
+      if (eff.st && st.stR != null) ('ST', st.stR!.res),
       if (eff.sm && st.smR != null) ('SM', st.smR!),
       if (eff.mp && st.mpR != null) ('Mp', st.mpR!),
     ];
@@ -688,7 +854,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final active = fam.where((x) => x.$2.decision.state != 0).toList();
     final main = active.isNotEmpty ? active.first : fam.first;
     final d = main.$2.decision;
-    const order = ['Mp', 'SM', 'DM', 'KM'];
+    const order = ['Mp', 'SM', 'ST', 'DM', 'KM'];
     final same = [
       for (final (t, r) in fam)
         if (r.decision.state == d.state && r.decision.dir == d.dir && (d.state == 0 || r.decision.entry == d.entry)) t
@@ -716,49 +882,11 @@ class _ChartScreenState extends State<ChartScreen> {
       ));
     }
     final st = context.read<AppState>();
+    final inds = _indicators(st);
+    final on = inds.where((x) => x.on).toList();
     items.add(const SizedBox(width: 8));
-    items.add(Expanded(
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        reverse: true,
-        children: [
-          // تعمل معاً: الإشارة المشتركة تظهر بعلامة واحدة تذكر كل المؤشرات المتفقة عليها
-          if (st.symbol.category == 'metal')
-            _healthTool(
-                'DM',
-                st.dmHealth,
-                layers.dm,
-                () => setState(() {
-                      layers.dm = !layers.dm;
-                    })),
-          _healthTool(
-              'KM',
-              st.kmHealth,
-              layers.km,
-              () => setState(() {
-                    layers.km = !layers.km;
-                  })),
-          _healthTool(
-              'SM',
-              st.smHealth,
-              layers.sm,
-              () => setState(() {
-                    layers.sm = !layers.sm;
-                  })),
-          _healthTool(
-              'Mp',
-              st.mpHealth,
-              layers.mp,
-              () => setState(() {
-                    layers.mp = !layers.mp;
-                  })),
-          _healthTool('0.1', st.zeroHealth, layers.zero, () => setState(() => layers.zero = !layers.zero)),
-          _healthTool('ALL', st.allHealth, layers.all, () => setState(() => layers.all = !layers.all)),
-          _healthTool('Alka', st.alkaHealth, layers.alka, () => setState(() => layers.alka = !layers.alka)),
-          _healthTool('AAB', st.aabHealth, layers.sigs, () => setState(() => layers.sigs = !layers.sigs)),
-        ],
-      ),
-    ));
+    // زر واحد يذكر المؤشرات المشغّلة (كل اسم بلون حالته) ويفتح لوحة كل المؤشرات
+    items.add(Expanded(child: _indButton(on)));
     if (items.isEmpty) return const SizedBox.shrink();
     return Container(
       width: double.infinity,
@@ -805,8 +933,7 @@ class _ChartScreenState extends State<ChartScreen> {
                   Row(children: [
                     Expanded(
                       child: Text('${e.fired ? '⚡ ' : ''}${e.name}',
-                          style: const TextStyle(
-                              color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 13)),
+                          style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w700, fontSize: 13)),
                     ),
                     Text(
                         e.bias > 0
@@ -893,8 +1020,8 @@ class _ChartScreenState extends State<ChartScreen> {
                 color: col,
                 borderRadius: BorderRadius.circular(7),
               ),
-              child: Text(label,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+              child:
+                  Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
             ),
             const SizedBox(width: 6),
             if (d.state == 1 || d.state == 2) ...[
@@ -902,12 +1029,9 @@ class _ChartScreenState extends State<ChartScreen> {
               item('وقف', d.sl, AppColors.down),
               item('TP1', d.tp1, AppColors.up),
               item('TP2', d.tp2, AppColors.up),
-              Icon(why ? Icons.expand_more_rounded : Icons.info_outline_rounded,
-                  size: 16, color: AppColors.muted),
+              Icon(why ? Icons.expand_more_rounded : Icons.info_outline_rounded, size: 16, color: AppColors.muted),
             ] else
-              Expanded(
-                  child:
-                      Text(d.title, style: TextStyle(color: col, fontSize: 12, fontWeight: FontWeight.w600))),
+              Expanded(child: Text(d.title, style: TextStyle(color: col, fontSize: 12, fontWeight: FontWeight.w600))),
           ]),
           if (why) ...[
             const SizedBox(height: 6),
@@ -945,8 +1069,7 @@ class _ChartScreenState extends State<ChartScreen> {
             color: col.withOpacity(0.18),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Text(dirLabel(s.direction),
-              style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
+          child: Text(dirLabel(s.direction), style: TextStyle(color: col, fontWeight: FontWeight.w800, fontSize: 12)),
         ),
         const SizedBox(width: 6),
         if (active) ...[
@@ -956,8 +1079,7 @@ class _ChartScreenState extends State<ChartScreen> {
           item('TP2', sym.fmt(s.tp2), AppColors.up),
           item('TP3', sym.fmt(s.tp3), AppColors.up),
         ] else
-          const Expanded(
-              child: Text('لا توجد صفقة — انتظر', style: TextStyle(color: AppColors.muted, fontSize: 12))),
+          const Expanded(child: Text('لا توجد صفقة — انتظر', style: TextStyle(color: AppColors.muted, fontSize: 12))),
       ]),
     );
   }

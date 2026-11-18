@@ -1,3 +1,4 @@
+import 'st_indicator.dart';
 import 'dart:math' as math;
 import '../models.dart';
 import 'alka.dart';
@@ -214,6 +215,14 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym, List<Candle>? daily
     kmr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
   }
   rows.add(BenchRow('★ مؤشر KM', km.wins, km.closed, kmr, ours: true));
+  // ST: إشارات Mp عالية الثقة حسب النموذج المتعلّم
+  final stx = buildSt(c, mp).res;
+  var str = 0.0;
+  for (final x in stx.signals) {
+    if (x.result == 0) continue;
+    str += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
+  }
+  rows.add(BenchRow('★ مؤشر ST', stx.wins, stx.closed, str, ours: true));
   // DM: خاص بالذهب والمعادن
   if (sym != null && sym.category == 'metal') {
     final dm = buildDm(c, sym, aab: f, alka: k, zero: z, daily: daily);

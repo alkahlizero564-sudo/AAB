@@ -4,6 +4,7 @@ import 'zero_one.dart';
 import 'sm_indicator.dart';
 import 'all_indicator.dart';
 import 'forecast.dart';
+import 'st_indicator.dart';
 
 /// صحة مؤشر على سوق معيّن: أداؤه على آخر 3000 شمعة بنفس الإدارة العادلة (1R ثم 2R).
 class IndHealth {
@@ -38,8 +39,8 @@ class IndHealth {
 
 double _r(PastSignal s) => s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1;
 
-/// يحسب صحة AAB و Alka و ALL و 0.1 و Mp (يعمل داخل Isolate).
-(IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth) computeHealth(List<Candle> c,
+/// يحسب صحة AAB و Alka و ALL و 0.1 و Mp و SM و KM و DM و ST بهذا الترتيب (يعمل داخل Isolate).
+List<IndHealth> computeHealth(List<Candle> c,
     MarketSymbol sym, {List<Candle>? daily}) {
   final days = c.isEmpty ? 0 : c.last.time.difference(c.first.time).inDays;
   final f = buildForecast(c, history: c.length, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
@@ -52,6 +53,8 @@ double _r(PastSignal s) => s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1;
   final sm = buildSm(c, mp);
   final km = buildKm(c, sm);
   final dm = buildDm(c, sym, aab: f, alka: k, zero: z, daily: daily);
-  return (h(f.signals, f.wins, f.closed), h(k.signals, k.wins, k.closed), h(all.signals, all.wins, all.closed),
-      h(z.signals, z.wins, z.closed), h(mp.signals, mp.wins, mp.closed), h(sm.signals, sm.wins, sm.closed), h(km.signals, km.wins, km.closed), h(dm.signals, dm.wins, dm.closed));
+  final st = buildSt(c, mp).res;
+  return [h(f.signals, f.wins, f.closed), h(k.signals, k.wins, k.closed), h(all.signals, all.wins, all.closed),
+      h(z.signals, z.wins, z.closed), h(mp.signals, mp.wins, mp.closed), h(sm.signals, sm.wins, sm.closed), h(km.signals, km.wins, km.closed), h(dm.signals, dm.wins, dm.closed),
+      h(st.signals, st.wins, st.closed)];
 }
