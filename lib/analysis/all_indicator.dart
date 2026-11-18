@@ -52,7 +52,8 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
     {double maxCandle = 0.94,
     List<PastSignal> zero = const [],
     List<PendingSetup> zeroPending = const [],
-    String tag = 'ALL'}) {
+    String tag = 'ALL',
+    List<PastSignal> shadow = const []}) {
   final n = c.length;
   if (n < 20) return AllResult.empty;
   final at = atr(c, 14);
@@ -90,6 +91,22 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
           pendSrc.add(from);
         }
       }
+    }
+  }
+  // إشارات "ظل" (من المحركات بدون قاعدة صفقة واحدة): عكسية أثناء صفقة مفتوحة → دوائر رمادية
+  {
+    final seen0 = {for (final b in blocked) b.i};
+    final taken0 = {for (final s in sigs) s.i};
+    var t = 0;
+    final sh = [...shadow]..sort((x, y) => x.i.compareTo(y.i));
+    for (final s in sh) {
+      while (t < sigs.length && (sigs[t].exitI >= 0 && sigs[t].exitI < s.i)) t++;
+      if (t >= sigs.length) break;
+      final o = sigs[t];
+      if (!(o.i < s.i && (o.exitI < 0 || s.i <= o.exitI))) continue;
+      if (s.dir == o.dir || seen0.contains(s.i) || taken0.contains(s.i)) continue;
+      blocked.add(s);
+      seen0.add(s.i);
     }
   }
   // شموع الارتداد الضخمة (V): شمعة ≥ 2.5 ATR تُغلق في أعلى 40% بعد اندفاع ≥ 1.5 ATR (أو العكس).
