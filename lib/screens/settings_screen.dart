@@ -227,7 +227,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             contentPadding: EdgeInsets.zero,
             title: const Text('إخفاء المؤشر الضعيف حالياً تلقائياً (🔴)', style: TextStyle(fontSize: 13)),
             subtitle: const Text(
-                'إذا كان AAB أو Alka ضعيفاً على السوق والفريم الحاليين (آخر 3000 شمعة، 30 صفقة فأكثر) تُخفى إشاراته',
+                'إذا كان AAB أو Alka ضعيفاً على السوق والفريم الحاليين (آخر 5000 شمعة، 30 صفقة فأكثر) تُخفى إشاراته',
                 style: TextStyle(fontSize: 11, color: AppColors.muted)),
             value: autoHideWeak,
             onChanged: (v) => setState(() => autoHideWeak = v),

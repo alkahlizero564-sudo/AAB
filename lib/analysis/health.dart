@@ -6,7 +6,7 @@ import 'all_indicator.dart';
 import 'forecast.dart';
 import 'st_indicator.dart';
 
-/// صحة مؤشر على سوق معيّن: أداؤه على آخر 3000 شمعة بنفس الإدارة العادلة (1R ثم 2R).
+/// صحة مؤشر على سوق معيّن: أداؤه على آخر 5000 شمعة بنفس الإدارة العادلة (1R ثم 2R).
 class IndHealth {
   final int wins, trades;
   final double totalR;
@@ -36,6 +36,21 @@ class IndHealth {
   String get summary =>
       '${(winRate * 100).toStringAsFixed(0)}% من $trades صفقة • ${avgR >= 0 ? '+' : ''}${avgR.toStringAsFixed(2)}R لكل صفقة (آخر $days يوم)';
 }
+
+/// الدقة على المدى الطويل لكل مؤشر (رقم ثابت لا يتأثر بالحظ): من اختبار ذهب وبيتكوين 2021-2026
+/// (سنوات لم يُضبط عليها أي مؤشر) — (بهدف 1R ، بإدارة التطبيق ، عدد الصفقات بهدف 1R).
+/// DM خاص بالذهب فرقمه من ذهب 2021-2026 وحده.
+const longTermAcc = <String, (double, double, int)>{
+  'KM': (60.4, 82.1, 1425),
+  'DM': (59.2, 82.0, 868),
+  'ST': (58.6, 82.1, 3572),
+  'ALL': (56.6, 81.3, 11097),
+  'SM': (56.0, 80.8, 4187),
+  'Mp': (55.7, 80.8, 12662),
+  'AAB': (55.1, 78.3, 6462),
+  'Alka': (53.6, 78.9, 24345),
+  '0.1': (51.2, 76.7, 2884),
+};
 
 double _r(PastSignal s) => s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1;
 
