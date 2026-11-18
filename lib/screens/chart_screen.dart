@@ -554,7 +554,7 @@ class _ChartScreenState extends State<ChartScreen> {
                         h == null
                             ? 'جاري الحساب…'
                             : h.trades < 20
-                                ? 'عينة صغيرة'
+                                ? 'عينة صغيرة (${h.trades} صفقة)'
                                 : '${h.label} • ${(h.winRate * 100).toStringAsFixed(0)}% من ${h.trades}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -562,6 +562,14 @@ class _ChartScreenState extends State<ChartScreen> {
                       ),
                     ),
                   ]),
+                  if (longTermAcc[x.name] case final lt?)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text('المدى الطويل ${lt.$1.toStringAsFixed(0)}% • إدارة ${lt.$2.toStringAsFixed(0)}%',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
                 ]),
               ),
             ),
@@ -586,7 +594,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 Text('${st.symbol.code} • ${st.tf}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
               ]),
               const SizedBox(height: 2),
-              const Text('شغّل أي عدد معاً — الإشارة المشتركة تظهر بعلامة واحدة. الدقة من آخر 3000 شمعة على هذا السوق.',
+              const Text('شغّل أي عدد معاً. السطر الملوّن: أداؤه الآن على هذا السوق (آخر 5000 شمعة). السطر الأبيض: دقته على المدى الطويل (بهدف 1R، وبإدارة التطبيق).',
                   style: TextStyle(color: AppColors.muted, fontSize: 11)),
               const SizedBox(height: 10),
               Flexible(
@@ -595,7 +603,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 shrinkWrap: true,
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
-                childAspectRatio: 1.75,
+                childAspectRatio: 1.5,
                 children: [for (final x in inds) card(x)],
               )),
             ]),

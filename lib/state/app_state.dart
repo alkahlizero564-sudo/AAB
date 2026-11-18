@@ -54,7 +54,7 @@ class AppState extends ChangeNotifier {
   Forecast? _fAll; // إشارات AAB بهدف Alka (لـ DM المستقل)
   Map<String, int> board = {}; // لوحة الاتجاهات (مثل DTC): 1h / 4h / 1d → +1 صاعد ، -1 هابط
   DateTime? _boardAt;
-  IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth, kmHealth, dmHealth, stHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
+  IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth, kmHealth, dmHealth, stHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 5000 شمعة)
   bool healthLoading = false;
   final _healthCache = <String, (List<IndHealth>, DateTime)>{};
   bool loading = false;
@@ -454,7 +454,7 @@ class AppState extends ChangeNotifier {
     try {
       var c = candles;
       try {
-        final h = await fetchLong();
+        final h = await fetchLong(count: 5000);
         if (h.length > c.length) c = h;
       } catch (_) {}
       if (gen != _gen || c.length < 300) return;
