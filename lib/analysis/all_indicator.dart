@@ -12,7 +12,8 @@ class AllResult {
   final List<PendingSetup> pending;
   final List<String> pendingSrc;
   final String tag; // اسم المؤشر في النصوص: 'ALL' أو 'Mp'
-  /// إشارات عكسية ظهرت أثناء صفقة مفتوحة فلم تُنفَّذ (للعرض فقط كدائرة رمادية — لا تدخل في الدقة).
+  /// إشارات لم تُنفَّذ (للعرض فقط كدائرة رمادية — لا تدخل في الدقة): عكسية أثناء صفقة مفتوحة،
+  /// أو شمعة ارتداد ضخمة (V) لا يدخلها Mp.
   final List<PastSignal> blocked;
   const AllResult(this.signals, this.sources, this.pending, this.pendingSrc, [this.tag = 'ALL', this.blocked = const []]);
   static const empty = AllResult([], [], [], []);
@@ -91,5 +92,21 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
       }
     }
   }
+  // شموع الارتداد الضخمة (V): شمعة ≥ 2.5 ATR تُغلق في أعلى 40% بعد اندفاع ≥ 1.5 ATR (أو العكس).
+  // لا يدخلها Mp (فلتر الشمعة الكبيرة)، ونعرضها كدائرة رمادية للعلم — مقاسة على 10 سنوات: ~49% بهدف 1R.
+  final taken = {for (final s in sigs) s.i};
+  final seen = {for (final b in blocked) b.i};
+  for (var i = 20; i < n; i++) {
+    final a = at[i - 1];
+    if (a.isNaN || a <= 0 || taken.contains(i) || seen.contains(i)) continue;
+    final k = c[i], rng = k.high - k.low;
+    if (rng < 2.5 * a) continue;
+    int d = 0;
+    if ((k.close - k.low) / rng >= 0.6 && c[i - 1].close - k.low > 1.5 * a) d = 1;
+    if ((k.high - k.close) / rng >= 0.6 && k.high - c[i - 1].close > 1.5 * a) d = -1;
+    if (d == 0) continue;
+    blocked.add(PastSignal(i, d, k.close, d > 0 ? k.low : k.high, k.close, k.close, 0, -1, 'ارتداد بشمعة ضخمة', false));
+  }
+  blocked.sort((x, y) => x.i.compareTo(y.i));
   return AllResult(sigs, src, pend, pendSrc, tag, blocked);
 }
