@@ -597,8 +597,11 @@ class AppState extends ChangeNotifier {
   final fAll = alkaTp1 == rr1 ? fc : buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist);
   final all = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending);
   final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
+  // إشارات الظل (أثناء الصفقات) للدوائر الرمادية فقط
+  final zSh = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist, overlap: true);
+  final akSh = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist, overlap: true);
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
   final mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending,
-      zero: z.signals, zeroPending: z.pending, tag: 'Mp');
+      zero: z.signals, zeroPending: z.pending, tag: 'Mp', shadow: [...zSh.signals, ...akSh.signals]);
   return (base, fc, al, ak, all, z, mp, fAll);
 }
