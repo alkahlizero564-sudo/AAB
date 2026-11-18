@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/st_indicator.dart';
+import '../analysis/star_indicator.dart';
 import '../analysis/zero_one.dart';
 import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
@@ -21,6 +22,7 @@ class ChartLayers {
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
   bool dm = false; // مؤشر DM: خاص بالذهب (Mp مع الترند اليومي في السوق الهادئ)
+  bool star = false; // مؤشر النجوم: كل إشارات Mp مع نجوم بعدد المؤشرات الموافقة (SM و KM و ST و DM)
   bool st = false; // مؤشر ST: إشارات Mp عالية الثقة حسب النموذج المتعلّم
   bool km = false; // مؤشر KM: إشارات SM في السوق الهادئ (الأدق، صفقات قليلة)
   bool sm = false; // مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات + رسم الشريط
@@ -30,7 +32,7 @@ class ChartLayers {
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km, bool? dm, bool? st}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km, bool? dm, bool? st, bool? star}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -50,6 +52,7 @@ class ChartLayers {
     ..km = km ?? this.km
     ..dm = dm ?? this.dm
     ..st = st ?? this.st
+    ..star = star ?? this.star
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -87,6 +90,7 @@ class NativeChart extends StatefulWidget {
   final AllResult? kmR;
   final AllResult? dmR;
   final StResult? stR;
+  final StarResult? starR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -106,6 +110,7 @@ class NativeChart extends StatefulWidget {
     this.kmR,
     this.dmR,
     this.stR,
+    this.starR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -266,7 +271,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR),
             ),
           ),
         ),
@@ -339,8 +344,9 @@ class _Painter extends CustomPainter {
   final AllResult? kmr;
   final AllResult? dmr;
   final StResult? str;
+  final StarResult? starr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -924,6 +930,15 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, sigs, pends, groups.first.$1, AppColors.gold,
           sources: srcs, pendingSrc: pSrcs, tagPer: names, pendTagPer: pNames);
     }
+    if (L.star && starr != null) {
+      final r = starr!.res;
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'نجوم', AppColors.gold,
+          sources: r.sources,
+          pendingSrc: r.pendingSrc,
+          tagPer: [for (final _ in r.signals) ''],
+          pendTagPer: [for (final p in r.pending) 'نجوم ${starr!.of(p.i, p.dir)}'],
+          starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
+    }
     if (L.zero && zr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, zr!.signals, zr!.pending, '0.1', null,
           upCol: zeroUp, downCol: zeroDown, darkText: true);
@@ -1349,7 +1364,8 @@ class _Painter extends CustomPainter {
       List<String>? sources,
       List<String>? pendingSrc,
       List<String>? tagPer,
-      List<String>? pendTagPer}) {
+      List<String>? pendTagPer,
+      List<int>? starsPer}) {
     final n = c.length;
     final placed = <Rect>[]; // لافتات مرسومة: نزيح الجديدة حتى لا تتراكب
     for (final (si, sg) in signals.indexed) {
@@ -1363,12 +1379,16 @@ class _Painter extends CustomPainter {
       final k = c[sg.i];
       final tp = TextPainter(
         text: TextSpan(
-            text: '${tagPer != null && si < tagPer.length ? tagPer[si] : tag} ${buy ? 'شراء' : 'بيع'}',
+            text: '${tagPer != null && si < tagPer.length ? tagPer[si] : tag} ${buy ? 'شراء' : 'بيع'}'.trim(),
             style: TextStyle(
                 fontFamily: chartFont, color: txtCol, fontSize: 10, fontWeight: FontWeight.w800)),
         textDirection: TextDirection.rtl,
       )..layout();
-      final bw = tp.width + 10, bh = tp.height + 4;
+      // نجوم الثقة (مرسومة كأشكال حتى لا تعتمد على خط الإيموجي)
+      final ns = starsPer != null && si < starsPer.length ? starsPer[si] : -1;
+      const starW = 10.0;
+      final starsW = ns < 0 ? 0.0 : (ns == 0 ? starW : ns * starW) + 3;
+      final bw = tp.width + 10 + starsW, bh = tp.height + 4;
       // سهم صغير يشير للشمعة + لافتة ملونة
       final tipY = buy ? yOf(k.low) + 3 : yOf(k.high) - 3;
       // لا ترتفع اللافتة فوق شريط الأسعار العلوي، ونزيحها إذا تراكبت مع لافتة سابقة
@@ -1394,7 +1414,26 @@ class _Painter extends CustomPainter {
             ..color = border ?? Colors.white.withOpacity(0.85)
             ..style = PaintingStyle.stroke
             ..strokeWidth = border == null ? 1 : 2);
-      tp.paint(cv, Offset(x - tp.width / 2, boxY + 2));
+      tp.paint(cv, Offset(x + bw / 2 - 5 - tp.width, boxY + 2));
+      if (ns >= 0) {
+        // النجوم يسار النص: ذهبية ممتلئة، أو نجمة فارغة واحدة لإشارة بلا موافقة
+        for (var q = 0; q < (ns == 0 ? 1 : ns); q++) {
+          final cx = x - bw / 2 + 5 + starW / 2 + q * starW, cy = boxY + bh / 2;
+          final path = _starPath(cx, cy, 4.6);
+          if (ns == 0) {
+            cv.drawPath(path, Paint()
+              ..color = Colors.white.withOpacity(0.8)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1);
+          } else {
+            cv.drawPath(path, Paint()..color = const Color(0xFFFFD54F));
+            cv.drawPath(path, Paint()
+              ..color = Colors.black.withOpacity(0.35)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 0.6);
+          }
+        }
+      }
       // النتيجة تحت/فوق اللافتة
       if (sg.result != 0 || sg.exitI >= 0) {
         final rm = sg.rMultiple;
@@ -1448,6 +1487,21 @@ class _Painter extends CustomPainter {
         _axis.add((yOf(p.tp1), sym.fmt(p.tp1), 'TP1', _up));
       }
     }
+  }
+
+  Path _starPath(double cx, double cy, double r) {
+    final p = Path();
+    for (var k = 0; k < 10; k++) {
+      final rr = k.isEven ? r : r * 0.45;
+      final a = -math.pi / 2 + k * math.pi / 5;
+      final pt = Offset(cx + rr * math.cos(a), cy + rr * math.sin(a));
+      if (k == 0) {
+        p.moveTo(pt.dx, pt.dy);
+      } else {
+        p.lineTo(pt.dx, pt.dy);
+      }
+    }
+    return p..close();
   }
 
   /// لافتات المحور: السعر على المحور واسم المستوى بجانبه، مع إزاحة رأسية تمنع التداخل
@@ -1509,6 +1563,11 @@ class _Painter extends CustomPainter {
     if (L.dm && dmr != null && dmr!.closed > 0) {
       final a = dmr!;
       part('DM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
+    if (L.star && starr != null && starr!.res.closed > 0) {
+      final a = starr!.res;
+      part('نجوم ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
           a.winRate >= 0.5 ? AppColors.gold : _down);
     }
     if (L.st && str != null && str!.res.closed > 0) {
