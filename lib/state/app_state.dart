@@ -435,7 +435,7 @@ class AppState extends ChangeNotifier {
 
   void _rebuildStar() {
     final mp = mpR;
-    starR = mp == null ? null : buildStar(mp, [smR, kmR, stR?.res, dmR], minStars: starMin);
+    starR = mp == null ? null : buildStar(candles, mp, minStars: starMin);
   }
 
   /// أقل عدد نجوم يظهر في مؤشر النجوم (0 = كل إشارات Mp).
