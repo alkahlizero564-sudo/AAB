@@ -245,7 +245,8 @@ Forecast buildForecast(List<Candle> c,
     {double rr1 = 1.0,
     double rr2 = 2.0,
     int history = 300,
-    ForecastCfg cfg = const ForecastCfg()}) {
+    ForecastCfg cfg = const ForecastCfg(),
+    int onlyDir = 0}) {
   final n = c.length;
   if (n < 70) return const Forecast();
   final cl = c.map((e) => e.close).toList();
@@ -435,6 +436,7 @@ Forecast buildForecast(List<Candle> c,
     if (i <= busyUntil) continue;
     final (d, why, strong, keys) = decide(i);
     if (d == 0) continue;
+    if (onlyDir != 0 && d != onlyDir) continue; // محرك اتجاه واحد
     // الدخول: افتتاح الشمعة التالية ، أو (مع التأكيد) عند كسر طرف شمعة الإشارة
     var entryI = i + 1;
     var entry = c[i + 1].open;

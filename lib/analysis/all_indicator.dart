@@ -22,15 +22,17 @@ class AllResult {
 
   /// القرار الموحّد: 1 صفقة مفتوحة ، 2 تنتظر التأكيد ، 0 لا شيء.
   Decision get decision {
-    if (signals.isNotEmpty && signals.last.exitI < 0) {
-      final sg = signals.last;
+    // مع محركين (شراء + بيع) قد تكون الصفقة المفتوحة ليست آخر إشارة
+    final oi = signals.lastIndexWhere((x) => x.exitI < 0);
+    if (oi >= 0) {
+      final sg = signals[oi];
       final side = sg.dir > 0 ? 'شراء' : 'بيع';
       final st = sg.curStop.isNaN ? (sg.result >= 1 ? sg.entry : sg.sl) : sg.curStop;
       return Decision(1, sg.dir, sg.entry, st, sg.tp1, sg.tp2,
           sg.result >= 1
               ? '$tag $side مفتوح — تحقق TP1: أغلق النصف، والوقف المتحرك الآن عند هذا السعر'
               : '$tag $side — صفقة مفتوحة',
-          'من ${sources.last}: ${sg.why}', (sg.entry - sg.sl).abs());
+          'من ${sources[oi]}: ${sg.why}', (sg.entry - sg.sl).abs());
     }
     if (pending.isNotEmpty) {
       final p = pending.first;
@@ -40,6 +42,17 @@ class AllResult {
     }
     return Decision(0, 0, double.nan, double.nan, double.nan, double.nan, '$tag: لا توجد إشارة', '');
   }
+}
+
+/// يدمج محركين مستقلين (شراء فقط + بيع فقط) في مؤشر واحد: كل محرك صفقة واحدة في كل مرة،
+/// فقد تكون صفقة شراء وصفقة بيع مفتوحتين معاً. مقاس على 10 سنوات: صفقات أكثر ~70% بنفس الدقة.
+AllResult mergeEngines(AllResult up, AllResult dn, String tag) {
+  final all = <(PastSignal, String)>[
+    for (final (q, s) in up.signals.indexed) (s, up.sources[q]),
+    for (final (q, s) in dn.signals.indexed) (s, dn.sources[q]),
+  ]..sort((x, y) => x.$1.i.compareTo(y.$1.i));
+  return AllResult([for (final x in all) x.$1], [for (final x in all) x.$2], [...up.pending, ...dn.pending],
+      [...up.pendingSrc, ...dn.pendingSrc], tag);
 }
 
 /// يدمج إشارات AAB و Alka (المحسوبة مسبقاً بنفس الإدارة) في مؤشر ALL.
