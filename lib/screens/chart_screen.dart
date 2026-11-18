@@ -1,5 +1,6 @@
 import 'dart:isolate';
 import 'package:flutter/material.dart';
+import '../analysis/all_indicator.dart';
 import 'package:provider/provider.dart';
 import '../analysis/benchmark.dart';
 import '../analysis/chart_reader.dart';
@@ -513,26 +514,20 @@ class _ChartScreenState extends State<ChartScreen> {
               head('التوصيات والمؤشرات'),
               sw('DM 🥇', 'خاص بالذهب: إشارات Mp بدون الجمعة ومع الترند اليومي', layers.dm, (x) {
                 layers.dm = x;
-                if (x) layers.sm = layers.mp = layers.km = false;
               }),
               sw('KM 💎', 'إشارات SM في السوق الهادئ فقط — الأدق (62%) لكن صفقات قليلة', layers.km, (x) {
                 layers.km = x;
-                if (x) layers.sm = layers.mp = layers.dm = false;
               }),
               sw('SM', 'إشارات Mp التي يوافقها شريط المتوسطات (الأدق، صفقات أقل) + رسم الشريط', layers.sm,
                   (x) {
-                    layers.sm = x;
-                    if (x) layers.mp = layers.km = layers.dm = false;
-                  }),
-              sw('Mp 👑', 'دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى: أدق وأكثر صفقات', layers.mp,
-                  (x) {
-                    layers.mp = x;
-                    if (x) layers.sm = layers.km = layers.dm = false;
-                  }),
+                layers.sm = x;
+              }),
+              sw('Mp 👑', 'دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى: أدق وأكثر صفقات', layers.mp, (x) {
+                layers.mp = x;
+              }),
               sw('ALL', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
                   (x) => layers.all = x),
-              sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع', layers.zero,
-                  (x) => layers.zero = x),
+              sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع', layers.zero, (x) => layers.zero = x),
               sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka,
                   (x) => layers.alka = x),
               sw('توصيات AAB', 'أسهم الشراء/البيع ونتيجتها', layers.sigs, (x) => layers.sigs = x),
@@ -570,7 +565,8 @@ class _ChartScreenState extends State<ChartScreen> {
     final hideZero = auto && st.zeroHealth?.light == 'red' && !forceShow.contains('0.1|$mk');
     final hideAll = auto && st.allHealth?.light == 'red' && !forceShow.contains('ALL|$mk');
     final eff = layers.copyWith(
-        sigs: layers.sigs && !hideAab, alka: layers.alka && !hideAlka,
+        sigs: layers.sigs && !hideAab,
+        alka: layers.alka && !hideAlka,
         all: layers.all && !hideAll,
         zero: layers.zero && !hideZero,
         mp: layers.mp && !hideMp,
@@ -661,13 +657,10 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
-        if (eff.dm && st.dmR != null) _decisionBar(st.dmR!.decision, st.symbol, tag: 'DM'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
-        if (eff.km && st.kmR != null) _decisionBar(st.kmR!.decision, st.symbol, tag: 'KM'),
         if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
-        if (eff.sm && st.smR != null) _decisionBar(st.smR!.decision, st.symbol, tag: 'SM'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
-        if (eff.mp && st.mpR != null) _decisionBar(st.mpR!.decision, st.symbol, tag: 'Mp'),
+        if (_familyBar(st, eff) case final w?) w,
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
         if (eff.zero && st.zero != null && st.zero!.decision.state != 0)
           _decisionBar(st.zero!.decision, st.symbol, tag: '0.1'),
@@ -681,6 +674,26 @@ class _ChartScreenState extends State<ChartScreen> {
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
     ]);
+  }
+
+  /// بطاقة قرار واحدة لـ Mp/SM/KM/DM المشغّلة: قرار الأدق الذي عنده صفقة، والاسم يذكر كل المتفقين
+  Widget? _familyBar(AppState st, ChartLayers eff) {
+    final fam = <(String, AllResult)>[
+      if (eff.km && st.kmR != null) ('KM', st.kmR!),
+      if (eff.dm && st.dmR != null) ('DM', st.dmR!),
+      if (eff.sm && st.smR != null) ('SM', st.smR!),
+      if (eff.mp && st.mpR != null) ('Mp', st.mpR!),
+    ];
+    if (fam.isEmpty) return null;
+    final active = fam.where((x) => x.$2.decision.state != 0).toList();
+    final main = active.isNotEmpty ? active.first : fam.first;
+    final d = main.$2.decision;
+    const order = ['Mp', 'SM', 'DM', 'KM'];
+    final same = [
+      for (final (t, r) in fam)
+        if (r.decision.state == d.state && r.decision.dir == d.dir && (d.state == 0 || r.decision.entry == d.entry)) t
+    ]..sort((x, y) => order.indexOf(x).compareTo(order.indexOf(y)));
+    return _decisionBar(d, st.symbol, tag: same.join('·'));
   }
 
   Widget _forecastBar(Forecast f, MarketSymbol sym) {
@@ -709,24 +722,36 @@ class _ChartScreenState extends State<ChartScreen> {
         scrollDirection: Axis.horizontal,
         reverse: true,
         children: [
-          // KM ⊂ SM ⊂ Mp و DM ⊂ Mp (نفس الإشارات بعد فلترة): واحد منها فقط حتى لا تُرسم فوق بعض
+          // تعمل معاً: الإشارة المشتركة تظهر بعلامة واحدة تذكر كل المؤشرات المتفقة عليها
           if (st.symbol.category == 'metal')
-            _healthTool('DM', st.dmHealth, layers.dm, () => setState(() {
-                  layers.dm = !layers.dm;
-                  if (layers.dm) layers.sm = layers.mp = layers.km = false;
-                })),
-          _healthTool('KM', st.kmHealth, layers.km, () => setState(() {
-                layers.km = !layers.km;
-                if (layers.km) layers.sm = layers.mp = layers.dm = false;
-              })),
-          _healthTool('SM', st.smHealth, layers.sm, () => setState(() {
-                layers.sm = !layers.sm;
-                if (layers.sm) layers.mp = layers.km = layers.dm = false;
-              })),
-          _healthTool('Mp', st.mpHealth, layers.mp, () => setState(() {
-                layers.mp = !layers.mp;
-                if (layers.mp) layers.sm = layers.km = layers.dm = false;
-              })),
+            _healthTool(
+                'DM',
+                st.dmHealth,
+                layers.dm,
+                () => setState(() {
+                      layers.dm = !layers.dm;
+                    })),
+          _healthTool(
+              'KM',
+              st.kmHealth,
+              layers.km,
+              () => setState(() {
+                    layers.km = !layers.km;
+                  })),
+          _healthTool(
+              'SM',
+              st.smHealth,
+              layers.sm,
+              () => setState(() {
+                    layers.sm = !layers.sm;
+                  })),
+          _healthTool(
+              'Mp',
+              st.mpHealth,
+              layers.mp,
+              () => setState(() {
+                    layers.mp = !layers.mp;
+                  })),
           _healthTool('0.1', st.zeroHealth, layers.zero, () => setState(() => layers.zero = !layers.zero)),
           _healthTool('ALL', st.allHealth, layers.all, () => setState(() => layers.all = !layers.all)),
           _healthTool('Alka', st.alkaHealth, layers.alka, () => setState(() => layers.alka = !layers.alka)),
@@ -961,7 +986,6 @@ class _CompactSymbol extends StatelessWidget {
   }
 }
 
-
 /// لوحة اتجاهات الفريمات الكبيرة (مثل DTC) في سطر واحد صغير: 1H ▼ 4H ▼ 1D ▲
 class _TrendBoard extends StatelessWidget {
   final Map<String, int> board;
@@ -969,7 +993,11 @@ class _TrendBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget chip(String k, int v) {
-      final col = v > 0 ? AppColors.up : v < 0 ? AppColors.down : AppColors.muted;
+      final col = v > 0
+          ? AppColors.up
+          : v < 0
+              ? AppColors.down
+              : AppColors.muted;
       return Container(
         margin: const EdgeInsets.only(right: 4),
         padding: const EdgeInsets.fromLTRB(5, 1, 3, 1),
@@ -980,8 +1008,14 @@ class _TrendBoard extends StatelessWidget {
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Text(k.toUpperCase(), style: TextStyle(color: col, fontSize: 9.5, fontWeight: FontWeight.w800)),
-          Icon(v > 0 ? Icons.arrow_drop_up_rounded : v < 0 ? Icons.arrow_drop_down_rounded : Icons.remove_rounded,
-              size: 15, color: col),
+          Icon(
+              v > 0
+                  ? Icons.arrow_drop_up_rounded
+                  : v < 0
+                      ? Icons.arrow_drop_down_rounded
+                      : Icons.remove_rounded,
+              size: 15,
+              color: col),
         ]),
       );
     }
