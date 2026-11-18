@@ -20,7 +20,7 @@ class ChartLayers {
   bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
-  bool dm = false; // مؤشر DM: خاص بالذهب (Mp بدون الجمعة + مع الترند اليومي)
+  bool dm = false; // مؤشر DM: خاص بالذهب (Mp مع الترند اليومي في السوق الهادئ)
   bool st = false; // مؤشر ST: إشارات Mp عالية الثقة حسب النموذج المتعلّم
   bool km = false; // مؤشر KM: إشارات SM في السوق الهادئ (الأدق، صفقات قليلة)
   bool sm = false; // مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات + رسم الشريط

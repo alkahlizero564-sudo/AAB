@@ -379,7 +379,7 @@ class _ChartScreenState extends State<ChartScreen> {
           (
             name: 'DM',
             emoji: '🥇',
-            desc: 'خاص بالذهب: بدون الجمعة ومع الترند اليومي',
+            desc: 'خاص بالذهب: مع الترند اليومي في السوق الهادئ',
             health: st.dmHealth,
             on: layers.dm,
             toggle: () => layers.dm = !layers.dm
@@ -669,7 +669,7 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
               head('التوصيات والمؤشرات'),
-              sw('DM 🥇', 'خاص بالذهب: إشارات Mp بدون الجمعة ومع الترند اليومي', layers.dm, (x) {
+              sw('DM 🥇', 'خاص بالذهب: إشارات Mp مع الترند اليومي في السوق الهادئ — 59% بهدف 1R على ذهب 2021-2026', layers.dm, (x) {
                 layers.dm = x;
               }),
               sw(

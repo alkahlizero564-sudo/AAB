@@ -49,7 +49,7 @@ class AppState extends ChangeNotifier {
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
-  AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp بدون الجمعة ومع الترند اليومي)
+  AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp مع الترند اليومي في السوق الهادئ)
   List<Candle>? daily; // شموع يومية (للوحة الاتجاهات و DM)
   Forecast? _fAll; // إشارات AAB بهدف Alka (لـ DM المستقل)
   Map<String, int> board = {}; // لوحة الاتجاهات (مثل DTC): 1h / 4h / 1d → +1 صاعد ، -1 هابط
