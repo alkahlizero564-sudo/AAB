@@ -90,7 +90,7 @@ List<(double, double, double)?> _profile(List<Candle> c) {
 /// [rr1] الهدف الأول بوحدات R. مع الوقف المتحرك بعده: 0.35R ≈ دقة 79% بنفس ربح الصفقة تقريباً
 /// (مقاس على 25 مجموعة بيانات حقيقية، قديمة وحديثة، منها البيتكوين والذهب).
 AlkaResult buildAlka(List<Candle> c,
-    {double rr1 = 0.35, double rr2 = 2.0, int history = 300, MarketSymbol? sym, bool trail = true}) {
+    {double rr1 = 0.35, double rr2 = 2.0, int history = 300, MarketSymbol? sym, bool trail = true, int onlyDir = 0}) {
   final n = c.length;
   if (n < 220) return const AlkaResult([], []);
   final at = atr(c, 14);
@@ -160,6 +160,7 @@ AlkaResult buildAlka(List<Candle> c,
     final st = setupAt(i);
     if (st == null) continue;
     final (d, why) = st;
+    if (onlyDir != 0 && d != onlyDir) continue; // محرك اتجاه واحد (شراء فقط أو بيع فقط)
     // التأكيد: كسر طرف الشمعة خلال 3 شموع، والإلغاء لو كُسر الطرف الآخر أولاً
     final trig = d > 0 ? c[i].high : c[i].low;
     var ei = -1, cancelled = false;

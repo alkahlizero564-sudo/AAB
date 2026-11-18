@@ -49,7 +49,7 @@ const _rejection = {
 
 /// [rr1] الهدف الأول بوحدات R (مع الوقف المتحرك بعده، مثل Alka).
 ZeroResult buildZeroOne(List<Candle> c,
-    {double rr1 = 0.35, double rr2 = 2.0, int history = 300, MarketSymbol? sym, bool trail = true}) {
+    {double rr1 = 0.35, double rr2 = 2.0, int history = 300, MarketSymbol? sym, bool trail = true, int onlyDir = 0}) {
   final n = c.length;
   if (n < 220) return const ZeroResult([], []);
   final at = atr(c, 14);
@@ -90,6 +90,7 @@ ZeroResult buildZeroOne(List<Candle> c,
   for (var i = start; i < n - 1; i++) {
     if (i <= busy) continue;
     for (final d in const [1, -1]) {
+      if (onlyDir != 0 && d != onlyDir) continue; // محرك اتجاه واحد
       final lvl = sweepAt(i, d);
       if (lvl == null) continue;
       final k = c[i];
