@@ -47,11 +47,14 @@ class AppState extends ChangeNotifier {
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
+  AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp بدون الجمعة ومع الترند اليومي)
+  List<Candle>? daily; // شموع يومية (للوحة الاتجاهات و DM)
+  Forecast? _fAll; // إشارات AAB بهدف Alka (لـ DM المستقل)
   Map<String, int> board = {}; // لوحة الاتجاهات (مثل DTC): 1h / 4h / 1d → +1 صاعد ، -1 هابط
   DateTime? _boardAt;
-  IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth, kmHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
+  IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth, kmHealth, dmHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
   bool healthLoading = false;
-  final _healthCache = <String, (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, DateTime)>{};
+  final _healthCache = <String, (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, DateTime)>{};
   bool loading = false;
   String? error;
   DateTime? lastUpdate;
@@ -237,6 +240,8 @@ class AppState extends ChangeNotifier {
     mpR = null;
     smR = null;
     kmR = null;
+    dmR = null;
+    daily = null;
     board = {};
     _boardAt = null;
     final hc = _healthCache['${symbol.code}|$tf'];
@@ -247,6 +252,7 @@ class AppState extends ChangeNotifier {
     mpHealth = hc?.$5;
     smHealth = hc?.$6;
     kmHealth = hc?.$7;
+    dmHealth = hc?.$8;
     error = null;
     _aiDir = null;
     _aiAt = null;
@@ -285,7 +291,7 @@ class AppState extends ChangeNotifier {
     final s = settings, sym = symbol, cfg = EngineConfig.current;
     final rr1 = settings.rr1For(symbol.category), rr2 = settings.rr2;
     final alkaTp1 = settings.alkaTp1;
-    (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) res;
+    (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) res;
     try {
       res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1));
     } catch (_) {
@@ -310,14 +316,16 @@ class AppState extends ChangeNotifier {
         settings.rr1For(symbol.category), settings.rr2, settings.alkaTp1));
   }
 
-  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) r) {
+  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) r) {
     final prev = signal;
-    final (base, fc, al, ak, all, z, mp) = r;
+    final (base, fc, al, ak, all, z, mp, fAll) = r;
+    _fAll = fAll;
     alka = ak;
     zero = z;
     mpR = mp;
     smR = buildSm(candles, mp);
     kmR = buildKm(candles, smR!);
+    dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     allR = all;
     forecast = fc;
     signal = _unify(base, fc);
@@ -402,9 +410,17 @@ class AppState extends ChangeNotifier {
     final out = <String, int>{};
     for (final t in const ['1h', '4h', '1d']) {
       try {
-        final c = await _market.fetch(sym, t, settings, count: 120);
+        final c = await _market.fetch(sym, t, settings, count: t == '1d' ? 400 : 120);
         if (gen != _gen) return;
         out[t] = trendOf(c);
+        if (t == '1d') {
+          daily = c;
+          if (_fAll != null && alka != null && zero != null) {
+            dmR = buildDm(candles, symbol, aab: _fAll!, alka: alka!, zero: zero!, daily: c);
+          }
+          _healthCache.remove('${symbol.code}|$tf'); // نعيد حساب صحة DM باليومي الصحيح
+          _loadHealth(force: true);
+        }
       } catch (_) {}
     }
     if (gen != _gen) return;
@@ -419,7 +435,7 @@ class AppState extends ChangeNotifier {
   Future<void> _loadHealth({bool force = false}) async {
     final key = '${symbol.code}|$tf';
     final hit = _healthCache[key];
-    if (!force && hit != null && DateTime.now().difference(hit.$8).inHours < 2) {
+    if (!force && hit != null && DateTime.now().difference(hit.$9).inHours < 2) {
       aabHealth = hit.$1;
       alkaHealth = hit.$2;
       allHealth = hit.$3;
@@ -427,6 +443,7 @@ class AppState extends ChangeNotifier {
       mpHealth = hit.$5;
       smHealth = hit.$6;
       kmHealth = hit.$7;
+      dmHealth = hit.$8;
       return;
     }
     if (healthLoading) return;
@@ -440,14 +457,15 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
       if (gen != _gen || c.length < 300) return;
       final data = List<Candle>.of(c), sym = symbol;
-      (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth) r;
+      (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth) r;
       try {
-        r = await Isolate.run(() => computeHealth(data, sym));
+        final dd = daily == null ? null : List<Candle>.of(daily!);
+        r = await Isolate.run(() => computeHealth(data, sym, daily: dd));
       } catch (_) {
-        r = computeHealth(data, sym);
+        r = computeHealth(data, sym, daily: daily);
       }
       if (gen != _gen) return;
-      _healthCache[key] = (r.$1, r.$2, r.$3, r.$4, r.$5, r.$6, r.$7, DateTime.now());
+      _healthCache[key] = (r.$1, r.$2, r.$3, r.$4, r.$5, r.$6, r.$7, r.$8, DateTime.now());
       aabHealth = r.$1;
       alkaHealth = r.$2;
       allHealth = r.$3;
@@ -455,6 +473,7 @@ class AppState extends ChangeNotifier {
       mpHealth = r.$5;
       smHealth = r.$6;
       kmHealth = r.$7;
+      dmHealth = r.$8;
     } finally {
       healthLoading = false;
       if (gen == _gen) notifyListeners();
@@ -554,7 +573,7 @@ class AppState extends ChangeNotifier {
 }
 
 /// كل الحسابات الثقيلة (تعمل داخل Isolate): المحرك القديم للطبقات، محرك التوصيات، و AAB Algo.
-(TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) _computeAll(List<Candle> c, List<Candle>? htf,
+(TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) _computeAll(List<Candle> c, List<Candle>? htf,
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final hist = c.length; // الإشارات على كل الشموع المحمّلة (300 أو 600)
@@ -568,5 +587,5 @@ class AppState extends ChangeNotifier {
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
   final mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending,
       zero: z.signals, zeroPending: z.pending, tag: 'Mp');
-  return (base, fc, al, ak, all, z, mp);
+  return (base, fc, al, ak, all, z, mp, fAll);
 }

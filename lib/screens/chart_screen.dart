@@ -139,9 +139,10 @@ class _ChartScreenState extends State<ChartScreen> {
     final data = c;
     List<BenchRow> rows;
     try {
-      rows = await Isolate.run(() => benchmark(data, sym: sym));
+      final dd = st.daily == null ? null : List<Candle>.of(st.daily!);
+      rows = await Isolate.run(() => benchmark(data, sym: sym, daily: dd));
     } catch (_) {
-      rows = benchmark(data, sym: sym);
+      rows = benchmark(data, sym: sym, daily: st.daily);
     }
     // الموثوق أولاً (20 صفقة فأكثر) حسب الدقة، ثم العينات الصغيرة
     const minTrades = 20;
@@ -510,19 +511,23 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
               head('التوصيات والمؤشرات'),
+              sw('DM 🥇', 'خاص بالذهب: إشارات Mp بدون الجمعة ومع الترند اليومي', layers.dm, (x) {
+                layers.dm = x;
+                if (x) layers.sm = layers.mp = layers.km = false;
+              }),
               sw('KM 💎', 'إشارات SM في السوق الهادئ فقط — الأدق (62%) لكن صفقات قليلة', layers.km, (x) {
                 layers.km = x;
-                if (x) layers.sm = layers.mp = false;
+                if (x) layers.sm = layers.mp = layers.dm = false;
               }),
               sw('SM', 'إشارات Mp التي يوافقها شريط المتوسطات (الأدق، صفقات أقل) + رسم الشريط', layers.sm,
                   (x) {
                     layers.sm = x;
-                    if (x) layers.mp = layers.km = false;
+                    if (x) layers.mp = layers.km = layers.dm = false;
                   }),
               sw('Mp 👑', 'دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى: أدق وأكثر صفقات', layers.mp,
                   (x) {
                     layers.mp = x;
-                    if (x) layers.sm = layers.km = false;
+                    if (x) layers.sm = layers.km = layers.dm = false;
                   }),
               sw('ALL', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
                   (x) => layers.all = x),
@@ -558,6 +563,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final auto = st.settings.autoHideWeak;
     final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
     final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
+    final hideDm = auto && st.dmHealth?.light == 'red' && !forceShow.contains('DM|$mk');
     final hideKm = auto && st.kmHealth?.light == 'red' && !forceShow.contains('KM|$mk');
     final hideSm = auto && st.smHealth?.light == 'red' && !forceShow.contains('SM|$mk');
     final hideMp = auto && st.mpHealth?.light == 'red' && !forceShow.contains('Mp|$mk');
@@ -569,7 +575,8 @@ class _ChartScreenState extends State<ChartScreen> {
         zero: layers.zero && !hideZero,
         mp: layers.mp && !hideMp,
         sm: layers.sm && !hideSm,
-        km: layers.km && !hideKm);
+        km: layers.km && !hideKm,
+        dm: layers.dm && !hideDm);
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
       Container(
@@ -627,6 +634,7 @@ class _ChartScreenState extends State<ChartScreen> {
               mpR: st.mpR,
               smR: st.smR,
               kmR: st.kmR,
+              dmR: st.dmR,
               allR: st.allR,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -636,7 +644,7 @@ class _ChartScreenState extends State<ChartScreen> {
             ),
           ),
           // لوحة الاتجاهات (مثل DTC) عند تشغيل SM
-          if ((eff.sm || eff.km) && st.board.isNotEmpty)
+          if ((eff.sm || eff.km || eff.dm) && st.board.isNotEmpty)
             Positioned(
               top: 44,
               left: 6,
@@ -652,6 +660,8 @@ class _ChartScreenState extends State<ChartScreen> {
           _forecastBar(st.forecast!, st.symbol),
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
+        if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
+        if (eff.dm && st.dmR != null) _decisionBar(st.dmR!.decision, st.symbol, tag: 'DM'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
         if (eff.km && st.kmR != null) _decisionBar(st.kmR!.decision, st.symbol, tag: 'KM'),
         if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
@@ -666,7 +676,7 @@ class _ChartScreenState extends State<ChartScreen> {
           _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
         if (hideAab && layers.sigs)
           _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
-        else if (eff.sigs || (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km))
+        else if (eff.sigs || (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm))
           _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
@@ -699,18 +709,23 @@ class _ChartScreenState extends State<ChartScreen> {
         scrollDirection: Axis.horizontal,
         reverse: true,
         children: [
-          // KM ⊂ SM ⊂ Mp (نفس الإشارات بعد فلترة): واحد منها فقط حتى لا تُرسم فوق بعض
+          // KM ⊂ SM ⊂ Mp و DM ⊂ Mp (نفس الإشارات بعد فلترة): واحد منها فقط حتى لا تُرسم فوق بعض
+          if (st.symbol.category == 'metal')
+            _healthTool('DM', st.dmHealth, layers.dm, () => setState(() {
+                  layers.dm = !layers.dm;
+                  if (layers.dm) layers.sm = layers.mp = layers.km = false;
+                })),
           _healthTool('KM', st.kmHealth, layers.km, () => setState(() {
                 layers.km = !layers.km;
-                if (layers.km) layers.sm = layers.mp = false;
+                if (layers.km) layers.sm = layers.mp = layers.dm = false;
               })),
           _healthTool('SM', st.smHealth, layers.sm, () => setState(() {
                 layers.sm = !layers.sm;
-                if (layers.sm) layers.mp = layers.km = false;
+                if (layers.sm) layers.mp = layers.km = layers.dm = false;
               })),
           _healthTool('Mp', st.mpHealth, layers.mp, () => setState(() {
                 layers.mp = !layers.mp;
-                if (layers.mp) layers.sm = layers.km = false;
+                if (layers.mp) layers.sm = layers.km = layers.dm = false;
               })),
           _healthTool('0.1', st.zeroHealth, layers.zero, () => setState(() => layers.zero = !layers.zero)),
           _healthTool('ALL', st.allHealth, layers.all, () => setState(() => layers.all = !layers.all)),

@@ -1,6 +1,8 @@
 import '../models.dart';
 import 'all_indicator.dart';
 import 'forecast.dart';
+import 'alka.dart';
+import 'zero_one.dart';
 import 'indicators.dart';
 
 /// شريط المتوسطات (مثل DTC): 8 متوسطات EMA من 20 إلى 55.
@@ -125,4 +127,53 @@ AllResult buildKm(List<Candle> c, AllResult sm) {
   }
   final open = sigs.isNotEmpty && sigs.last.exitI < 0;
   return AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'KM');
+}
+
+/// اتجاه اليومي عند كل شمعة من شموع يومية منفصلة: EMA20 مقابل EMA50 لآخر يوم اكتمل قبل الشمعة.
+List<int> dailyTrendFor(List<Candle> c, List<Candle> daily) {
+  final n = c.length;
+  final out = List<int>.filled(n, 0);
+  if (daily.length < 52) return out;
+  final cl = daily.map((e) => e.close).toList();
+  final e20 = ema(cl, 20), e50 = ema(cl, 50);
+  var p = -1;
+  for (var i = 0; i < n; i++) {
+    // اليوم يكتمل عند بداية اليوم التالي
+    while (p + 1 < daily.length && daily[p + 1].time.add(const Duration(days: 1)).compareTo(c[i].time) <= 0) {
+      p++;
+    }
+    if (p < 0 || e20[p].isNaN || e50[p].isNaN) continue;
+    out[i] = e20[p] > e50[p] ? 1 : -1;
+  }
+  return out;
+}
+
+/// مؤشر DM (خاص بالذهب والمعادن) — يحسب كل شيء بنفسه من المحركات الثلاثة (AAB و Alka و 0.1):
+///  1) يرتّب صفقاته (صفقة واحدة كل مرة، فلتر الشمعة الصغيرة على AAB و Alka، أولوية 0.1)
+///  2) يُبقي فقط الصفقات التي ليست يوم الجمعة وفي اتجاه الترند اليومي.
+/// مقاس: ذهب 2018-19 60.3% (Mp 57.5%)، ذهب 2026 82.8% (Mp 65.6%)، فضة 2026 59.6% (Mp 54.7%).
+AllResult buildDm(List<Candle> c, MarketSymbol sym,
+    {required Forecast aab, required AlkaResult alka, required ZeroResult zero, List<Candle>? daily}) {
+  if (sym.category != 'metal' || c.length < 2) return const AllResult([], [], [], [], 'DM');
+  final n = c.length;
+  final dt = daily != null && daily.length >= 52 ? dailyTrendFor(c, daily) : htfTrend(c, 1440);
+  bool ok(int i, int dir) => i >= 0 && i < n && c[i].time.weekday != DateTime.friday && dt[i] == dir;
+  final base = combineAll(c, aab.signals, aab.pending, alka.signals, alka.pending,
+      zero: zero.signals, zeroPending: zero.pending, tag: 'DM');
+  final sigs = <PastSignal>[], src = <String>[];
+  for (final (q, s) in base.signals.indexed) {
+    if (ok(s.i, s.dir)) {
+      sigs.add(s);
+      src.add(base.sources[q]);
+    }
+  }
+  final pend = <PendingSetup>[], pSrc = <String>[];
+  for (final (q, p) in base.pending.indexed) {
+    if (ok(p.i, p.dir)) {
+      pend.add(p);
+      pSrc.add(base.pendingSrc[q]);
+    }
+  }
+  final open = sigs.isNotEmpty && sigs.last.exitI < 0;
+  return AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'DM');
 }
