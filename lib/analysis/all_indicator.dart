@@ -12,10 +12,7 @@ class AllResult {
   final List<PendingSetup> pending;
   final List<String> pendingSrc;
   final String tag; // اسم المؤشر في النصوص: 'ALL' أو 'Mp'
-  /// إشارات لم تُنفَّذ (للعرض فقط كدائرة رمادية — لا تدخل في الدقة): عكسية أثناء صفقة مفتوحة،
-  /// أو شمعة ارتداد ضخمة (V) لا يدخلها Mp.
-  final List<PastSignal> blocked;
-  const AllResult(this.signals, this.sources, this.pending, this.pendingSrc, [this.tag = 'ALL', this.blocked = const []]);
+  const AllResult(this.signals, this.sources, this.pending, this.pendingSrc, [this.tag = 'ALL']);
   static const empty = AllResult([], [], [], []);
 
   int get wins => signals.where((s) => s.result > 0).length;
@@ -52,8 +49,7 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
     {double maxCandle = 0.94,
     List<PastSignal> zero = const [],
     List<PendingSetup> zeroPending = const [],
-    String tag = 'ALL',
-    List<PastSignal> shadow = const []}) {
+    String tag = 'ALL'}) {
   final n = c.length;
   if (n < 20) return AllResult.empty;
   final at = atr(c, 14);
@@ -71,13 +67,10 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
     for (final s in alka)
       if (small(s.i)) (s, 'Alka'),
   ]..sort((x, y) => x.$1.i != y.$1.i ? x.$1.i.compareTo(y.$1.i) : prio[x.$2]!.compareTo(prio[y.$2]!));
-  final sigs = <PastSignal>[], src = <String>[], blocked = <PastSignal>[];
+  final sigs = <PastSignal>[], src = <String>[];
   var busy = -1;
   for (final (s, from) in cands) {
-    if (s.i <= busy) {
-      if (sigs.isNotEmpty && s.dir != sigs.last.dir && (blocked.isEmpty || blocked.last.i != s.i)) blocked.add(s);
-      continue;
-    }
+    if (s.i <= busy) continue;
     sigs.add(s);
     src.add(from);
     busy = s.exitI < 0 ? n : s.exitI;
@@ -93,37 +86,5 @@ AllResult combineAll(List<Candle> c, List<PastSignal> aab, List<PendingSetup> aa
       }
     }
   }
-  // إشارات "ظل" (من المحركات بدون قاعدة صفقة واحدة): عكسية أثناء صفقة مفتوحة → دوائر رمادية
-  {
-    final seen0 = {for (final b in blocked) b.i};
-    final taken0 = {for (final s in sigs) s.i};
-    var t = 0;
-    final sh = [...shadow]..sort((x, y) => x.i.compareTo(y.i));
-    for (final s in sh) {
-      while (t < sigs.length && (sigs[t].exitI >= 0 && sigs[t].exitI < s.i)) t++;
-      if (t >= sigs.length) break;
-      final o = sigs[t];
-      if (!(o.i < s.i && (o.exitI < 0 || s.i <= o.exitI))) continue;
-      if (s.dir == o.dir || seen0.contains(s.i) || taken0.contains(s.i)) continue;
-      blocked.add(s);
-      seen0.add(s.i);
-    }
-  }
-  // شموع الارتداد الضخمة (V): شمعة ≥ 2.5 ATR تُغلق في أعلى 40% بعد اندفاع ≥ 1.5 ATR (أو العكس).
-  // لا يدخلها Mp (فلتر الشمعة الكبيرة)، ونعرضها كدائرة رمادية للعلم — مقاسة على 10 سنوات: ~49% بهدف 1R.
-  final taken = {for (final s in sigs) s.i};
-  final seen = {for (final b in blocked) b.i};
-  for (var i = 20; i < n; i++) {
-    final a = at[i - 1];
-    if (a.isNaN || a <= 0 || taken.contains(i) || seen.contains(i)) continue;
-    final k = c[i], rng = k.high - k.low;
-    if (rng < 2.5 * a) continue;
-    int d = 0;
-    if ((k.close - k.low) / rng >= 0.6 && c[i - 1].close - k.low > 1.5 * a) d = 1;
-    if ((k.high - k.close) / rng >= 0.6 && k.high - c[i - 1].close > 1.5 * a) d = -1;
-    if (d == 0) continue;
-    blocked.add(PastSignal(i, d, k.close, d > 0 ? k.low : k.high, k.close, k.close, 0, -1, 'ارتداد بشمعة ضخمة', false));
-  }
-  blocked.sort((x, y) => x.i.compareTo(y.i));
-  return AllResult(sigs, src, pend, pendSrc, tag, blocked);
+  return AllResult(sigs, src, pend, pendSrc, tag);
 }
