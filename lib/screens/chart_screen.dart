@@ -378,7 +378,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'نجوم',
           emoji: '⭐',
-          desc: 'كل مؤشراتنا في واحد: إشارات Mp ونجومها = عدد الموافقين (SM و KM و ST و DM)',
+          desc: 'كل إشارات Mp ونجوم الثقة: درجة ثقة ST + هدوء السوق (كل نجمة أدق)',
           health: null,
           on: layers.star,
           toggle: () => layers.star = !layers.star
@@ -575,7 +575,7 @@ class _ChartScreenState extends State<ChartScreen> {
                   if (x.name == 'نجوم')
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
-                      child: Text('المدى الطويل: 3 نجوم 62% • بلا 54%',
+                      child: Text('المدى الطويل: 3 نجوم 64% • بلا 55%',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
@@ -711,7 +711,7 @@ class _ChartScreenState extends State<ChartScreen> {
               sw('DM 🥇', 'خاص بالذهب: إشارات Mp مع الترند اليومي في السوق الهادئ — 59% بهدف 1R على ذهب 2021-2026', layers.dm, (x) {
                 layers.dm = x;
               }),
-              sw('نجوم ⭐', 'كل مؤشراتنا في واحد: كل إشارات Mp ومعها نجوم بعدد الموافقين (SM و KM و ST و DM)',
+              sw('نجوم ⭐', 'كل إشارات Mp ومعها نجوم الثقة: درجة ثقة ST + هدوء السوق — 3 نجوم ≈ 64% بهدف 1R',
                   layers.star, (x) {
                 layers.star = x;
               }),
