@@ -967,7 +967,8 @@ class _ChartScreenState extends State<ChartScreen> {
                     height: 4,
                     decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 10),
-            Text('فحص الصفقة — $tag ${sg.dir > 0 ? 'شراء' : 'بيع'}',
+            Text(
+                'فحص الصفقة — $tag ${sg.dir > 0 ? 'شراء' : 'بيع'}${tag == 'نجوم' && st.starR != null ? ' ${'★' * st.starR!.of(sg.i, sg.dir)}${'☆' * (3 - st.starR!.of(sg.i, sg.dir))}' : ''}',
                 style: const TextStyle(color: AppColors.text, fontSize: 17, fontWeight: FontWeight.w800)),
             const SizedBox(height: 10),
             Row(children: [
