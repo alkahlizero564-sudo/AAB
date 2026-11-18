@@ -711,6 +711,10 @@ class _ChartScreenState extends State<ChartScreen> {
               sw('DM 🥇', 'خاص بالذهب: إشارات Mp مع الترند اليومي في السوق الهادئ — 59% بهدف 1R على ذهب 2021-2026', layers.dm, (x) {
                 layers.dm = x;
               }),
+              sw('دوائر رمادية ⚪', 'إشارات عكسية ظهرت أثناء صفقة مفتوحة ولم تُنفَّذ — للعلم فقط، لا تغيّر الصفقات ولا الدقة',
+                  layers.blocked, (x) {
+                layers.blocked = x;
+              }),
               sw('نجوم ⭐', 'كل مؤشراتنا في واحد: كل إشارات Mp ومعها نجوم بعدد الموافقين (SM و KM و ST و DM)',
                   layers.star, (x) {
                 layers.star = x;
