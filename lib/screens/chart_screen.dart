@@ -375,6 +375,14 @@ class _ChartScreenState extends State<ChartScreen> {
   List<({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle})> _indicators(
           AppState st) =>
       [
+        (
+          name: 'نجوم',
+          emoji: '⭐',
+          desc: 'كل مؤشراتنا في واحد: إشارات Mp ونجومها = عدد الموافقين (SM و KM و ST و DM)',
+          health: null,
+          on: layers.star,
+          toggle: () => layers.star = !layers.star
+        ),
         if (st.symbol.category == 'metal')
           (
             name: 'DM',
@@ -551,7 +559,9 @@ class _ChartScreenState extends State<ChartScreen> {
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
-                        h == null
+                        x.name == 'نجوم'
+                            ? (st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق')
+                            : h == null
                             ? 'جاري الحساب…'
                             : h.trades < 20
                                 ? 'عينة صغيرة (${h.trades} صفقة)'
@@ -562,6 +572,14 @@ class _ChartScreenState extends State<ChartScreen> {
                       ),
                     ),
                   ]),
+                  if (x.name == 'نجوم')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text('المدى الطويل: 3 نجوم 62% • بلا 54%',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
                   if (longTermAcc[x.name] case final lt?)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
@@ -596,7 +614,20 @@ class _ChartScreenState extends State<ChartScreen> {
               const SizedBox(height: 2),
               const Text('شغّل أي عدد معاً. السطر الملوّن: أداؤه الآن على هذا السوق (آخر 5000 شمعة). السطر الأبيض: دقته على المدى الطويل (بهدف 1R، وبإدارة التطبيق).',
                   style: TextStyle(color: AppColors.muted, fontSize: 11)),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
+              if (layers.star)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    const Text('أقل عدد نجوم:',
+                        style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 8),
+                    _seg(const [('0', 'الكل'), ('1', '1'), ('2', '2'), ('3', '3')], '${st.starMin}', (v) {
+                      st.setStarMin(int.parse(v));
+                      setSheet(() {});
+                    }),
+                  ]),
+                ),
               Flexible(
                   child: GridView.count(
                 crossAxisCount: 2,
@@ -679,6 +710,10 @@ class _ChartScreenState extends State<ChartScreen> {
               head('التوصيات والمؤشرات'),
               sw('DM 🥇', 'خاص بالذهب: إشارات Mp مع الترند اليومي في السوق الهادئ — 59% بهدف 1R على ذهب 2021-2026', layers.dm, (x) {
                 layers.dm = x;
+              }),
+              sw('نجوم ⭐', 'كل مؤشراتنا في واحد: كل إشارات Mp ومعها نجوم بعدد الموافقين (SM و KM و ST و DM)',
+                  layers.star, (x) {
+                layers.star = x;
               }),
               sw(
                   'ST 🧠',
@@ -802,6 +837,7 @@ class _ChartScreenState extends State<ChartScreen> {
               kmR: st.kmR,
               dmR: st.dmR,
               stR: st.stR,
+              starR: st.starR,
               allR: st.allR,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -827,6 +863,7 @@ class _ChartScreenState extends State<ChartScreen> {
           _forecastBar(st.forecast!, st.symbol),
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
+        if (eff.star && st.starR != null) _starBar(st),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
         if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
@@ -842,11 +879,21 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAab && layers.sigs)
           _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
         else if (eff.sigs ||
-            (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st))
+            (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st && !eff.star))
           _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
     ]);
+  }
+
+  /// قرار مؤشر النجوم مع عدد نجوم الإشارة الحالية.
+  Widget _starBar(AppState st) {
+    final r = st.starR!;
+    final d = r.res.decision;
+    var n = 0;
+    if (d.state == 1 && r.res.signals.isNotEmpty) n = r.of(r.res.signals.last.i, r.res.signals.last.dir);
+    if (d.state == 2 && r.res.pending.isNotEmpty) n = r.of(r.res.pending.first.i, r.res.pending.first.dir);
+    return _decisionBar(d, st.symbol, tag: d.state == 0 ? 'نجوم' : 'نجوم $n/3');
   }
 
   /// بطاقة قرار واحدة لـ Mp/SM/KM/DM المشغّلة: قرار الأدق الذي عنده صفقة، والاسم يذكر كل المتفقين

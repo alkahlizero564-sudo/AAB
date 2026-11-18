@@ -11,6 +11,7 @@ import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
 import '../analysis/health.dart';
 import '../analysis/st_indicator.dart';
+import '../analysis/star_indicator.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -48,6 +49,8 @@ class AppState extends ChangeNotifier {
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
+  StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
+  int starMin = 0; // أقل عدد نجوم يظهر
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
   AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp مع الترند اليومي في السوق الهادئ)
   List<Candle>? daily; // شموع يومية (للوحة الاتجاهات و DM)
@@ -243,6 +246,7 @@ class AppState extends ChangeNotifier {
     smR = null;
     kmR = null;
     stR = null;
+    starR = null;
     dmR = null;
     daily = null;
     board = {};
@@ -322,6 +326,7 @@ class AppState extends ChangeNotifier {
     kmR = buildKm(candles, smR!);
     stR = buildSt(candles, mp);
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
+    _rebuildStar();
     allR = all;
     forecast = fc;
     signal = _unify(base, fc);
@@ -413,6 +418,7 @@ class AppState extends ChangeNotifier {
           daily = c;
           if (_fAll != null && alka != null && zero != null) {
             dmR = buildDm(candles, symbol, aab: _fAll!, alka: alka!, zero: zero!, daily: c);
+            _rebuildStar();
           }
           _healthCache.remove('${symbol.code}|$tf'); // نعيد حساب صحة DM باليومي الصحيح
           _loadHealth(force: true);
@@ -426,6 +432,18 @@ class AppState extends ChangeNotifier {
 
   Future<List<Candle>> fetchLong({int count = 3000}) =>
       _market.fetch(symbol, tf, settings, count: count);
+
+  void _rebuildStar() {
+    final mp = mpR;
+    starR = mp == null ? null : buildStar(mp, [smR, kmR, stR?.res, dmR], minStars: starMin);
+  }
+
+  /// أقل عدد نجوم يظهر في مؤشر النجوم (0 = كل إشارات Mp).
+  void setStarMin(int v) {
+    starMin = v;
+    _rebuildStar();
+    notifyListeners();
+  }
 
   void _setHealth(List<IndHealth>? h) {
     IndHealth? at(int i) => h != null && i < h.length ? h[i] : null;
