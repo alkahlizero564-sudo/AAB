@@ -30,6 +30,9 @@ class AppState extends ChangeNotifier {
   MarketSymbol symbol = allSymbols.first;
   String tf = '5m';
   int tab = 0;
+  /// عدد الشموع المحمّلة لكل فريم
+  static int candleCount(String tf) => tf == '1m' || tf == '5m' ? 600 : 300;
+
   bool chartFull = false; // شاشة كاملة للشارت: يخفي شريط التنقل أيضاً
 
   List<Candle> candles = [];
@@ -141,7 +144,7 @@ class AppState extends ChangeNotifier {
       candles.add(Candle(
           DateTime.fromMillisecondsSinceEpoch(bucket * 1000, isUtc: true),
           p, p, p, p));
-      if (candles.length > 450) candles.removeAt(0);
+      if (candles.length > candleCount(tf) + 150) candles.removeAt(0);
     } else {
       candles[candles.length - 1] = Candle(last.time, last.open,
           math.max(last.high, p), math.min(last.low, p), p, last.volume, last.buyVol);
@@ -159,7 +162,7 @@ class AppState extends ChangeNotifier {
       candles[candles.length - 1] = k;
     } else if (k.ts > last.ts) {
       candles.add(k);
-      if (candles.length > 450) candles.removeAt(0);
+      if (candles.length > candleCount(tf) + 150) candles.removeAt(0);
     } else {
       return;
     }
@@ -186,7 +189,8 @@ class AppState extends ChangeNotifier {
         out.add(k);
       }
     }
-    return out.length > 450 ? out.sublist(out.length - 450) : out;
+    final cap = candleCount(tf) + 150;
+    return out.length > cap ? out.sublist(out.length - cap) : out;
   }
 
   void setChartFull(bool v) {
@@ -465,7 +469,8 @@ class AppState extends ChangeNotifier {
     loading = candles.isEmpty;
     notifyListeners();
     try {
-      final data = await _market.fetch(symbol, tf, settings);
+      // الفريمات الصغيرة: 600 شمعة بدل 300 حتى تظهر إشارات أكثر (300 دقيقة = 5 ساعات فقط)
+      final data = await _market.fetch(symbol, tf, settings, count: candleCount(tf));
       if (gen != _gen) return;
       candles = _mergeLive(data);
       liveTick.value++;
@@ -552,13 +557,14 @@ class AppState extends ChangeNotifier {
 (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) _computeAll(List<Candle> c, List<Candle>? htf,
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
-  final fc = buildForecast(c, rr1: rr1, rr2: rr2);
+  final hist = c.length; // الإشارات على كل الشموع المحمّلة (300 أو 600)
+  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist);
   final al = aabAlgo(c, sens: 2.0, withPanel: false);
-  final ak = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym);
+  final ak = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
   // ALL: AAB بنفس هدف Alka، ثم الدمج مع فلتر الشمعة الصغيرة
-  final fAll = alkaTp1 == rr1 ? fc : buildForecast(c, rr1: alkaTp1, rr2: rr2);
+  final fAll = alkaTp1 == rr1 ? fc : buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist);
   final all = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending);
-  final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym);
+  final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
   final mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending,
       zero: z.signals, zeroPending: z.pending, tag: 'Mp');

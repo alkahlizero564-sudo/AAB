@@ -123,11 +123,24 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
+    visible = _baseVisible = _defVisible(widget.tf);
     _ticker = createTicker(_onTick);
     // تحديث العدّاد التنازلي لإغلاق الشمعة كل ثانية
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && cross == null) setState(() {});
     });
+  }
+
+  /// عدد الشموع على الشاشة: أكثر في الفريمات الصغيرة حتى تظهر الإشارات
+  static double _defVisible(String tf) => tf == '1m' || tf == '5m' ? 120 : 70;
+
+  @override
+  void didUpdateWidget(covariant NativeChart old) {
+    super.didUpdateWidget(old);
+    if (old.tf != widget.tf) {
+      visible = _baseVisible = _defVisible(widget.tf);
+      shift = _homeShift;
+    }
   }
 
   @override
@@ -235,7 +248,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
             onLongPressMoveUpdate: (d) => setState(() => _setCross(d.localPosition)),
             onDoubleTap: () => setState(() {
               _stopFling();
-              visible = 70;
+              visible = _defVisible(widget.tf);
               shift = _homeShift;
               yZoom = 1;
               _setCross(null);
