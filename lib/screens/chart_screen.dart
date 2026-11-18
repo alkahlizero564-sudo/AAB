@@ -515,6 +515,10 @@ class _ChartScreenState extends State<ChartScreen> {
               sw('DM 🥇', 'خاص بالذهب: إشارات Mp بدون الجمعة ومع الترند اليومي', layers.dm, (x) {
                 layers.dm = x;
               }),
+              sw('ST 🧠', 'نموذج تعلّم من 10 سنوات: إشارات Mp عالية الثقة فقط (أعلى 30%) مع درجة الثقة — بدقة KM وضعف صفقاته',
+                  layers.st, (x) {
+                layers.st = x;
+              }),
               sw('KM 💎', 'إشارات SM في السوق الهادئ فقط — الأدق (62%) لكن صفقات قليلة', layers.km, (x) {
                 layers.km = x;
               }),
@@ -559,6 +563,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
     final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
     final hideDm = auto && st.dmHealth?.light == 'red' && !forceShow.contains('DM|$mk');
+    final hideSt = auto && st.stHealth?.light == 'red' && !forceShow.contains('ST|$mk');
     final hideKm = auto && st.kmHealth?.light == 'red' && !forceShow.contains('KM|$mk');
     final hideSm = auto && st.smHealth?.light == 'red' && !forceShow.contains('SM|$mk');
     final hideMp = auto && st.mpHealth?.light == 'red' && !forceShow.contains('Mp|$mk');
@@ -572,7 +577,8 @@ class _ChartScreenState extends State<ChartScreen> {
         mp: layers.mp && !hideMp,
         sm: layers.sm && !hideSm,
         km: layers.km && !hideKm,
-        dm: layers.dm && !hideDm);
+        dm: layers.dm && !hideDm,
+        st: layers.st && !hideSt);
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
       Container(
@@ -631,6 +637,7 @@ class _ChartScreenState extends State<ChartScreen> {
               smR: st.smR,
               kmR: st.kmR,
               dmR: st.dmR,
+              stR: st.stR,
               allR: st.allR,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -657,6 +664,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
+        if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
         if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
@@ -669,7 +677,7 @@ class _ChartScreenState extends State<ChartScreen> {
           _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
         if (hideAab && layers.sigs)
           _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
-        else if (eff.sigs || (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm))
+        else if (eff.sigs || (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st))
           _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
@@ -681,6 +689,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final fam = <(String, AllResult)>[
       if (eff.km && st.kmR != null) ('KM', st.kmR!),
       if (eff.dm && st.dmR != null) ('DM', st.dmR!),
+      if (eff.st && st.stR != null) ('ST', st.stR!.res),
       if (eff.sm && st.smR != null) ('SM', st.smR!),
       if (eff.mp && st.mpR != null) ('Mp', st.mpR!),
     ];
@@ -688,7 +697,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final active = fam.where((x) => x.$2.decision.state != 0).toList();
     final main = active.isNotEmpty ? active.first : fam.first;
     final d = main.$2.decision;
-    const order = ['Mp', 'SM', 'DM', 'KM'];
+    const order = ['Mp', 'SM', 'ST', 'DM', 'KM'];
     final same = [
       for (final (t, r) in fam)
         if (r.decision.state == d.state && r.decision.dir == d.dir && (d.state == 0 || r.decision.entry == d.entry)) t
@@ -731,6 +740,13 @@ class _ChartScreenState extends State<ChartScreen> {
                 () => setState(() {
                       layers.dm = !layers.dm;
                     })),
+          _healthTool(
+              'ST',
+              st.stHealth,
+              layers.st,
+              () => setState(() {
+                    layers.st = !layers.st;
+                  })),
           _healthTool(
               'KM',
               st.kmHealth,

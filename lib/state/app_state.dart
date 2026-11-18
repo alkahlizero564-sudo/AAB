@@ -10,6 +10,7 @@ import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
 import '../analysis/health.dart';
+import '../analysis/st_indicator.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -47,14 +48,15 @@ class AppState extends ChangeNotifier {
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
+  StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
   AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp بدون الجمعة ومع الترند اليومي)
   List<Candle>? daily; // شموع يومية (للوحة الاتجاهات و DM)
   Forecast? _fAll; // إشارات AAB بهدف Alka (لـ DM المستقل)
   Map<String, int> board = {}; // لوحة الاتجاهات (مثل DTC): 1h / 4h / 1d → +1 صاعد ، -1 هابط
   DateTime? _boardAt;
-  IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth, kmHealth, dmHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
+  IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth, kmHealth, dmHealth, stHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
   bool healthLoading = false;
-  final _healthCache = <String, (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, DateTime)>{};
+  final _healthCache = <String, (List<IndHealth>, DateTime)>{};
   bool loading = false;
   String? error;
   DateTime? lastUpdate;
@@ -240,19 +242,12 @@ class AppState extends ChangeNotifier {
     mpR = null;
     smR = null;
     kmR = null;
+    stR = null;
     dmR = null;
     daily = null;
     board = {};
     _boardAt = null;
-    final hc = _healthCache['${symbol.code}|$tf'];
-    aabHealth = hc?.$1;
-    alkaHealth = hc?.$2;
-    allHealth = hc?.$3;
-    zeroHealth = hc?.$4;
-    mpHealth = hc?.$5;
-    smHealth = hc?.$6;
-    kmHealth = hc?.$7;
-    dmHealth = hc?.$8;
+    _setHealth(_healthCache['${symbol.code}|$tf']?.$1);
     error = null;
     _aiDir = null;
     _aiAt = null;
@@ -325,6 +320,7 @@ class AppState extends ChangeNotifier {
     mpR = mp;
     smR = buildSm(candles, mp);
     kmR = buildKm(candles, smR!);
+    stR = buildSt(candles, mp);
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     allR = all;
     forecast = fc;
@@ -431,19 +427,25 @@ class AppState extends ChangeNotifier {
   Future<List<Candle>> fetchLong({int count = 3000}) =>
       _market.fetch(symbol, tf, settings, count: count);
 
+  void _setHealth(List<IndHealth>? h) {
+    IndHealth? at(int i) => h != null && i < h.length ? h[i] : null;
+    aabHealth = at(0);
+    alkaHealth = at(1);
+    allHealth = at(2);
+    zeroHealth = at(3);
+    mpHealth = at(4);
+    smHealth = at(5);
+    kmHealth = at(6);
+    dmHealth = at(7);
+    stHealth = at(8);
+  }
+
   /// صحة AAB و Alka على هذا السوق (تُحسب في الخلفية وتُحفظ ساعتين).
   Future<void> _loadHealth({bool force = false}) async {
     final key = '${symbol.code}|$tf';
     final hit = _healthCache[key];
-    if (!force && hit != null && DateTime.now().difference(hit.$9).inHours < 2) {
-      aabHealth = hit.$1;
-      alkaHealth = hit.$2;
-      allHealth = hit.$3;
-      zeroHealth = hit.$4;
-      mpHealth = hit.$5;
-      smHealth = hit.$6;
-      kmHealth = hit.$7;
-      dmHealth = hit.$8;
+    if (!force && hit != null && DateTime.now().difference(hit.$2).inHours < 2) {
+      _setHealth(hit.$1);
       return;
     }
     if (healthLoading) return;
@@ -457,7 +459,7 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
       if (gen != _gen || c.length < 300) return;
       final data = List<Candle>.of(c), sym = symbol;
-      (IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth, IndHealth) r;
+      List<IndHealth> r;
       try {
         final dd = daily == null ? null : List<Candle>.of(daily!);
         r = await Isolate.run(() => computeHealth(data, sym, daily: dd));
@@ -465,15 +467,8 @@ class AppState extends ChangeNotifier {
         r = computeHealth(data, sym, daily: daily);
       }
       if (gen != _gen) return;
-      _healthCache[key] = (r.$1, r.$2, r.$3, r.$4, r.$5, r.$6, r.$7, r.$8, DateTime.now());
-      aabHealth = r.$1;
-      alkaHealth = r.$2;
-      allHealth = r.$3;
-      zeroHealth = r.$4;
-      mpHealth = r.$5;
-      smHealth = r.$6;
-      kmHealth = r.$7;
-      dmHealth = r.$8;
+      _healthCache[key] = (r, DateTime.now());
+      _setHealth(r);
     } finally {
       healthLoading = false;
       if (gen == _gen) notifyListeners();
