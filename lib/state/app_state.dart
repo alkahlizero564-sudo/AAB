@@ -49,6 +49,7 @@ class AppState extends ChangeNotifier {
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
   AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp بدون الجمعة ومع الترند اليومي)
   List<Candle>? daily; // شموع يومية (للوحة الاتجاهات و DM)
+  Forecast? _fAll; // إشارات AAB بهدف Alka (لـ DM المستقل)
   Map<String, int> board = {}; // لوحة الاتجاهات (مثل DTC): 1h / 4h / 1d → +1 صاعد ، -1 هابط
   DateTime? _boardAt;
   IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth, kmHealth, dmHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 3000 شمعة)
@@ -290,7 +291,7 @@ class AppState extends ChangeNotifier {
     final s = settings, sym = symbol, cfg = EngineConfig.current;
     final rr1 = settings.rr1For(symbol.category), rr2 = settings.rr2;
     final alkaTp1 = settings.alkaTp1;
-    (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) res;
+    (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) res;
     try {
       res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1));
     } catch (_) {
@@ -315,15 +316,16 @@ class AppState extends ChangeNotifier {
         settings.rr1For(symbol.category), settings.rr2, settings.alkaTp1));
   }
 
-  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) r) {
+  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) r) {
     final prev = signal;
-    final (base, fc, al, ak, all, z, mp) = r;
+    final (base, fc, al, ak, all, z, mp, fAll) = r;
+    _fAll = fAll;
     alka = ak;
     zero = z;
     mpR = mp;
     smR = buildSm(candles, mp);
     kmR = buildKm(candles, smR!);
-    dmR = buildDm(candles, mp, symbol, daily: daily);
+    dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     allR = all;
     forecast = fc;
     signal = _unify(base, fc);
@@ -413,7 +415,9 @@ class AppState extends ChangeNotifier {
         out[t] = trendOf(c);
         if (t == '1d') {
           daily = c;
-          if (mpR != null) dmR = buildDm(candles, mpR!, symbol, daily: c);
+          if (_fAll != null && alka != null && zero != null) {
+            dmR = buildDm(candles, symbol, aab: _fAll!, alka: alka!, zero: zero!, daily: c);
+          }
           _healthCache.remove('${symbol.code}|$tf'); // نعيد حساب صحة DM باليومي الصحيح
           _loadHealth(force: true);
         }
@@ -569,7 +573,7 @@ class AppState extends ChangeNotifier {
 }
 
 /// كل الحسابات الثقيلة (تعمل داخل Isolate): المحرك القديم للطبقات، محرك التوصيات، و AAB Algo.
-(TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult) _computeAll(List<Candle> c, List<Candle>? htf,
+(TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) _computeAll(List<Candle> c, List<Candle>? htf,
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final hist = c.length; // الإشارات على كل الشموع المحمّلة (300 أو 600)
@@ -583,5 +587,5 @@ class AppState extends ChangeNotifier {
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
   final mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending,
       zero: z.signals, zeroPending: z.pending, tag: 'Mp');
-  return (base, fc, al, ak, all, z, mp);
+  return (base, fc, al, ak, all, z, mp, fAll);
 }

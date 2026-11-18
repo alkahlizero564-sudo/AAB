@@ -216,7 +216,7 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym, List<Candle>? daily
   rows.add(BenchRow('★ مؤشر KM', km.wins, km.closed, kmr, ours: true));
   // DM: خاص بالذهب والمعادن
   if (sym != null && sym.category == 'metal') {
-    final dm = buildDm(c, mp, sym, daily: daily);
+    final dm = buildDm(c, sym, aab: f, alka: k, zero: z, daily: daily);
     var dmr = 0.0;
     for (final x in dm.signals) {
       if (x.result == 0) continue;

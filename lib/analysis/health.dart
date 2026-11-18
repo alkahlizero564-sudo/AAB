@@ -51,7 +51,7 @@ double _r(PastSignal s) => s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1;
   final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
   final sm = buildSm(c, mp);
   final km = buildKm(c, sm);
-  final dm = buildDm(c, mp, sym, daily: daily);
+  final dm = buildDm(c, sym, aab: f, alka: k, zero: z, daily: daily);
   return (h(f.signals, f.wins, f.closed), h(k.signals, k.wins, k.closed), h(all.signals, all.wins, all.closed),
       h(z.signals, z.wins, z.closed), h(mp.signals, mp.wins, mp.closed), h(sm.signals, sm.wins, sm.closed), h(km.signals, km.wins, km.closed), h(dm.signals, dm.wins, dm.closed));
 }

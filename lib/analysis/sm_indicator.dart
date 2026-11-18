@@ -1,6 +1,8 @@
 import '../models.dart';
 import 'all_indicator.dart';
 import 'forecast.dart';
+import 'alka.dart';
+import 'zero_one.dart';
 import 'indicators.dart';
 
 /// شريط المتوسطات (مثل DTC): 8 متوسطات EMA من 20 إلى 55.
@@ -146,28 +148,25 @@ List<int> dailyTrendFor(List<Candle> c, List<Candle> daily) {
   return out;
 }
 
-/// مؤشر DM (خاص بالذهب والمعادن): إشارات Mp بدون يوم الجمعة، وفي اتجاه الترند اليومي فقط.
-/// مقاس: ذهب 2018-19 60.3% (Mp 57.5%)، ذهب 2026 82.8% (Mp 65.6%)، فضة 2026 59.6% (Mp 54.7%).
-/// [daily] شموع يومية (إن لم تتوفر يُحسب اليومي من نفس الشموع إن كانت كافية).
-AllResult buildDm(List<Candle> c, AllResult mp, MarketSymbol sym, {List<Candle>? daily}) {
+/// مؤشر DM (خاص بالذهب والمعادن) — مؤشر مستقل:
+/// يأخذ مرشحي المحركات الثلاثة (AAB و Alka و 0.1) مباشرة، ويطبق قواعد الذهب عليها أولاً
+/// (لا تداول يوم الجمعة + فقط مع الترند اليومي)، ثم يختار صفقاته بنفسه (صفقة واحدة كل مرة،
+/// فلتر الشمعة الصغيرة على AAB و Alka، وأولوية 0.1).
+/// مقاس: ذهب 2018-19 59.7% (Mp 57.5%)، ذهب 2026 77.4% (Mp 65.6%)، فضة 2026 56.8% (Mp 54.7%).
+AllResult buildDm(List<Candle> c, MarketSymbol sym,
+    {required Forecast aab, required AlkaResult alka, required ZeroResult zero, List<Candle>? daily}) {
   if (sym.category != 'metal' || c.length < 2) return const AllResult([], [], [], [], 'DM');
   final n = c.length;
   final dt = daily != null && daily.length >= 52 ? dailyTrendFor(c, daily) : htfTrend(c, 1440);
   bool ok(int i, int dir) => i >= 0 && i < n && c[i].time.weekday != DateTime.friday && dt[i] == dir;
-  final sigs = <PastSignal>[], src = <String>[];
-  for (final (q, s) in mp.signals.indexed) {
-    if (ok(s.i, s.dir)) {
-      sigs.add(s);
-      src.add(mp.sources[q]);
-    }
-  }
-  final pend = <PendingSetup>[], pSrc = <String>[];
-  for (final (q, p) in mp.pending.indexed) {
-    if (ok(p.i, p.dir)) {
-      pend.add(p);
-      pSrc.add(mp.pendingSrc[q]);
-    }
-  }
-  final open = sigs.isNotEmpty && sigs.last.exitI < 0;
-  return AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'DM');
+  return combineAll(
+    c,
+    aab.signals.where((s) => ok(s.i, s.dir)).toList(),
+    aab.pending.where((p) => ok(p.i, p.dir)).toList(),
+    alka.signals.where((s) => ok(s.i, s.dir)).toList(),
+    alka.pending.where((p) => ok(p.i, p.dir)).toList(),
+    zero: zero.signals.where((s) => ok(s.i, s.dir)).toList(),
+    zeroPending: zero.pending.where((p) => ok(p.i, p.dir)).toList(),
+    tag: 'DM',
+  );
 }
