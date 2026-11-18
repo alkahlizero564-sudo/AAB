@@ -115,6 +115,6 @@ StResult buildSt(List<Candle> c, AllResult mp) {
       conf[p.i] = pr;
     }
   }
-  final open = sigs.isNotEmpty && sigs.last.exitI < 0;
-  return StResult(AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'ST'), conf);
+  final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
+  return StResult(AllResult(sigs, src, [for (final p in pend) if (!openDirs.contains(p.dir)) p], [for (final (q, p) in pend.indexed) if (!openDirs.contains(p.dir)) pSrc[q]], 'ST'), conf);
 }

@@ -871,7 +871,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
         if (_familyBar(st, eff) case final w?) w,
-        if (_openTrade(st, eff) case final ot?) _checkButton(st, ot.$1, ot.$2),
+        for (final ot in _openTrades(st, eff)) _checkButton(st, ot.$1, ot.$2),
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
         if (eff.zero && st.zero != null && st.zero!.decision.state != 0)
           _decisionBar(st.zero!.decision, st.symbol, tag: '0.1'),
@@ -889,7 +889,8 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   /// أول صفقة مفتوحة في المؤشرات المشغّلة (للزر "افحص صفقتي").
-  (String, PastSignal)? _openTrade(AppState st, ChartLayers eff) {
+  /// كل الصفقات المفتوحة لأول مؤشر مشغّل عنده صفقة (مع محركين: قد تكون شراء + بيع).
+  List<(String, PastSignal)> _openTrades(AppState st, ChartLayers eff) {
     final l = <(String, List<PastSignal>?)>[
       if (eff.star) ('نجوم', st.starR?.res.signals),
       if (eff.km) ('KM', st.kmR?.signals),
@@ -902,9 +903,10 @@ class _ChartScreenState extends State<ChartScreen> {
       if (eff.alka) ('Alka', st.alka?.signals),
     ];
     for (final (t, sg) in l) {
-      if (sg != null && sg.isNotEmpty && sg.last.exitI < 0) return (t, sg.last);
+      final open = [for (final x in sg ?? const <PastSignal>[]) if (x.exitI < 0) (t, x)];
+      if (open.isNotEmpty) return open;
     }
-    return null;
+    return const [];
   }
 
   Widget _checkButton(AppState st, String tag, PastSignal sg) => Padding(
@@ -1045,7 +1047,8 @@ class _ChartScreenState extends State<ChartScreen> {
     final r = st.starR!;
     final d = r.res.decision;
     var n = 0;
-    if (d.state == 1 && r.res.signals.isNotEmpty) n = r.of(r.res.signals.last.i, r.res.signals.last.dir);
+    final oi = r.res.signals.lastIndexWhere((x) => x.exitI < 0);
+    if (d.state == 1 && oi >= 0) n = r.of(r.res.signals[oi].i, r.res.signals[oi].dir);
     if (d.state == 2 && r.res.pending.isNotEmpty) n = r.of(r.res.pending.first.i, r.res.pending.first.dir);
     return _decisionBar(d, st.symbol, tag: d.state == 0 ? 'نجوم' : 'نجوم $n/3');
   }

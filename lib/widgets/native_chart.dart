@@ -915,8 +915,7 @@ class _Painter extends CustomPainter {
       final pSrcs = [for (final k in pk) byPend[k]!.$2];
       final pNames = [for (final k in pk) nameOf(byPend[k]!.$3, k.$1)];
       // صندوق الصفقة المفتوحة (مرة واحدة)
-      if (sigs.isNotEmpty && sigs.last.exitI < 0 && (L.sm || L.km || L.dm || L.st)) {
-        final sg = sigs.last;
+      for (final sg in sigs.where((x) => x.exitI < 0 && (L.sm || L.km || L.dm || L.st))) {
         final x0 = math.max(0.0, math.min(xOf(sg.i.toDouble()), w - 110));
         if (x0 < w) {
           final st = sg.curStop.isNaN ? sg.sl : sg.curStop;
@@ -1445,9 +1444,8 @@ class _Painter extends CustomPainter {
             color: AppColors.gold, size: 9, bold: true, rtl: true);
       }
     }
-    // صفقة مفتوحة: خطوط الدخول والوقف والهدف
-    if (signals.isNotEmpty && signals.last.exitI < 0) {
-      final sg = signals.last;
+    // صفقات مفتوحة (قد تكون صفقتان: شراء + بيع): خطوط الدخول والوقف والهدف
+    for (final sg in signals.where((x) => x.exitI < 0)) {
       final x0 = math.max(0.0, xOf(sg.i.toDouble()));
       void ln(double p, Color col, String t) {
         if (!inY(p)) return;
