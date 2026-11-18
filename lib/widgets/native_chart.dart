@@ -894,10 +894,12 @@ class _Painter extends CustomPainter {
       }
       // ترتيب العلامات داخل الاسم من الأعم للأدق: Mp·SM·KM
       const order = ['Mp', 'SM', 'ST', 'DM', 'KM'];
-      // ST يُظهر درجة ثقته بجانب اسمه (مثل "ST 58%")
-      String nameOf(List<String> t, int i) => (List.of(t)..sort((x, y) => order.indexOf(x).compareTo(order.indexOf(y))))
-          .map((x) => x == 'ST' && str?.conf[i] != null ? 'ST ${(str!.conf[i]! * 100).round()}%' : x)
-          .join('·');
+      // ST يُظهر درجة ثقته بعد الأسماء (مثل "Mp·ST 58%")
+      String nameOf(List<String> t, int i) {
+        final j = (List.of(t)..sort((x, y) => order.indexOf(x).compareTo(order.indexOf(y)))).join('·');
+        final cf = t.contains('ST') ? str?.conf[i] : null;
+        return cf == null ? j : '$j ${(cf * 100).round()}%';
+      }
       final keys = bySig.keys.toList()..sort((x, y) => x.$1.compareTo(y.$1));
       final sigs = [for (final k in keys) bySig[k]!.$1];
       final srcs = [for (final k in keys) bySig[k]!.$2];
