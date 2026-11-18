@@ -854,35 +854,63 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, ar!.signals, ar!.pending, 'ALL', AppColors.gold);
     }
     // صندوق صفقة SM المفتوحة (مثل DTC): أحمر للوقف، أخضر للأهداف
-    final boxR = L.dm ? dmr : (L.km ? kmr : (L.sm ? smr : null));
-    if (boxR != null && boxR.signals.isNotEmpty && boxR.signals.last.exitI < 0) {
-      final sg = boxR.signals.last;
-      // الصندوق بعرض 110 بكسل على الأقل حتى يظهر واضحاً حتى لو كانت الصفقة حديثة
-      final x0 = math.max(0.0, math.min(xOf(sg.i.toDouble()), w - 110));
-      if (x0 < w) {
-        final st = sg.curStop.isNaN ? sg.sl : sg.curStop;
-        final yE = yOf(sg.entry), yS = yOf(st), yT = yOf(sg.tp2);
-        canvas.drawRect(Rect.fromLTRB(x0, math.min(yE, yS), w, math.max(yE, yS)),
-            Paint()..color = _down.withOpacity(0.13));
-        canvas.drawRect(Rect.fromLTRB(x0, math.min(yE, yT), w, math.max(yE, yT)),
-            Paint()..color = _up.withOpacity(0.11));
+    // ── Mp / SM / KM / DM: نفس الإشارات بعد فلترة → علامة واحدة مشتركة على كل شمعة تذكر كل
+    // المؤشرات المتفقة (مثل "Mp·SM·KM شراء") بدل رسمها فوق بعض. الترتيب من الأدق للأعم.
+    final groups = <(String, AllResult)>[
+      if (L.km && kmr != null) ('KM', kmr!),
+      if (L.dm && dmr != null) ('DM', dmr!),
+      if (L.sm && smr != null) ('SM', smr!),
+      if (L.mp && mr != null) ('Mp', mr!),
+    ];
+    if (groups.isNotEmpty) {
+      final bySig = <(int, int), (PastSignal, String, List<String>)>{};
+      final byPend = <(int, int), (PendingSetup, String, List<String>)>{};
+      for (final (tag, r) in groups) {
+        for (final (q, sg) in r.signals.indexed) {
+          final key = (sg.i, sg.dir);
+          final cur = bySig[key];
+          if (cur == null) {
+            bySig[key] = (sg, q < r.sources.length ? r.sources[q] : '', [tag]);
+          } else {
+            cur.$3.add(tag);
+          }
+        }
+        for (final (q, p) in r.pending.indexed) {
+          final key = (p.i, p.dir);
+          final cur = byPend[key];
+          if (cur == null) {
+            byPend[key] = (p, q < r.pendingSrc.length ? r.pendingSrc[q] : '', [tag]);
+          } else {
+            cur.$3.add(tag);
+          }
+        }
       }
-    }
-    if (L.dm && dmr != null) {
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, dmr!.signals, dmr!.pending, 'DM', AppColors.gold,
-          sources: dmr!.sources, pendingSrc: dmr!.pendingSrc);
-    }
-    if (L.km && kmr != null) {
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, kmr!.signals, kmr!.pending, 'KM', AppColors.gold,
-          sources: kmr!.sources, pendingSrc: kmr!.pendingSrc);
-    }
-    if (L.sm && smr != null) {
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, smr!.signals, smr!.pending, 'SM', Colors.white,
-          sources: smr!.sources, pendingSrc: smr!.pendingSrc);
-    }
-    if (L.mp && mr != null) {
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, mr!.signals, mr!.pending, 'Mp', AppColors.gold,
-          sources: mr!.sources, pendingSrc: mr!.pendingSrc);
+      // ترتيب العلامات داخل الاسم من الأعم للأدق: Mp·SM·KM
+      const order = ['Mp', 'SM', 'DM', 'KM'];
+      String nameOf(List<String> t) => (List.of(t)..sort((x, y) => order.indexOf(x).compareTo(order.indexOf(y)))).join('·');
+      final keys = bySig.keys.toList()..sort((x, y) => x.$1.compareTo(y.$1));
+      final sigs = [for (final k in keys) bySig[k]!.$1];
+      final srcs = [for (final k in keys) bySig[k]!.$2];
+      final names = [for (final k in keys) nameOf(bySig[k]!.$3)];
+      final pk = byPend.keys.toList();
+      final pends = [for (final k in pk) byPend[k]!.$1];
+      final pSrcs = [for (final k in pk) byPend[k]!.$2];
+      final pNames = [for (final k in pk) nameOf(byPend[k]!.$3)];
+      // صندوق الصفقة المفتوحة (مرة واحدة)
+      if (sigs.isNotEmpty && sigs.last.exitI < 0 && (L.sm || L.km || L.dm)) {
+        final sg = sigs.last;
+        final x0 = math.max(0.0, math.min(xOf(sg.i.toDouble()), w - 110));
+        if (x0 < w) {
+          final st = sg.curStop.isNaN ? sg.sl : sg.curStop;
+          final yE = yOf(sg.entry), yS = yOf(st), yT = yOf(sg.tp2);
+          canvas.drawRect(Rect.fromLTRB(x0, math.min(yE, yS), w, math.max(yE, yS)),
+              Paint()..color = _down.withOpacity(0.13));
+          canvas.drawRect(Rect.fromLTRB(x0, math.min(yE, yT), w, math.max(yE, yT)),
+              Paint()..color = _up.withOpacity(0.11));
+        }
+      }
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, sigs, pends, groups.first.$1, AppColors.gold,
+          sources: srcs, pendingSrc: pSrcs, tagPer: names, pendTagPer: pNames);
     }
     if (L.zero && zr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, zr!.signals, zr!.pending, '0.1', null,
@@ -1307,7 +1335,9 @@ class _Painter extends CustomPainter {
       Color downCol = const Color(0xFFFF1744),
       bool darkText = false,
       List<String>? sources,
-      List<String>? pendingSrc}) {
+      List<String>? pendingSrc,
+      List<String>? tagPer,
+      List<String>? pendTagPer}) {
     final n = c.length;
     final placed = <Rect>[]; // لافتات مرسومة: نزيح الجديدة حتى لا تتراكب
     for (final (si, sg) in signals.indexed) {
@@ -1321,7 +1351,7 @@ class _Painter extends CustomPainter {
       final k = c[sg.i];
       final tp = TextPainter(
         text: TextSpan(
-            text: buy ? '$tag شراء' : '$tag بيع',
+            text: '${tagPer != null && si < tagPer.length ? tagPer[si] : tag} ${buy ? 'شراء' : 'بيع'}',
             style: TextStyle(
                 fontFamily: chartFont, color: txtCol, fontSize: 10, fontWeight: FontWeight.w800)),
         textDirection: TextDirection.rtl,
@@ -1389,7 +1419,8 @@ class _Painter extends CustomPainter {
       _dashed(cv, xl, w, yOf(p.trigger), Paint()
         ..color = col
         ..strokeWidth = 1.4, dash: 6, gap: 3);
-      _txt(cv, '$tag ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'}', Offset(xl, yOf(p.trigger) - 13),
+      _txt(cv, '${pendTagPer != null && pi < pendTagPer.length ? pendTagPer[pi] : tag} ${p.dir > 0 ? 'شراء فوق' : 'بيع تحت'}',
+          Offset(xl, yOf(p.trigger) - 13),
           color: (darkText || pz) && p.dir < 0 ? AppColors.onAccent : Colors.white, size: 9, bold: true, bg: col.withOpacity(0.85), rtl: true);
       _axis.add((yOf(p.trigger), sym.fmt(p.trigger), 'دخول', col));
       if (inY(p.sl)) {
