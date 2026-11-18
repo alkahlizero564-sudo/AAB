@@ -94,7 +94,7 @@ List<int> _flips(List<int> dir) {
 }
 
 /// يقارن مؤشرنا بأشهر مؤشرات TradingView (بإعداداتها الافتراضية) على نفس الشموع.
-List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
+List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym, List<Candle>? daily}) {
   final n = c.length;
   if (n < 120) return const [];
   final cl = c.map((e) => e.close).toList();
@@ -214,6 +214,16 @@ List<BenchRow> benchmark(List<Candle> c, {MarketSymbol? sym}) {
     kmr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
   }
   rows.add(BenchRow('★ مؤشر KM', km.wins, km.closed, kmr, ours: true));
+  // DM: خاص بالذهب والمعادن
+  if (sym != null && sym.category == 'metal') {
+    final dm = buildDm(c, mp, sym, daily: daily);
+    var dmr = 0.0;
+    for (final x in dm.signals) {
+      if (x.result == 0) continue;
+      dmr += x.result == 2 ? 1.5 : x.result == 1 ? 0.5 : -1;
+    }
+    rows.add(BenchRow('★ مؤشر DM', dm.wins, dm.closed, dmr, ours: true));
+  }
   rows.sort((a, b) {
     final c1 = b.winRate.compareTo(a.winRate);
     return c1 != 0 ? c1 : b.avgR.compareTo(a.avgR);
