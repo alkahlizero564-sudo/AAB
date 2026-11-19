@@ -14,6 +14,7 @@ import '../analysis/health.dart';
 import '../analysis/st_indicator.dart';
 import '../analysis/star_indicator.dart';
 import '../analysis/lt_indicator.dart';
+import '../analysis/pq_indicator.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -51,6 +52,7 @@ class AppState extends ChangeNotifier {
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
+  AllResult? pqR; // مؤشر PQ (النجوم + SM + Alka في مؤشر واحد)
   AllResult? ltR; // مؤشر LT بعيد المدى (من الشموع اليومية)
   StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
   int starMin = 0; // أقل عدد نجوم يظهر
@@ -251,6 +253,7 @@ class AppState extends ChangeNotifier {
     stR = null;
     starR = null;
     ltR = null;
+    pqR = null;
     dmR = null;
     daily = null;
     board = {};
@@ -328,6 +331,7 @@ class AppState extends ChangeNotifier {
     mpR = mp;
     _rebuildStar();
     smR = buildSm(candles, mp, stars: starR);
+    pqR = starR == null ? null : buildPq(mp, starR!, smR!);
     kmR = buildKm(candles, smR!);
     stR = buildSt(candles, mp);
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
