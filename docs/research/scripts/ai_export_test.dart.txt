@@ -1,0 +1,280 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'package:aab/analysis/alka.dart';
+import 'package:aab/analysis/star_indicator.dart';
+import 'package:aab/analysis/st_indicator.dart';
+import 'package:aab/analysis/sm_indicator.dart';
+import 'package:aab/analysis/patterns.dart';
+import 'package:aab/analysis/zero_one.dart';
+import 'package:aab/analysis/all_indicator.dart';
+import 'package:aab/analysis/indicators.dart';
+import 'package:aab/analysis/forecast.dart';
+import 'package:aab/data/symbols.dart';
+import 'package:aab/models.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+const sp = '/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad';
+List<Candle> load(String path) {
+  final out = <Candle>[];
+  for (final l in File(path).readAsLinesSync().skip(1)) {
+    final p = l.split(',');
+    if (p.length < 6) continue;
+    final v = [1, 2, 3, 4, 5].map((i) => double.tryParse(p[i]) ?? double.nan).toList();
+    var ts = p[0].trim();
+    if (!ts.contains('T')) ts = ts.contains(':') ? '${ts.replaceFirst(' ', 'T')}Z' : '${ts}T00:00:00Z';
+    final t = DateTime.tryParse(ts);
+    if (t == null || v.take(4).any((x) => x.isNaN)) continue;
+    out.add(Candle(t.toUtc(), v[0], v[1], v[2], v[3], v[4].isNaN ? 0 : v[4]));
+  }
+  return out;
+}
+String gdf(String r) => Directory('$sp/gdf/$r').listSync().whereType<File>().firstWhere((f) => f.path.endsWith('.csv')).path;
+
+class T { final int i, exitI, dir, src; final double r; final bool win; T(this.i, this.exitI, this.dir, this.src, this.r, this.win); }
+
+List<T> trades(List<PastSignal> l, int src) => [
+      for (final s in l)
+        if (s.result != 0 && s.exitI >= 0) T(s.i, s.exitI, s.dir, src, s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1, s.result > 0)
+    ];
+
+/// صفقة واحدة في كل مرة (بترتيب ظهور الإشارة)
+List<T> oneAtATime(List<T> l) {
+  final s = [...l]..sort((a, b) => a.i != b.i ? a.i.compareTo(b.i) : a.src.compareTo(b.src));
+  final out = <T>[];
+  var busy = -1;
+  for (final t in s) {
+    if (t.i <= busy) continue;
+    out.add(t);
+    busy = t.exitI;
+  }
+  return out;
+}
+
+
+
+
+/// صفقة بدخول افتتاح الشمعة التالية، وقف عند [stop] (أو خلف آخر 3 شموع)، 1R ثم 2R
+T? sim(List<Candle> c, List<double> at, int i, int d, double? stopP) {
+  final n = c.length;
+  if (i >= n - 1 || at[i].isNaN) return null;
+  final a = at[i];
+  final entry = c[i + 1].open;
+  var ext = d > 0 ? c[i].low : c[i].high;
+  for (var j = i - 2; j <= i; j++) { ext = d > 0 ? math.min(ext, c[j].low) : math.max(ext, c[j].high); }
+  final sp = stopP ?? ext;
+  final risk = ((d > 0 ? entry - sp : sp - entry) + 0.1 * a).clamp(0.7 * a, 2.5 * a).toDouble();
+  final t1 = entry + d * risk, t2 = entry + d * 2 * risk;
+  var stop = entry - d * risk, got = false;
+  for (var j = i + 1; j < n; j++) {
+    final k = c[j];
+    if (d > 0 ? k.low <= stop : k.high >= stop) return T(i, j, d, 0, got ? 0.5 : -1, got);
+    if (!got && (d > 0 ? k.high >= t1 : k.low <= t1)) { got = true; stop = entry; }
+    if (got && (d > 0 ? k.high >= t2 : k.low <= t2)) return T(i, j, d, 0, 1.5, true);
+    if (j >= i + 80) return T(i, j, d, 0, got ? 0.5 : -1, got);
+  }
+  return null;
+}
+
+
+
+/// صفقة بأمر معلّق: دخول عند [entry] في الشمعة i، وقف عند [stop]، 1R ثم 2R (الأسوأ أولاً عند التعارض)
+T? simLimit(List<Candle> c, int i, int d, double entry, double stop) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final t1 = entry + d * risk, t2 = entry + d * 2 * risk;
+  var st = stop, got = false;
+  for (var j = i; j < n; j++) {
+    final k = c[j];
+    if (d > 0 ? k.low <= st : k.high >= st) return T(i, j, d, 0, got ? 0.5 : -1, got);
+    if (j == i) continue; // شمعة الدخول: لا نحسب الأهداف فيها (تحفّظ)
+    if (!got && (d > 0 ? k.high >= t1 : k.low <= t1)) { got = true; st = entry; }
+    if (got && (d > 0 ? k.high >= t2 : k.low <= t2)) return T(i, j, d, 0, 1.5, true);
+    if (j >= i + 80) return T(i, j, d, 0, got ? 0.5 : -1, got);
+  }
+  return null;
+}
+
+class Zone2 { final int made, d; final double prox, dist; Zone2(this.made, this.d, this.prox, this.dist); }
+
+
+
+/// إدارة التطبيق: نصف عند TP1 (rr1×R)، الوقف للدخول، ثم وقف متحرك (أعلى قمة 22 - 3 ATR)
+T? simApp(List<Candle> c, List<double> at, int i, int d, double entry, double stop, double rr1, int ei) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final t1 = entry + d * risk * rr1;
+  var st = stop, got = false;
+  for (var j = ei; j < n; j++) {
+    final b = c[j];
+    if (d > 0 ? b.low <= st : b.high >= st) {
+      final r2 = (st - entry) * d / risk;
+      return got ? T(i, j, d, 0, 0.5 * rr1 + 0.5 * r2, true) : T(i, j, d, 0, -1, false);
+    }
+    if (!got && (d > 0 ? b.high >= t1 : b.low <= t1)) { got = true; st = entry; }
+    else if (got) {
+      var hh = d > 0 ? -1e18 : 1e18;
+      for (var r = math.max(0, j - 21); r <= j; r++) { hh = d > 0 ? math.max(hh, c[r].high) : math.min(hh, c[r].low); }
+      final a = at[j].isNaN ? b.high - b.low : at[j];
+      final cand = hh - d * 3 * a;
+      st = d > 0 ? math.max(st, cand) : math.min(st, cand);
+    }
+    if (!got && j >= i + 80) { final r = (b.close - entry) * d / risk; return T(i, j, d, 0, r, r > 0); }
+    if (j >= i + 300) { final r2 = (b.close - entry) * d / risk; return T(i, j, d, 0, got ? 0.5 * rr1 + 0.5 * r2 : r2, got); }
+  }
+  return null;
+}
+
+
+/// هدف ثابت كبير (مثل الفيديو): وقف أو هدف [rr]R فقط
+T? simFixed(List<Candle> c, int i, int d, double entry, double stop, double rr) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final tp = entry + d * rr * risk;
+  for (var j = i; j < n; j++) {
+    final b = c[j];
+    if (d > 0 ? b.low <= stop : b.high >= stop) return T(i, j, d, 0, -1, false);
+    if (j > i && (d > 0 ? b.high >= tp : b.low <= tp)) return T(i, j, d, 0, rr, true);
+    if (j >= i + 300) { final r = (b.close - entry) * d / risk; return T(i, j, d, 0, r, r > 0); }
+  }
+  return null;
+}
+
+
+String stat(List<T> l) {
+  final w = l.where((t) => t.win).length;
+  final r = l.fold(0.0, (a, t) => a + t.r);
+  return 'win=${(100 * w / math.max(1, l.length)).toStringAsFixed(1)}% n=${l.length} totR=${r.toStringAsFixed(0)} avgR=${(r / math.max(1, l.length)).toStringAsFixed(3)}';
+}
+List<Candle> loadAny(String path) {
+  final out = <Candle>[];
+  for (final l in File(path).readAsLinesSync().skip(1)) {
+    final p = l.split(',');
+    if (p.length < 5) continue;
+    var ts = p[0].trim();
+    if (ts.isEmpty) continue;
+    ts = ts.replaceFirst(' ', 'T');
+    if (!ts.contains('+') && !ts.endsWith('Z')) ts = '${ts}Z';
+    final t = DateTime.tryParse(ts);
+    final v = [1, 2, 3, 4].map((i) => double.tryParse(p[i]) ?? double.nan).toList();
+    if (t == null || v.any((x) => x.isNaN)) continue;
+    out.add(Candle(t.toUtc(), v[0], v[1], v[2], v[3], p.length > 5 ? (double.tryParse(p[5]) ?? 0) : 0));
+  }
+  return out;
+}
+List<Candle> aggr(List<Candle> c, int mins) {
+  final out = <Candle>[];
+  int key(DateTime t) => t.millisecondsSinceEpoch ~/ (mins * 60000);
+  for (final k in c) {
+    if (out.isNotEmpty && key(out.last.time) == key(k.time)) {
+      final o = out.removeLast();
+      out.add(Candle(o.time, o.open, math.max(o.high, k.high), math.min(o.low, k.low), k.close, o.volume + k.volume));
+    } else {
+      out.add(Candle(DateTime.fromMillisecondsSinceEpoch(key(k.time) * mins * 60000, isUtc: true), k.open, k.high, k.low, k.close, k.volume));
+    }
+  }
+  return out;
+}
+
+void main() {
+  test('export AI dataset', () {
+    final g = '$sp/gdf';
+    final sets = <(String, String, String, String, List<Candle> Function())>[
+      // (السوق، الفريم، الفئة، رمز)
+      ('gold20', '15m', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_15m.csv')),
+      ('gold20', '1h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_1h.csv')),
+      ('gold20', '4h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_4h.csv')),
+      ('btc', '15m', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_15m.csv')),
+      ('btc', '1h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_1h.csv')),
+      ('btc', '4h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_4h.csv')),
+      ('eth', '15m', 'crypto', 'ETH', () => loadAny('$sp/data/eth_15m_1819.csv') + loadAny('$sp/data/eth_15m_2526.csv')),
+      ('eth', '1h', 'crypto', 'ETH', () => loadAny('$sp/data/eth_1h_1819.csv') + loadAny('$sp/data/eth_1h_2526.csv')),
+      ('eurusd19', '1h', 'forex', 'EUR/USD', () => loadAny('$sp/data/EUR_USD_1h.csv')),
+      ('gbpusd19', '1h', 'forex', 'GBP/USD', () => loadAny('$sp/data/GBP_USD_1h.csv')),
+      ('audusd19', '1h', 'forex', 'AUD/USD', () => loadAny('$sp/data/AUD_USD_1h.csv')),
+      ('usdcad19', '1h', 'forex', 'USD/CAD', () => loadAny('$sp/data/USD_CAD_1h.csv')),
+      ('nas19', '1h', 'index', 'NAS100', () => loadAny('$sp/data/NAS100_USD_1h.csv')),
+      ('oil19', '1h', 'commodity', 'WTI', () => loadAny('$sp/data/WTICO_USD_1h.csv')),
+      ('eurusd26', '1h', 'forex', 'EUR/USD', () => loadAny('$g/eurusd-1h-ohlcv-forex/EURUSD_1h.csv')),
+      ('gbpusd26', '1h', 'forex', 'GBP/USD', () => loadAny('$g/gbpusd-1h-ohlcv-forex/GBPUSD_1h.csv')),
+      ('usdjpy26', '1h', 'forex', 'USD/JPY', () => loadAny('$g/usdjpy-1h-ohlcv-forex/USDJPY_1h.csv')),
+      ('nas26', '1h', 'index', 'NAS100', () => loadAny('$g/nas100-1h-ohlcv-index/NAS100_1h.csv')),
+      ('us30_26', '1h', 'index', 'US30', () => loadAny('$g/us30-1h-ohlcv-index/US30_1h.csv')),
+      ('oil26', '1h', 'commodity', 'WTI', () => loadAny('$g/usoil-1h-ohlcv-commodities/USOIL_1h.csv')),
+      ('silver26', '15m', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s15m/XAGUSD_15m.csv')),
+      ('silver26', '1h', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s1h/XAGUSD_1h.csv')),
+    ];
+    final out = StringBuffer();
+    final head = ['market', 'tf', 'cat', 'ts', 'year', 'dir', 'win', 'r', 'src', 'stars', 'near', 'hot', 'held', 'st'];
+    final fn = <String>[];
+    var first = true;
+    for (final (mk, tf, cat, code, ld) in sets) {
+      final c = ld()..sort((a, b) => a.time.compareTo(b.time));
+      final n = c.length;
+      if (n < 400) { print('skip $mk $tf $n'); continue; }
+      final sym = cat == 'metal' && code == 'XAU/USD' ? symbolByCode('XAU/USD') : MarketSymbol(code, code, cat == 'metal' ? 'metal' : cat, 'X', 2, false);
+      final f = buildForecast(c, history: n, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
+      final k = buildAlka(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+      final z = buildZeroOne(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+      final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
+      final st = buildStar(c, mp);
+      final sc = StScorer(c);
+      final cl = [for (final x in c) x.close];
+      final at = atr(c, 14), a5 = atr(c, 5), a50 = atr(c, 50);
+      final am = sma(at.map((v) => v.isNaN ? 0.0 : v).toList(), 100);
+      final e20 = ema(cl, 20), e50 = ema(cl, 50), e200 = ema(cl, 200);
+      final r14 = rsi(cl, 14), r2 = rsi(cl, 2);
+      final rib = smRibbon(c);
+      final rdF = smDirFast(rib, n), rdA = smDir(rib, n);
+      final bb = bollinger(cl, 20, 2);
+      final ax = adxCalc(c, 14);
+      final sto = stoch(c, 14, 3, 3);
+      final gaps = [for (var i = 1; i < math.min(n, 400); i++) c[i].time.difference(c[i - 1].time).inMinutes.abs()]..sort();
+      final base = gaps[gaps.length ~/ 2];
+      final h4 = htfTrend(c, base < 60 ? 60 : base < 240 ? 240 : 1440);
+      final hD = htfTrend(c, 1440);
+      double nz(double x) => x.isNaN || x.isInfinite ? 0 : x;
+      for (final (q, s) in mp.signals.indexed) {
+        if (s.exitI < 0 || s.result == 0 || s.i < 210) continue;
+        final i = s.i, d = s.dir.toDouble(), a = at[i].isNaN ? (c[i].high - c[i].low) : at[i];
+        if (!(a > 0)) continue;
+        final kk = c[i], rng = math.max(1e-9, kk.high - kk.low);
+        double ret(int b) => (kk.close - c[i - b].close) * d / a;
+        var ext5 = d > 0 ? 1e18 : -1e18; for (var t = i - 4; t <= i; t++) { ext5 = d > 0 ? math.min(ext5, c[t].low) : math.max(ext5, c[t].high); }
+        var hi20 = -1e18, lo20 = 1e18; for (var t = i - 19; t <= i; t++) { hi20 = math.max(hi20, c[t].high); lo20 = math.min(lo20, c[t].low); }
+        var hi50 = -1e18, lo50 = 1e18; for (var t = i - 49; t <= i; t++) { hi50 = math.max(hi50, c[t].high); lo50 = math.min(lo50, c[t].low); }
+        var same = 0; for (var t = i; t > i - 10 && (c[t].close - c[t].open) * d > 0; t--) { same++; }
+        var opp5 = 0; for (var t = i - 4; t <= i; t++) { if ((c[t].close - c[t].open) * d < 0) opp5++; }
+        final pos50 = (kk.close - lo50) / math.max(1e-9, hi50 - lo50);
+        final feats = <String, double>{
+          'atr_ratio': nz(at[i] / am[i]), 'squeeze': nz(a5[i] / a50[i]),
+          'ret3': ret(3), 'ret5': ret(5), 'ret10': ret(10), 'ret20': ret(20), 'ret50': ret(50),
+          'd_e20': nz((kk.close - e20[i]) * d / a), 'd_e50': nz((kk.close - e50[i]) * d / a), 'd_e200': nz((kk.close - e200[i]) * d / a),
+          'e20_slope': nz((e20[i] - e20[i - 5]) * d / a), 'rib_fast': rdF[i] * d, 'rib_all': rdA[i] * d,
+          'rib_width': nz((rib.first[i] - rib.last[i]) * d / a),
+          'rsi14': nz((r14[i] - 50) * d / 50), 'rsi2': nz((r2[i] - 50) * d / 50),
+          'stoch': nz((sto.k[i] - 50) * d / 50), 'adx': nz(ax.adx[i] / 50), 'di': nz((ax.plus[i] - ax.minus[i]) * d / 50),
+          'bb_pos': nz(((kk.close - bb.mid[i]) / math.max(1e-9, bb.upper[i] - bb.mid[i])) * d), 'bb_w': nz((bb.upper[i] - bb.lower[i]) / a),
+          'body': (kk.close - kk.open) * d / rng, 'range': rng / a,
+          'wick_rev': ((d > 0 ? math.min(kk.open, kk.close) - kk.low : kk.high - math.max(kk.open, kk.close)) / rng),
+          'wick_with': ((d > 0 ? kk.high - math.max(kk.open, kk.close) : math.min(kk.open, kk.close) - kk.low) / rng),
+          'entry_dist': (s.entry - ext5) * d / a, 'risk': (s.entry - s.sl).abs() / a,
+          'to_hi20': (d > 0 ? hi20 - kk.close : kk.close - lo20) / a, 'to_lo20': (d > 0 ? kk.close - lo20 : hi20 - kk.close) / a,
+          'pos50': d > 0 ? pos50 : 1 - pos50, 'same_dir': same.toDouble(), 'opp5': opp5.toDouble(),
+          'htf': h4[i] * d, 'daily': hD[i] * d,
+          'hour_s': math.sin(2 * math.pi * kk.time.hour / 24), 'hour_c': math.cos(2 * math.pi * kk.time.hour / 24), 'wday': kk.time.weekday.toDouble(),
+        };
+        if (first) { fn.addAll(feats.keys); out.writeln([...head, ...fn].join(',')); first = false; }
+        final g = st.of(i, s.dir);
+        final r = s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0;
+        out.writeln([mk, tf, cat, kk.time.millisecondsSinceEpoch, kk.time.year, s.dir, s.result > 0 ? 1 : 0, r, mp.sources[q], g,
+          st.isNear(i, s.dir) ? 1 : 0, st.isHot(i, s.dir) ? 1 : 0, st.isHeld(i, s.dir) ? 1 : 0, sc.score(i, s.dir, mp.sources[q]).toStringAsFixed(4),
+          for (final kf in fn) feats[kf]!.toStringAsFixed(4)].join(','));
+      }
+      print('done $mk $tf n=$n');
+    }
+    File('$sp/ai/signals.csv').writeAsStringSync(out.toString());
+  }, timeout: const Timeout(Duration(hours: 2)));
+}
