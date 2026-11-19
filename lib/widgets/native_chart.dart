@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../analysis/sr_levels.dart';
+import '../analysis/king_indicator.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/st_indicator.dart';
@@ -32,6 +33,7 @@ class ChartLayers {
   bool sr = false; // مستويات الدعم والمقاومة (زر في أعلى الشارت)
   bool lt = false; // مؤشر LT بعيد المدى (يُرسم على الفريم اليومي)
   bool pq = false; // مؤشر PQ: النجوم + SM + Alka
+  bool king = false; // مؤشر King: ذكاء اصطناعي
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -61,6 +63,7 @@ class ChartLayers {
     ..sr = sr
     ..lt = lt
     ..pq = pq
+    ..king = king
     ..type = type
     ..sub = sub;
 }
@@ -100,6 +103,7 @@ class NativeChart extends StatefulWidget {
   final StarResult? starR;
   final AllResult? ltR;
   final AllResult? pqR;
+  final KingResult? kingR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -122,6 +126,7 @@ class NativeChart extends StatefulWidget {
     this.starR,
     this.ltR,
     this.pqR,
+    this.kingR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -334,7 +339,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
                   DateTime.now().toUtc(), widget.algo,
-                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR),
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR),
             ),
           ),
         ),
@@ -408,8 +413,9 @@ class _Painter extends CustomPainter {
   final AllResult? ltr;
   final _Smooth? sm;
   final AllResult? pqr;
+  final KingResult? kingr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -1184,6 +1190,16 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
+    // ── King: إشارات أعلى 30% ثقة حسب الذكاء الاصطناعي، مع نسبة الثقة
+    if (L.king && kingr != null) {
+      final r = kingr!.res;
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'King', AppColors.gold,
+          tagPer: [
+            for (final sg in r.signals)
+              'King ${kingr!.pct(sg.i, sg.dir)}%${kingr!.isStrong(sg.i, sg.dir) ? ' قوي' : ''}'
+          ],
+          pendTagPer: [for (final p in r.pending) 'King ${kingr!.pct(p.i, p.dir)}%']);
+    }
     // ── PQ: نفس إشارات النجوم و SM و Alka مجتمعة في مؤشر واحد (أخضر شراء، أحمر بيع)
     if (L.pq && pqr != null) {
       final r = pqr!;
@@ -1834,6 +1850,10 @@ class _Painter extends CustomPainter {
       final a = dmr!;
       part('DM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
           a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
+    if (L.king && kingr != null && kingr!.res.closed > 0) {
+      final a = kingr!.res;
+      part('King ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})', a.winRate >= 0.5 ? AppColors.gold : _down);
     }
     if (L.pq && pqr != null && pqr!.closed > 0) {
       final a = pqr!;
