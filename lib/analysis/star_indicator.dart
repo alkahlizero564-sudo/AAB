@@ -46,7 +46,8 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
 
   // مكان الدخول: بُعد سعر الدخول عن قاع (للشراء) / قمة (للبيع) آخر 5 شموع بوحدات ATR.
   // ذهب وبيتكوين 15m/1h (2016-2020 / 2021-2026) بهدف 1R: القريب (< 0.75) 58-64%، والمتأخر (≥ 1.25) 47-56%.
-  // على الفريمات الأقل من 4h نحذف الدخول المتأخر، ونعلّم القريب «دخول ممتاز». على 4h وما فوق لا فرق ثابت.
+  // على الفريمات الأقل من ساعة نحذف الدخول المتأخر (ذهب 2010-2025 على 15m: أفضل في كل الفترات)،
+  // وعلى الأقل من 4h نعلّم القريب «ممتاز». على 1h حذف المتأخر غير ثابت في الذهب، وعلى 4h لا فرق.
   double dist(int i, int d, double entry) {
     if (i < 4 || i >= c.length || at[i].isNaN || !(at[i] > 0)) return 1;
     var ext = d > 0 ? double.infinity : -double.infinity;
@@ -57,7 +58,9 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
   }
 
   final gaps = [for (var q = math.max(1, c.length - 200); q < c.length; q++) c[q].time.difference(c[q - 1].time).inMinutes.abs()]..sort();
-  final intraday = gaps.isNotEmpty && gaps[gaps.length ~/ 2] < 240;
+  final baseMin = gaps.isEmpty ? 60 : gaps[gaps.length ~/ 2];
+  final intraday = baseMin < 240; // علامة «ممتاز»
+  final dropLate = baseMin < 60; // حذف الدخول المتأخر
   final near = <(int, int)>{};
   final stars = <(int, int), int>{};
   final sigs = <PastSignal>[], src = <String>[];
@@ -66,7 +69,7 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
     stars[(s.i, s.dir)] = g;
     final dd = dist(s.i, s.dir, s.entry);
     if (intraday && dd < 0.75) near.add((s.i, s.dir));
-    if (g >= minStars && !(intraday && dd >= 1.25)) {
+    if (g >= minStars && !(dropLate && dd >= 1.25)) {
       sigs.add(s);
       src.add(mp.sources[q]);
     }
@@ -77,7 +80,7 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
     stars[(p.i, p.dir)] = g;
     final dd = p.i < 0 ? 1.0 : dist(p.i, p.dir, p.trigger);
     if (intraday && dd < 0.75) near.add((p.i, p.dir));
-    if (g >= minStars && !(intraday && dd >= 1.25)) {
+    if (g >= minStars && !(dropLate && dd >= 1.25)) {
       pend.add(p);
       pSrc.add(mp.pendingSrc[q]);
     }
