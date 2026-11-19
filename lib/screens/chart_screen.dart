@@ -421,7 +421,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'SM',
           emoji: '〰️',
-          desc: 'Mp مع شريط المتوسطات واتجاه الساعة',
+          desc: 'Mp مع شريط المتوسطات بدون الإشارات الضعيفة — «قوي» ≈ 61%، و«بداية صعود/هبوط» عند تغيّر لون الشريط',
           health: st.smHealth,
           on: layers.sm,
           toggle: () => layers.sm = !layers.sm
