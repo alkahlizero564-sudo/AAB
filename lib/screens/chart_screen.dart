@@ -527,12 +527,14 @@ class _ChartScreenState extends State<ChartScreen> {
         final inds = _indicators(st);
         Widget card(({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle}) x) {
           final h = x.health;
-          final col = switch (h?.light) {
-            'green' => AppColors.up,
-            'yellow' => AppColors.gold,
-            'red' => AppColors.down,
-            _ => AppColors.muted,
-          };
+          final col = x.name == 'LT'
+              ? ((st.ltR?.signals.any((s) => s.exitI < 0) ?? false) ? AppColors.up : AppColors.muted)
+              : switch (h?.light) {
+                  'green' => AppColors.up,
+                  'yellow' => AppColors.gold,
+                  'red' => AppColors.down,
+                  _ => AppColors.muted,
+                };
           return Material(
             color: x.on ? AppColors.gold.withOpacity(0.10) : AppColors.card,
             shape: RoundedRectangleBorder(
@@ -571,6 +573,8 @@ class _ChartScreenState extends State<ChartScreen> {
                       child: Text(
                         x.name == 'نجوم'
                             ? (st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق')
+                            : x.name == 'LT'
+                            ? _ltStatus(st)
                             : h == null
                             ? 'جاري الحساب…'
                             : h.trades < 20
@@ -582,6 +586,14 @@ class _ChartScreenState extends State<ChartScreen> {
                       ),
                     ),
                   ]),
+                  if (x.name == 'LT')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text('المدى الطويل (ذهب): ترند 67% • ارتداد 70%',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
                   if (x.name == 'نجوم')
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
@@ -1061,12 +1073,29 @@ class _ChartScreenState extends State<ChartScreen> {
         ]),
       );
 
+  /// سطر حالة LT في لوحة المؤشرات.
+  String _ltStatus(AppState st) {
+    final d = st.tf == '1d' ? st.candles : st.daily;
+    if (d == null) return 'تحميل الشموع اليومية…';
+    if (d.length < 230) return 'يحتاج 230 يوماً (المتاح ${d.length})';
+    final r = st.ltR;
+    if (r == null) return 'تحميل الشموع اليومية…';
+    final oi = r.signals.lastIndexWhere((x) => x.exitI < 0);
+    if (oi >= 0) {
+      final s = r.signals[oi];
+      final px = st.candles.isEmpty ? s.entry : st.candles.last.close;
+      final p = (px / s.entry - 1) * 100;
+      return 'صفقة ${r.sources[oi]} مفتوحة ${p >= 0 ? '+' : ''}${p.toStringAsFixed(1)}%';
+    }
+    return ltUptrend(d) ? 'لا صفقة — السوق صاعد، انتظر' : 'لا صفقة — تحت متوسط 200 (لا شراء)';
+  }
+
   /// قرار مؤشر LT (من الشموع اليومية في أي فريم): صفقة مفتوحة أو حالة السوق.
   Widget _ltBar(AppState st) {
     final r = st.ltR;
     if (r == null) {
       return _decisionBar(
-          const Decision(0, 0, double.nan, double.nan, double.nan, double.nan, 'LT: جاري تحميل الشموع اليومية…', ''),
+          Decision(0, 0, double.nan, double.nan, double.nan, double.nan, 'LT: ${_ltStatus(st)}', ''),
           st.symbol,
           tag: 'LT');
     }
