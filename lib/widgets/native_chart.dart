@@ -31,6 +31,7 @@ class ChartLayers {
   bool vol = true; // أعمدة الحجم أسفل الشارت
   bool sr = false; // مستويات الدعم والمقاومة (زر في أعلى الشارت)
   bool lt = false; // مؤشر LT بعيد المدى (يُرسم على الفريم اليومي)
+  bool pq = false; // مؤشر PQ: النجوم + SM + Alka
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -59,6 +60,7 @@ class ChartLayers {
     ..vol = vol
     ..sr = sr
     ..lt = lt
+    ..pq = pq
     ..type = type
     ..sub = sub;
 }
@@ -97,6 +99,7 @@ class NativeChart extends StatefulWidget {
   final StResult? stR;
   final StarResult? starR;
   final AllResult? ltR;
+  final AllResult? pqR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -118,6 +121,7 @@ class NativeChart extends StatefulWidget {
     this.stR,
     this.starR,
     this.ltR,
+    this.pqR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -330,7 +334,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
                   DateTime.now().toUtc(), widget.algo,
-                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm),
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR),
             ),
           ),
         ),
@@ -403,8 +407,9 @@ class _Painter extends CustomPainter {
   final StarResult? starr;
   final AllResult? ltr;
   final _Smooth? sm;
+  final AllResult? pqr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -1178,6 +1183,20 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
+    // ── PQ: إشارات واحدة من النجوم و SM و Alka، مع نجوم الثقة والعلامات
+    if (L.pq && pqr != null) {
+      final r = pqr!;
+      final smKeys = {for (final x in smr?.signals ?? const <PastSignal>[]) (x.i, x.dir)};
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'PQ', const Color(0xFF7C4DFF),
+          sources: r.sources,
+          pendingSrc: r.pendingSrc,
+          tagPer: [
+            for (final sg in r.signals)
+              'PQ${starr != null ? ' ${_starTag(starr!, sg.i, sg.dir, false)}' : ''}${smKeys.contains((sg.i, sg.dir)) ? ' SM' : ''}'.trim()
+          ],
+          pendTagPer: [for (final _ in r.pending) 'PQ'],
+          starsPer: starr == null ? null : [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
+    }
     // ── LT بعيد المدى: يُرسم على الفريم اليومي فقط
     if (L.lt && ltr != null && tf == '1d') {
       final r = ltr!;
@@ -1810,6 +1829,11 @@ class _Painter extends CustomPainter {
       final a = dmr!;
       part('DM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
           a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
+    if (L.pq && pqr != null && pqr!.closed > 0) {
+      final a = pqr!;
+      part('PQ ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? const Color(0xFFB388FF) : _down);
     }
     if (L.lt && ltr != null && tf == '1d' && ltr!.closed > 0) {
       final a = ltr!;
