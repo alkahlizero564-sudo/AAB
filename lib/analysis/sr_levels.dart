@@ -9,7 +9,8 @@ class SrLevel {
   final int touches; // عدد القمم/القيعان التي كوّنته
   final int lastI; // آخر شمعة لمسته
   final bool resistance; // فوق السعر الحالي = مقاومة، تحته = دعم
-  const SrLevel(this.price, this.lo, this.hi, this.touches, this.lastI, this.resistance);
+  final bool major; // المقاومة العليا (أعلى قمة) أو الدعم السفلي (أدنى قاع) في الشموع المحمّلة
+  const SrLevel(this.price, this.lo, this.hi, this.touches, this.lastI, this.resistance, [this.major = false]);
 }
 
 /// أقرب [each] مقاومات فوق السعر و[each] دعوم تحته، من القمم والقيعان المؤكدة
@@ -54,5 +55,16 @@ List<SrLevel> srLevels(List<Candle> c, {int each = 3, int side = 3}) {
   double score(SrLevel l) => (l.price - px).abs() / a - 0.8 * (l.touches - 1);
   final res = lv.where((l) => l.resistance).toList()..sort((x, y) => score(x).compareTo(score(y)));
   final sup = lv.where((l) => !l.resistance).toList()..sort((x, y) => score(x).compareTo(score(y)));
-  return [...res.take(each), ...sup.take(each)];
+  // المقاومة العليا والدعم السفلي: أعلى منطقة قمم وأدنى منطقة قيعان (حدود النطاق)
+  SrLevel mk(SrLevel l) => SrLevel(l.price, l.lo, l.hi, l.touches, l.lastI, l.resistance, true);
+  final out = <SrLevel>[];
+  final top = res.isEmpty ? null : res.reduce((x, y) => x.price > y.price ? x : y);
+  final bot = sup.isEmpty ? null : sup.reduce((x, y) => x.price < y.price ? x : y);
+  if (top != null) out.add(mk(top));
+  if (bot != null) out.add(mk(bot));
+  for (final l in [...res.take(each), ...sup.take(each)]) {
+    if (identical(l, top) || identical(l, bot)) continue;
+    out.add(l);
+  }
+  return out;
 }

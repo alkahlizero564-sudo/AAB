@@ -364,7 +364,7 @@ class _Painter extends CustomPainter {
 
   void _txt(Canvas cv, String t, Offset o,
       {Color color = AppColors.muted, double size = 10, Color? bg, bool bold = false,
-      bool rtl = false}) {
+      bool rtl = false, bool endAt = false}) {
     final tp = TextPainter(
       text: TextSpan(
           text: t,
@@ -375,6 +375,7 @@ class _Painter extends CustomPainter {
               fontWeight: bold ? FontWeight.w700 : FontWeight.w400)),
       textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
     )..layout();
+    if (endAt) o = Offset(o.dx - tp.width, o.dy); // o = نهاية النص (يمينه)
     if (bg != null) {
       cv.drawRect(Rect.fromLTWH(o.dx - 2, o.dy - 1, tp.width + 4, tp.height + 2),
           Paint()..color = bg);
@@ -584,20 +585,29 @@ class _Painter extends CustomPainter {
       }
     }
 
-    // ── الدعم والمقاومة
+    // ── الدعم والمقاومة (المقاومة العليا والدعم السفلي أوضح، وتظهر على حافة الشارت لو خارج المدى)
     if (L.sr && c.length >= 40) {
       for (final l in srLevels(c)) {
-        if (!inY(l.price)) continue;
         final col = l.resistance ? _down : _up;
+        final name = l.major ? (l.resistance ? 'مقاومة عليا' : 'دعم سفلي') : (l.resistance ? 'مقاومة' : 'دعم');
+        final label = '$name ${sym.fmt(l.price)}${l.touches > 1 ? '  ×${l.touches}' : ''}';
+        if (!inY(l.price)) {
+          if (!l.major) continue;
+          // خارج المدى المرئي: علامة على الحافة
+          final above = l.price > hi;
+          final yy = above ? 50.0 : h - 20;
+          _txt(canvas, '$label (${above ? 'فوق' : 'تحت'} الشاشة)', Offset(w - 72, yy), color: col, size: 10, bold: true, rtl: true, bg: Colors.black87, endAt: true);
+          continue;
+        }
         final yT = yOf(l.hi), yB = yOf(l.lo);
         canvas.drawRect(Rect.fromLTRB(0, math.min(yT, yB) - 1.5, w, math.max(yT, yB) + 1.5),
-            Paint()..color = col.withOpacity(0.10 + 0.04 * math.min(3, l.touches - 1)));
+            Paint()..color = col.withOpacity(l.major ? 0.22 : 0.08 + 0.03 * math.min(3, l.touches - 1)));
         final y = yOf(l.price);
         canvas.drawLine(Offset(0, y), Offset(w, y), Paint()
-          ..color = col.withOpacity(0.85)
-          ..strokeWidth = l.touches >= 3 ? 1.6 : 1.0);
-        _txt(canvas, '${l.resistance ? 'مقاومة' : 'دعم'} ${sym.fmt(l.price)}${l.touches > 1 ? '  ×${l.touches}' : ''}',
-            Offset(4, y - 13), color: col, size: 9.5, bold: true, rtl: true, bg: Colors.black54);
+          ..color = col.withOpacity(l.major ? 1 : 0.6)
+          ..strokeWidth = l.major ? 2.2 : (l.touches >= 3 ? 1.3 : 0.9));
+        _txt(canvas, label, Offset(w - 72, y - (l.major ? 15 : 13)),
+            color: col, size: l.major ? 11 : 9.5, bold: true, rtl: true, bg: Colors.black54, endAt: true);
       }
     }
 
