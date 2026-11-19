@@ -1,0 +1,86 @@
+import csv, math
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+def load(p):
+    rows=[r for r in csv.reader(open(p))][1:]
+    return [r[0] for r in rows],[float(r[1]) for r in rows],[float(r[2]) for r in rows],[float(r[3]) for r in rows],[float(r[4]) for r in rows]
+def sma(v,p):
+    out=[None]*len(v); s=0
+    for i,x in enumerate(v):
+        s+=x
+        if i>=p: s-=v[i-p]
+        if i>=p-1: out[i]=s/p
+    return out
+def rsi(v,p):
+    n=len(v); out=[None]*n; g=lo=0.0
+    for i in range(1,p+1):
+        d=v[i]-v[i-1]; g+=max(d,0); lo+=max(-d,0)
+    g/=p; lo/=p
+    for i in range(p+1,n):
+        d=v[i]-v[i-1]; g=(g*(p-1)+max(d,0))/p; lo=(lo*(p-1)+max(-d,0))/p
+        out[i]=100 if lo==0 else 100-100/(1+g/lo)
+    return out
+def atr(h,l,c,p=14):
+    n=len(c); tr=[h[0]-l[0]]+[max(h[i]-l[i],abs(h[i]-c[i-1]),abs(l[i]-c[i-1])) for i in range(1,n)]
+    out=[None]*n; a=sum(tr[:p])/p; out[p-1]=a
+    for i in range(p,n): a=(a*(p-1)+tr[i])/p; out[i]=a
+    return out
+def report(name, tr, t, years):
+    for per,(a,b) in {'2017-20':('2016','2021'),'2021-26':('2021','2027')}.items():
+        xs=[x for x in tr if a<=t[x[0]][:4]<b]
+        if not xs: continue
+        w=sum(1 for x in xs if x[2]>0); eq=1; pk=1; dd=0
+        for x in xs: eq*=1+x[2]/100; pk=max(pk,eq); dd=max(dd,1-eq/pk)
+        yrs=years[per]
+        print(f'{name:44s} {per} صفقات/سنة={len(xs)/yrs:5.1f} ربح={100*w/len(xs):3.0f}% متوسط={sum(x[2] for x in xs)/len(xs):+.2f}% مركّب={100*(eq-1):+5.0f}% هبوط={100*dd:4.1f}%')
+def run(tf, years):
+    t,o,h,l,c=load(f'{S}/gold10/xau10_{tf}.csv'); n=len(c)
+    bars_per_day={'1d':1,'4h':6,'1h':24}[tf]
+    s200=sma(c,200*bars_per_day if tf!='1d' else 200); s5=sma(c,5*bars_per_day if tf!='1d' else 5)
+    s200b=sma(c,200); s5b=sma(c,5)
+    a=atr(h,l,c)
+    def trend(N, X, ma, short=False, name=''):
+        tr=[]; busy=-1
+        for i in range(max(N,201),n-1):
+            if i<=busy or ma[i] is None: continue
+            d=0
+            if c[i]>max(h[i-N:i]) and c[i]>ma[i]: d=1
+            elif short and c[i]<min(l[i-N:i]) and c[i]<ma[i]: d=-1
+            if not d: continue
+            e=o[i+1]; j=i+1; x=c[-1]
+            while j<n:
+                if d>0 and c[j]<min(l[j-X:j]): x=c[j]; break
+                if d<0 and c[j]>max(h[j-X:j]): x=c[j]; break
+                j+=1
+            busy=j; tr.append((i+1,j,100*d*(x/e-1)))
+        report(f'{tf} ترند {N}/{X} {name}', tr, t, years)
+    def bounce(th, ma, ma5, maxd, short=False, name=''):
+        r2=rsi(c,2); tr=[]; busy=-1
+        for i in range(201,n-1):
+            if i<=busy or ma[i] is None or r2[i] is None: continue
+            d=0
+            if c[i]>ma[i] and r2[i]<th: d=1
+            elif short and c[i]<ma[i] and r2[i]>100-th: d=-1
+            if not d: continue
+            e=o[i+1]; stop=e-d*3*a[i]; j=i+1; x=c[-1]
+            while j<n:
+                if (d>0 and l[j]<=stop) or (d<0 and h[j]>=stop): x=stop; break
+                if (d>0 and c[j]>ma5[j]) or (d<0 and c[j]<ma5[j]) or j-i>=maxd: x=c[j]; break
+                j+=1
+            busy=j; tr.append((i+1,j,100*d*(x/e-1)))
+        report(f'{tf} ارتداد RSI2<{th} {name}', tr, t, years)
+    if tf=='1d':
+        trend(55,20,s200b, name='(الأصلي)')
+        trend(20,10,s200b)
+        trend(55,20,s200b,short=True,name='+بيع')
+        bounce(10,s200b,s5b,10,name='(الأصلي)')
+        bounce(20,s200b,s5b,10)
+        bounce(30,s200b,s5b,10)
+        bounce(10,s200b,s5b,10,short=True,name='+بيع')
+    else:
+        # نفس القواعد بأطوال يومية (200 يوم) على فريم أصغر
+        trend(55*bars_per_day,20*bars_per_day,s200,name='(أطوال يومية)')
+        trend(55,20,s200b,name='(أطوال الفريم، فوق MA200 شمعة)')
+        bounce(10,s200,s5,10*bars_per_day,name='(MA200 يوم)')
+        bounce(10,s200b,s5b,10,name='(MA200 شمعة)')
+years={'2017-20':3.7,'2021-26':5.8}
+run('1d',years); run('4h',years); run('1h',years)
