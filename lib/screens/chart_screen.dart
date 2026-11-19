@@ -8,7 +8,6 @@ import '../analysis/forecast.dart';
 import '../analysis/health.dart';
 import '../analysis/trade_check.dart';
 import '../analysis/lt_indicator.dart';
-import '../analysis/pq_indicator.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -381,7 +380,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'PQ',
           emoji: '🔷',
-          desc: 'كل إشارات النجوم + SM + Alka في مؤشر واحد: القوية واضحة (ذهب ~57-61%) والضعيفة باهتة',
+          desc: 'نفس إشارات النجوم + SM + Alka مجتمعة في مؤشر واحد — أخضر للشراء وأحمر للبيع',
           health: null,
           on: layers.pq,
           toggle: () => layers.pq = !layers.pq
@@ -585,12 +584,9 @@ class _ChartScreenState extends State<ChartScreen> {
                             : x.name == 'LT'
                             ? _ltStatus(st)
                             : x.name == 'PQ'
-                            ? (st.pqR == null
+                            ? (st.pqR == null || st.pqR!.closed == 0
                                 ? 'جاري الحساب…'
-                                : switch (pqStrongStats(st.pqR!)) {
-                                    (final w, final n) when n > 0 => 'القوية الآن ${(100 * w / n).toStringAsFixed(0)}% من $n',
-                                    _ => 'لا صفقات قوية بعد',
-                                  })
+                                : 'الآن ${(st.pqR!.winRate * 100).toStringAsFixed(0)}% من ${st.pqR!.closed} صفقة')
                             : h == null
                             ? 'جاري الحساب…'
                             : h.trades < 20
@@ -605,7 +601,7 @@ class _ChartScreenState extends State<ChartScreen> {
                   if (x.name == 'PQ')
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
-                      child: Text('المدى الطويل (ذهب): 57-61% • إدارة ~81%',
+                      child: Text('المدى الطويل (ذهب): 53-58% • إدارة ~78-81%',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),

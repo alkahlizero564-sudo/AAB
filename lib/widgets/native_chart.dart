@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import '../analysis/sr_levels.dart';
-import '../analysis/pq_indicator.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/st_indicator.dart';
@@ -1184,21 +1183,19 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
-    // ── PQ: كل إشارات النجوم و SM و Alka — القوية واضحة، والضعيفة باهتة
+    // ── PQ: نفس إشارات النجوم و SM و Alka مجتمعة في مؤشر واحد (أخضر شراء، أحمر بيع)
     if (L.pq && pqr != null) {
       final r = pqr!;
       final smKeys = {for (final x in smr?.signals ?? const <PastSignal>[]) (x.i, x.dir)};
-      bool weak(PastSignal sg) => r.extra.contains(sg.i);
+      final stK = starr == null ? const <(int, int)>{} : starr!.stars.keys.toSet();
+      bool inStars(PastSignal sg) => stK.contains((sg.i, sg.dir));
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'PQ', null,
           tagPer: [
             for (final sg in r.signals)
-              weak(sg)
-                  ? 'ضعيفة'
-                  : 'PQ${starr != null ? ' ${_starTag(starr!, sg.i, sg.dir, false)}' : ''}${smKeys.contains((sg.i, sg.dir)) ? ' SM' : ''}'.trim()
+              'PQ${starr != null && inStars(sg) ? ' ${_starTag(starr!, sg.i, sg.dir, false)}' : ''}${smKeys.contains((sg.i, sg.dir)) ? ' SM' : ''}'.trim()
           ],
-          pendTagPer: [for (final ps in r.pendingSrc) ps == 'ضعيفة' ? 'PQ ضعيفة' : 'PQ'],
-          starsPer: starr == null ? null : [for (final sg in r.signals) weak(sg) ? -1 : starr!.of(sg.i, sg.dir)],
-          weakPer: [for (final sg in r.signals) weak(sg)]);
+          pendTagPer: [for (final _ in r.pending) 'PQ'],
+          starsPer: starr == null ? null : [for (final sg in r.signals) inStars(sg) ? starr!.of(sg.i, sg.dir) : -1]);
     }
     // ── LT بعيد المدى: يُرسم على الفريم اليومي فقط
     if (L.lt && ltr != null && tf == '1d') {
@@ -1837,9 +1834,9 @@ class _Painter extends CustomPainter {
       part('DM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
           a.winRate >= 0.5 ? AppColors.gold : _down);
     }
-    if (L.pq && pqr != null) {
-      final (pw, pn) = pqStrongStats(pqr!);
-      if (pn > 0) part('PQ ${(100 * pw / pn).toStringAsFixed(0)}% ($pw/$pn)', pw / pn >= 0.5 ? _up : _down);
+    if (L.pq && pqr != null && pqr!.closed > 0) {
+      final a = pqr!;
+      part('PQ ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})', a.winRate >= 0.5 ? _up : _down);
     }
     if (L.lt && ltr != null && tf == '1d' && ltr!.closed > 0) {
       final a = ltr!;

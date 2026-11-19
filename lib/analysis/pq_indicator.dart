@@ -2,13 +2,10 @@ import 'all_indicator.dart';
 import 'forecast.dart';
 import 'star_indicator.dart';
 
-/// مؤشر PQ: النجوم + SM + Alka في مؤشر واحد.
-/// يعرض كل إشارات الثلاثة (إشارات Mp كلها — وفيها Alka وAAB و0.1 — وإشارات Alka الإضافية)،
-/// ويميّز القوية من الضعيفة:
-///  - قوية: نجمة فما فوق، أو يوافقها شريط SM.
-///    الذهب بهدف 1R: 57.3% / 57.3% (15m)، 60.6% / 56.6% (1h)، 57.9% / 60.7% (4h) — 2016-2020 / 2021-2026.
-///  - ضعيفة: بلا نجوم وخارج SM، وإضافات Alka خارج Mp (~51-54%). تُرسم باهتة.
-/// أرقام الإشارات الضعيفة في [AllResult.extra].
+/// مؤشر PQ: النجوم + SM + Alka في مؤشر واحد — نفس إشارات الثلاثة مجتمعة
+/// (إشارات Mp كلها — وفيها Alka وAAB و0.1 — وإشارات Alka الإضافية خارج Mp).
+/// الذهب بهدف 1R (2016-2020 / 2021-2026): 54.5% / 53.2% (15m)، 54.0% / 54.7% (1h)، 52.8% / 58.1% (4h).
+/// الإشارات بلا نجوم وخارج SM وإضافات Alka محفوظة في [AllResult.extra] (للاختبار).
 AllResult buildPq(AllResult mp, StarResult st, AllResult sm, {List<PastSignal> alka = const []}) {
   final inSm = {for (final s in sm.signals) (s.i, s.dir)};
   final pSm = {for (final p in sm.pending) (p.i, p.dir)};
