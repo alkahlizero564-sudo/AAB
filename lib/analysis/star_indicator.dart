@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import '../models.dart';
 import 'all_indicator.dart';
 import 'forecast.dart';
@@ -13,10 +14,12 @@ class StarResult {
   final AllResult res; // الإشارات التي نجومها ≥ الحد الأدنى
   final Map<(int, int), int> stars; // (شمعة الإشارة، الاتجاه) → عدد النجوم
   final Set<(int, int)> hot; // ضغط 🔥: نجمتان أو 3 في سوق مضغوط (ATR5/ATR50 < 0.6)
-  const StarResult(this.res, this.stars, [this.hot = const {}]);
+  final Set<(int, int)> held; // قاع أعلى فوق الدعم (للشراء) / قمة أدنى تحت المقاومة (للبيع) دون لمسه
+  const StarResult(this.res, this.stars, [this.hot = const {}, this.held = const {}]);
   static const empty = StarResult(AllResult([], [], [], [], 'نجوم'), {});
   int of(int i, int dir) => stars[(i, dir)] ?? 0;
   bool isHot(int i, int dir) => hot.contains((i, dir));
+  bool isHeld(int i, int dir) => held.contains((i, dir));
 }
 
 /// حد أعلى 10% من درجات ثقة ST (من بيانات التدريب نفسها)
@@ -62,7 +65,51 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
     for (final e in stars.entries)
       if (e.value >= 2 && squeezed(e.key.$1)) e.key
   };
+  final held = <(int, int)>{
+    for (final key in stars.keys)
+      if (heldAboveLevel(c, at, key.$1, key.$2)) key
+  };
   final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
   final keep = [for (var q = 0; q < pend.length; q++) if (!openDirs.contains(pend[q].dir)) q];
-  return StarResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'نجوم'), stars, hot);
+  return StarResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'نجوم'), stars, hot, held);
+}
+
+/// «قاع أعلى» (للشراء): أدنى سعر في آخر 3 شموع فوق أقرب دعم تحته بمسافة 0.3-1 ATR، أي أن السعر
+/// ارتد قبل أن يلمس الدعم. «قمة أدنى» للبيع بالعكس تحت المقاومة. الدعم/المقاومة من قمم وقيعان
+/// مؤكدة (3 شموع يميناً ويساراً) في آخر 300 شمعة قبل الإشارة، مجمّعة بنصف ATR.
+/// ذهب وبيتكوين 15m/1h/4h بهدف 1R: 58.8% (2016-2020) و59.8% (2021-2026) مقابل 55.0% و55.7% للكل؛
+/// ومع 2-3 نجوم 64.0% و65.0%.
+bool heldAboveLevel(List<Candle> c, List<double> at, int i, int d) {
+  if (i < 20 || i >= c.length || at[i].isNaN || !(at[i] > 0)) return false;
+  final a = at[i], px = c[i].close;
+  final pts = <double>[];
+  for (var j = math.max(3, i - 300); j <= i - 3; j++) {
+    var isH = true, isL = true;
+    for (var q = j - 3; q <= j + 3; q++) {
+      if (q == j) continue;
+      if (c[q].high >= c[j].high) isH = false;
+      if (c[q].low <= c[j].low) isL = false;
+    }
+    if (isH) pts.add(c[j].high);
+    if (isL) pts.add(c[j].low);
+  }
+  if (pts.isEmpty) return false;
+  pts.sort();
+  var ext = d > 0 ? c[i].low : c[i].high;
+  for (var q = i - 2; q <= i; q++) {
+    ext = d > 0 ? math.min(ext, c[q].low) : math.max(ext, c[q].high);
+  }
+  var best = double.infinity;
+  var g0 = 0;
+  while (g0 < pts.length) {
+    var g1 = g0;
+    while (g1 + 1 < pts.length && pts[g1 + 1] - pts[g0] <= 0.5 * a) {
+      g1++;
+    }
+    final lo = pts[g0], hi = pts[g1];
+    if (d > 0 && hi <= px) best = math.min(best, math.max(0, (ext - hi) / a));
+    if (d < 0 && lo >= px) best = math.min(best, math.max(0, (lo - ext) / a));
+    g0 = g1 + 1;
+  }
+  return best > 0.3 && best <= 1;
 }

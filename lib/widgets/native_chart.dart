@@ -362,6 +362,13 @@ class _Painter extends CustomPainter {
 
   static const _up = AppColors.up, _down = AppColors.down;
 
+  /// علامات النجوم: «ضغط» و«قاع أعلى»/«قمة أدنى» و«+» للإشارة الإضافية
+  String _starTag(StarResult r, int i, int d, bool extra) => [
+        if (r.isHot(i, d)) 'ضغط',
+        if (r.isHeld(i, d)) d > 0 ? 'قاع أعلى' : 'قمة أدنى',
+        if (extra) '+',
+      ].join(' ');
+
   void _txt(Canvas cv, String t, Offset o,
       {Color color = AppColors.muted, double size = 10, Color? bg, bool bold = false,
       bool rtl = false, bool endAt = false}) {
@@ -964,8 +971,8 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'نجوم', AppColors.gold,
           sources: r.sources,
           pendingSrc: r.pendingSrc,
-          tagPer: [for (final sg in r.signals) starr!.isHot(sg.i, sg.dir) ? 'ضغط' : (mr?.extra.contains(sg.i) ?? false) ? '+' : ''],
-          pendTagPer: [for (final p in r.pending) '${starr!.isHot(p.i, p.dir) ? 'ضغط ' : ''}نجوم ${starr!.of(p.i, p.dir)}'],
+          tagPer: [for (final sg in r.signals) _starTag(starr!, sg.i, sg.dir, (mr?.extra.contains(sg.i) ?? false))],
+          pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
     if (L.zero && zr != null) {
