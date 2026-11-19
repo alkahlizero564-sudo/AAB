@@ -1101,7 +1101,7 @@ class _Painter extends CustomPainter {
       cy = cross!.dy.clamp(0.0, fullH).toDouble();
     }
     _header(canvas, cIdx ?? n - 1, w);
-    if (f != null) _legend(canvas);
+    if (f != null) _legend(canvas, w);
 
     // ── المؤشر المتقاطع
     if (cIdx != null) {
@@ -1596,7 +1596,9 @@ class _Painter extends CustomPainter {
   /// (وتتجنب لافتة السعر الحالي).
   void _paintAxisTags(Canvas cv, double w, double h, double lastY) {
     if (_axis.isEmpty) return;
-    final tags = [..._axis]..sort((a, b) => a.$1.compareTo(b.$1));
+    // نفس المستوى من أكثر من مؤشر (مثل النجوم و SM لنفس الصفقة) يُرسم مرة واحدة
+    final seen = <String>{};
+    final tags = [for (final t in _axis) if (seen.add('${t.$3}|${t.$2}')) t]..sort((a, b) => a.$1.compareTo(b.$1));
     const gap = 16.0;
     final ys = <double>[];
     for (final t in tags) {
@@ -1638,7 +1640,7 @@ class _Painter extends CustomPainter {
   }
 
   /// سطر واحد مختصر تحت شريط الأسعار: دقة المؤشرين + اتجاه AAB Algo.
-  void _legend(Canvas cv) {
+  void _legend(Canvas cv, double w) {
     final fc = f!;
     final spans = <TextSpan>[];
     void part(String t, Color col) {
@@ -1713,12 +1715,12 @@ class _Painter extends CustomPainter {
           style: TextStyle(fontFamily: chartFont, fontSize: 10),
           children: spans),
       textDirection: TextDirection.rtl,
-      maxLines: 1,
+      maxLines: 2,
       ellipsis: '…',
-    )..layout(maxWidth: 420);
+    )..layout(maxWidth: math.max(120.0, w - 16));
     cv.drawRRect(
-        RRect.fromRectAndRadius(Rect.fromLTWH(4, 21, tp.width + 8, tp.height + 4), const Radius.circular(4)),
-        Paint()..color = AppColors.surface.withOpacity(0.9));
+        RRect.fromRectAndRadius(Rect.fromLTWH(4, 21, tp.width + 8, tp.height + 4), const Radius.circular(6)),
+        Paint()..color = AppColors.surface.withOpacity(0.92));
     tp.paint(cv, const Offset(8, 23));
   }
 

@@ -692,88 +692,159 @@ class _ChartScreenState extends State<ChartScreen> {
       context: context,
       backgroundColor: AppColors.surface,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => StatefulBuilder(builder: (ctx, setSheet) {
         void upd(VoidCallback f) {
           setState(f);
           setSheet(() {});
         }
 
-        Widget sw(String t, String sub, bool v, void Function(bool) on) => SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(t, style: const TextStyle(color: AppColors.text, fontSize: 13)),
-              subtitle: sub.isEmpty ? null : Text(sub, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
-              value: v,
-              onChanged: (x) => upd(() => on(x)),
+        Widget head(String t, IconData i) => Padding(
+              padding: const EdgeInsets.only(top: 14, bottom: 8),
+              child: Row(children: [
+                Icon(i, size: 16, color: AppColors.gold),
+                const SizedBox(width: 6),
+                Text(t, style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w800, fontSize: 13.5)),
+              ]),
             );
-        Widget head(String t) => Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 4),
-              child:
-                  Text(t, style: const TextStyle(color: AppColors.accent, fontWeight: FontWeight.w800, fontSize: 13)),
+        // بلاطة تشغيل/إطفاء: أيقونة + اسم + وصف قصير
+        Widget tile(IconData icon, String name, String sub, bool on, VoidCallback toggle) => Material(
+              color: on ? AppColors.gold.withOpacity(0.12) : AppColors.card,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: on ? AppColors.gold : AppColors.border, width: on ? 1.3 : 0.8),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => upd(toggle),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  child: Row(children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: on ? AppColors.gold : AppColors.surface,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(icon, size: 17, color: on ? AppColors.onAccent : AppColors.muted),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                        Text(name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: on ? AppColors.gold : AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w800)),
+                        if (sub.isNotEmpty)
+                          Text(sub,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+                      ]),
+                    ),
+                  ]),
+                ),
+              ),
             );
+        Widget grid(List<Widget> c) => GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 3.0,
+              children: c,
+            );
+        final st = context.read<AppState>();
+        final onCount = _indicators(st).where((x) => x.on).length;
         return DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.75,
+          initialChildSize: 0.78,
           maxChildSize: 0.95,
           builder: (_, ctl) => ListView(
             controller: ctl,
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
             children: [
-              const Text('🎛️ طبقات الشارت',
-                  style: TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.bold)),
-              head('شكل الشارت'),
+              Center(
+                child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+              ),
+              const SizedBox(height: 10),
+              const Row(children: [
+                Icon(Icons.layers_rounded, size: 20, color: AppColors.gold),
+                SizedBox(width: 8),
+                Text('طبقات الشارت', style: TextStyle(color: AppColors.text, fontSize: 17, fontWeight: FontWeight.w800)),
+              ]),
+              // المؤشرات لها لوحتها الخاصة
+              const SizedBox(height: 12),
+              Material(
+                color: AppColors.card,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.gold, width: 1)),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    Navigator.of(ctx).pop();
+                    _showIndicators();
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(children: [
+                      const Icon(Icons.auto_graph_rounded, color: AppColors.gold, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Text('المؤشرات والتوصيات',
+                              style: TextStyle(color: AppColors.text, fontSize: 13.5, fontWeight: FontWeight.w800)),
+                          Text('النجوم، LT، SM، ST، KM، ALL، Alka… — المشغّل الآن: $onCount',
+                              style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
+                        ]),
+                      ),
+                      const Icon(Icons.chevron_left_rounded, color: AppColors.gold),
+                    ]),
+                  ),
+                ),
+              ),
+              head('شكل الشارت', Icons.candlestick_chart_rounded),
               Wrap(spacing: 6, runSpacing: 6, children: [
                 _seg(const [('candle', 'شموع'), ('ha', 'Heikin Ashi'), ('line', 'خطي')], layers.type,
                     (v) => upd(() => layers.type = v)),
                 _seg(const [('rsi', 'RSI'), ('macd', 'MACD'), ('none', 'بدون')], layers.sub,
                     (v) => upd(() => layers.sub = v)),
               ]),
-              sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
-              head('خيارات الصفقات (مطفأة افتراضياً)'),
-              sw('إشارات إضافية بعد TP1',
-                  'إشارة "+" في نفس اتجاه الصفقة المفتوحة بعد أن تحقق TP1 (الأولى بلا خطر) — صفقات أكثر ~17%',
-                  context.read<AppState>().settings.extraSameDir, (x) {
-                context.read<AppState>().setEngineOptions(extraSameDir: x);
-              }),
-              head('التوصيات والمؤشرات'),
-              sw('DM 🥇', 'خاص بالذهب: إشارات Mp مع الترند اليومي في السوق الهادئ — 59% بهدف 1R على ذهب 2021-2026', layers.dm, (x) {
-                layers.dm = x;
-              }),
-              sw('نجوم ⭐', 'كل إشارات Mp ومعها نجوم الثقة: درجة ثقة ST + هدوء السوق — 3 نجوم ≈ 64% بهدف 1R. «ضغط» = نجمتان أو 3 في سوق مضغوط ≈ 68-70%. «قاع أعلى/قمة أدنى» = ارتد قبل الدعم/المقاومة ≈ 59-60%.',
-                  layers.star, (x) {
-                layers.star = x;
-              }),
-              sw(
-                  'ST 🧠',
-                  'نموذج تعلّم من 10 سنوات: إشارات Mp عالية الثقة فقط (أعلى 30%) مع درجة الثقة — بدقة KM وضعف صفقاته',
-                  layers.st, (x) {
-                layers.st = x;
-              }),
-              sw('KM 💎', 'إشارات SM في السوق الهادئ فقط — الأدق (62%) لكن صفقات قليلة', layers.km, (x) {
-                layers.km = x;
-              }),
-              sw('SM', 'إشارات Mp التي يوافقها شريط المتوسطات (الأدق، صفقات أقل) + رسم الشريط', layers.sm, (x) {
-                layers.sm = x;
-              }),
-              sw('Mp 👑', 'دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى: أدق وأكثر صفقات', layers.mp, (x) {
-                layers.mp = x;
-              }),
-              sw('ALL', 'دمج AAB و Alka + فلتر الشمعة الصغيرة — الأدق (≈81% بالهدف 0.35R)', layers.all,
-                  (x) => layers.all = x),
-              sw('0.1', 'مصيدة سيولة + شمعة رفض — أزرق شراء، أصفر بيع', layers.zero, (x) => layers.zero = x),
-              sw('Alka', 'شموع الانعكاس عند الدعم/المقاومة و Volume Profile', layers.alka, (x) => layers.alka = x),
-              sw('توصيات AAB', 'أسهم الشراء/البيع ونتيجتها', layers.sigs, (x) => layers.sigs = x),
-              sw('AAB Algo', 'تلوين الشموع حسب قوة الاتجاه + خط الاتجاه', layers.algo, (x) => layers.algo = x),
-              sw('توقع الشمعة القادمة', 'يظهر فقط عندما يدعم القرار', layers.fc, (x) => layers.fc = x),
-              sw('أنماط الشموع', 'أسماء نماذج الشموع على الشارت', layers.pats, (x) => layers.pats = x),
-              head('خطوط ومستويات'),
-              sw('EMA 20/50/200', '', layers.ema, (x) => layers.ema = x),
-              sw('مناطق OB/FVG', 'Order Blocks والفجوات السعرية', layers.zones, (x) => layers.zones = x),
-              sw('مستويات اليوم والجلسات', 'PDH/PDL، آسيا، لندن...', layers.levels, (x) => layers.levels = x),
-              sw('Volume Profile', '', layers.vp, (x) => layers.vp = x),
-              sw('VWAP', '', layers.vwap, (x) => layers.vwap = x),
-              sw('Fibonacci', '', layers.fib, (x) => layers.fib = x),
-              sw('Chandelier Exit', '', layers.ce, (x) => layers.ce = x),
+              const SizedBox(height: 8),
+              grid([
+                tile(Icons.bar_chart_rounded, 'الحجم', 'أعمدة أسفل الشموع', layers.vol, () => layers.vol = !layers.vol),
+                tile(Icons.palette_outlined, 'AAB Algo', 'تلوين الشموع + خط الاتجاه', layers.algo,
+                    () => layers.algo = !layers.algo),
+                tile(Icons.auto_awesome_outlined, 'توقع الشمعة', 'الشمعة القادمة', layers.fc, () => layers.fc = !layers.fc),
+                tile(Icons.text_fields_rounded, 'أنماط الشموع', 'أسماء النماذج', layers.pats,
+                    () => layers.pats = !layers.pats),
+              ]),
+              head('خطوط ومستويات', Icons.straighten_rounded),
+              grid([
+                tile(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', 'العليا والسفلى والقريبة', layers.sr,
+                    () => layers.sr = !layers.sr),
+                tile(Icons.show_chart_rounded, 'EMA 20/50/200', 'المتوسطات', layers.ema, () => layers.ema = !layers.ema),
+                tile(Icons.crop_square_rounded, 'OB / FVG', 'مناطق وفجوات', layers.zones, () => layers.zones = !layers.zones),
+                tile(Icons.schedule_rounded, 'مستويات اليوم', 'PDH/PDL والجلسات', layers.levels,
+                    () => layers.levels = !layers.levels),
+                tile(Icons.stacked_bar_chart_rounded, 'Volume Profile', 'مناطق الحجم', layers.vp, () => layers.vp = !layers.vp),
+                tile(Icons.timeline_rounded, 'VWAP', 'متوسط مرجّح بالحجم', layers.vwap, () => layers.vwap = !layers.vwap),
+                tile(Icons.percent_rounded, 'Fibonacci', 'نسب التصحيح', layers.fib, () => layers.fib = !layers.fib),
+                tile(Icons.exit_to_app_rounded, 'Chandelier Exit', 'وقف متحرك', layers.ce, () => layers.ce = !layers.ce),
+              ]),
+              head('خيارات الصفقات', Icons.tune_rounded),
+              grid([
+                tile(Icons.add_circle_outline_rounded, 'إشارات بعد TP1', 'نفس الاتجاه «+» — مطفأ افتراضياً',
+                    st.settings.extraSameDir, () {
+                  st.setEngineOptions(extraSameDir: !st.settings.extraSameDir);
+                }),
+              ]),
             ],
           ),
         );
@@ -781,7 +852,6 @@ class _ChartScreenState extends State<ChartScreen> {
     );
   }
 
-  @override
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
     final s = st.signal;
@@ -879,7 +949,7 @@ class _ChartScreenState extends State<ChartScreen> {
           // لوحة الاتجاهات (مثل DTC) عند تشغيل SM
           if ((eff.sm || eff.km || eff.dm) && st.board.isNotEmpty)
             Positioned(
-              top: 44,
+              top: 60,
               left: 6,
               child: IgnorePointer(child: _TrendBoard(board: st.board)),
             ),
@@ -892,30 +962,98 @@ class _ChartScreenState extends State<ChartScreen> {
         else if (!full)
           _forecastBar(st.forecast!, st.symbol),
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
-        if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
-        if (eff.star && st.starR != null) _starBar(st),
-        if (eff.lt) _ltBar(st),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
         if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
         if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
-        if (_familyBar(st, eff) case final w?) w,
-        for (final ot in _openTrades(st, eff)) _checkButton(st, ot.$1, ot.$2),
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
-        if (eff.zero && st.zero != null && st.zero!.decision.state != 0)
-          _decisionBar(st.zero!.decision, st.symbol, tag: '0.1'),
         if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
-        if (eff.alka && st.alka != null && st.alka!.decision.state != 0)
-          _decisionBar(st.alka!.decision, st.symbol, tag: 'Alka'),
-        if (hideAab && layers.sigs)
-          _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
-        else if (eff.sigs ||
-            (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st && !eff.star && !eff.lt))
-          _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
+        if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk'),
+        ..._bars(st, eff, showAab: !(hideAab && layers.sigs)),
+        for (final ot in _openTrades(st, eff)) _checkButton(st, ot.$1, ot.$2),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
     ]);
+  }
+
+  /// أشرطة القرار مجمّعة: الصفقة نفسها من أكثر من مؤشر = شريط واحد يذكرهم كلهم،
+  /// والمؤشرات المنتظرة كلها في سطر واحد صغير — حتى يبقى الشارت كبيراً.
+  List<Widget> _bars(AppState st, ChartLayers eff, {bool showAab = true}) {
+    final e = <(String, Decision, String?)>[];
+    if (eff.star && st.starR != null) {
+      final r = st.starR!;
+      final d = r.res.decision;
+      var n = 0;
+      final oi = r.res.signals.lastIndexWhere((x) => x.exitI < 0);
+      if (d.state == 1 && oi >= 0) n = r.of(r.res.signals[oi].i, r.res.signals[oi].dir);
+      if (d.state == 2 && r.res.pending.isNotEmpty) n = r.of(r.res.pending.first.i, r.res.pending.first.dir);
+      e.add((d.state == 0 ? 'نجوم' : 'نجوم $n/3', d, null));
+    }
+    if (eff.lt) e.add(_ltEntry(st));
+    final fam = <(String, AllResult)>[
+      if (eff.km && st.kmR != null) ('KM', st.kmR!),
+      if (eff.dm && st.dmR != null) ('DM', st.dmR!),
+      if (eff.st && st.stR != null) ('ST', st.stR!.res),
+      if (eff.sm && st.smR != null) ('SM', st.smR!),
+      if (eff.mp && st.mpR != null) ('Mp', st.mpR!),
+    ];
+    for (final (t, r) in fam) {
+      e.add((t, r.decision, null));
+    }
+    if (eff.all && st.allR != null) e.add(('ALL', st.allR!.decision, null));
+    if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
+    if (eff.alka && st.alka != null) e.add(('Alka', st.alka!.decision, null));
+    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt;
+    if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
+
+    // تجميع الصفقات المتطابقة
+    final groups = <String, (List<String>, Decision)>{};
+    final waiting = <(String, String?)>[];
+    for (final (t, d, w) in e) {
+      if (d.state == 0) {
+        waiting.add((t, w));
+        continue;
+      }
+      final k = '${d.state}|${d.dir}|${st.symbol.fmt(d.entry)}';
+      final g = groups[k];
+      if (g == null) {
+        groups[k] = ([t], d);
+      } else {
+        g.$1.add(t);
+      }
+    }
+    return [
+      for (final g in groups.values) _decisionBar(g.$2, st.symbol, tag: g.$1.join(' · ')),
+      if (waiting.isNotEmpty) _waitLine(waiting),
+    ];
+  }
+
+  /// سطر واحد صغير للمؤشرات التي لا صفقة لها الآن.
+  Widget _waitLine(List<(String, String?)> w) {
+    final spans = <InlineSpan>[];
+    for (final (i, (t, why)) in w.indexed) {
+      if (i > 0) spans.add(const TextSpan(text: '  •  ', style: TextStyle(color: AppColors.border)));
+      spans.add(TextSpan(text: t, style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w800)));
+      if (why != null) spans.add(TextSpan(text: ' ($why)', style: const TextStyle(color: AppColors.muted)));
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.hourglass_empty_rounded, size: 13, color: AppColors.muted),
+        const SizedBox(width: 5),
+        const Text('انتظار: ', style: TextStyle(color: AppColors.muted, fontSize: 11.5, fontWeight: FontWeight.w700)),
+        Expanded(
+          child: Text.rich(TextSpan(children: spans),
+              maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11.5)),
+        ),
+      ]),
+    );
   }
 
   /// أول صفقة مفتوحة في المؤشرات المشغّلة (للزر "افحص صفقتي").
@@ -1090,58 +1228,18 @@ class _ChartScreenState extends State<ChartScreen> {
     return ltUptrend(d) ? 'لا صفقة — السوق صاعد، انتظر' : 'لا صفقة — تحت متوسط 200 (لا شراء)';
   }
 
-  /// قرار مؤشر LT (من الشموع اليومية في أي فريم): صفقة مفتوحة أو حالة السوق.
-  Widget _ltBar(AppState st) {
+  /// LT كمدخل لأشرطة القرار: (الاسم، القرار، سبب الانتظار).
+  (String, Decision, String?) _ltEntry(AppState st) {
+    const none = Decision(0, 0, double.nan, double.nan, double.nan, double.nan, '', '');
     final r = st.ltR;
-    if (r == null) {
-      return _decisionBar(
-          const Decision(0, 0, double.nan, double.nan, double.nan, double.nan, '', ''),
-          st.symbol,
-          tag: 'LT',
-          waitText: _ltStatus(st));
-    }
+    if (r == null) return ('LT', none, _ltStatus(st));
     final d = r.decision;
     if (d.state != 0) {
       final oi = r.signals.lastIndexWhere((x) => x.exitI < 0);
-      final kind = oi >= 0 ? r.sources[oi] : '';
-      return _decisionBar(d, st.symbol, tag: 'LT $kind');
+      return ('LT ${oi >= 0 ? r.sources[oi] : ''}'.trim(), d, null);
     }
     final up = ltUptrend(st.tf == '1d' ? st.candles : (st.daily ?? const []));
-    return _decisionBar(const Decision(0, 0, double.nan, double.nan, double.nan, double.nan, '', ''), st.symbol,
-        tag: 'LT',
-        waitText: up ? 'السوق فوق متوسط 200 يوم — انتظر إشارة شراء' : 'تحت متوسط 200 يوم — لا شراء (حماية)');
-  }
-
-  /// قرار مؤشر النجوم مع عدد نجوم الإشارة الحالية.
-  Widget _starBar(AppState st) {
-    final r = st.starR!;
-    final d = r.res.decision;
-    var n = 0;
-    final oi = r.res.signals.lastIndexWhere((x) => x.exitI < 0);
-    if (d.state == 1 && oi >= 0) n = r.of(r.res.signals[oi].i, r.res.signals[oi].dir);
-    if (d.state == 2 && r.res.pending.isNotEmpty) n = r.of(r.res.pending.first.i, r.res.pending.first.dir);
-    return _decisionBar(d, st.symbol, tag: d.state == 0 ? 'نجوم' : 'نجوم $n/3');
-  }
-
-  /// بطاقة قرار واحدة لـ Mp/SM/KM/DM المشغّلة: قرار الأدق الذي عنده صفقة، والاسم يذكر كل المتفقين
-  Widget? _familyBar(AppState st, ChartLayers eff) {
-    final fam = <(String, AllResult)>[
-      if (eff.km && st.kmR != null) ('KM', st.kmR!),
-      if (eff.dm && st.dmR != null) ('DM', st.dmR!),
-      if (eff.st && st.stR != null) ('ST', st.stR!.res),
-      if (eff.sm && st.smR != null) ('SM', st.smR!),
-      if (eff.mp && st.mpR != null) ('Mp', st.mpR!),
-    ];
-    if (fam.isEmpty) return null;
-    final active = fam.where((x) => x.$2.decision.state != 0).toList();
-    final main = active.isNotEmpty ? active.first : fam.first;
-    final d = main.$2.decision;
-    const order = ['Mp', 'SM', 'ST', 'DM', 'KM'];
-    final same = [
-      for (final (t, r) in fam)
-        if (r.decision.state == d.state && r.decision.dir == d.dir && (d.state == 0 || r.decision.entry == d.entry)) t
-    ]..sort((x, y) => order.indexOf(x).compareTo(order.indexOf(y)));
-    return _decisionBar(d, st.symbol, tag: same.join('·'));
+    return ('LT', none, up ? 'فوق متوسط 200 يوم — انتظر شراء' : 'تحت متوسط 200 يوم — لا شراء');
   }
 
   Widget _forecastBar(Forecast f, MarketSymbol sym) {
