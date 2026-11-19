@@ -1,0 +1,273 @@
+import 'dart:io';
+import 'package:aab/analysis/king_indicator.dart';
+import 'package:aab/analysis/king_model.dart';
+import 'package:aab/analysis/pq_indicator.dart';
+import 'dart:math' as math;
+import 'package:aab/analysis/alka.dart';
+import 'package:aab/analysis/star_indicator.dart';
+import 'package:aab/analysis/st_indicator.dart';
+import 'package:aab/analysis/sm_indicator.dart';
+import 'package:aab/analysis/patterns.dart';
+import 'package:aab/analysis/zero_one.dart';
+import 'package:aab/analysis/all_indicator.dart';
+import 'package:aab/analysis/indicators.dart';
+import 'package:aab/analysis/forecast.dart';
+import 'package:aab/data/symbols.dart';
+import 'package:aab/models.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+const sp = '/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad';
+List<Candle> load(String path) {
+  final out = <Candle>[];
+  for (final l in File(path).readAsLinesSync().skip(1)) {
+    final p = l.split(',');
+    if (p.length < 6) continue;
+    final v = [1, 2, 3, 4, 5].map((i) => double.tryParse(p[i]) ?? double.nan).toList();
+    var ts = p[0].trim();
+    if (!ts.contains('T')) ts = ts.contains(':') ? '${ts.replaceFirst(' ', 'T')}Z' : '${ts}T00:00:00Z';
+    final t = DateTime.tryParse(ts);
+    if (t == null || v.take(4).any((x) => x.isNaN)) continue;
+    out.add(Candle(t.toUtc(), v[0], v[1], v[2], v[3], v[4].isNaN ? 0 : v[4]));
+  }
+  return out;
+}
+String gdf(String r) => Directory('$sp/gdf/$r').listSync().whereType<File>().firstWhere((f) => f.path.endsWith('.csv')).path;
+
+class T { final int i, exitI, dir, src; final double r; final bool win; T(this.i, this.exitI, this.dir, this.src, this.r, this.win); }
+
+List<T> trades(List<PastSignal> l, int src) => [
+      for (final s in l)
+        if (s.result != 0 && s.exitI >= 0) T(s.i, s.exitI, s.dir, src, s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1, s.result > 0)
+    ];
+
+/// صفقة واحدة في كل مرة (بترتيب ظهور الإشارة)
+List<T> oneAtATime(List<T> l) {
+  final s = [...l]..sort((a, b) => a.i != b.i ? a.i.compareTo(b.i) : a.src.compareTo(b.src));
+  final out = <T>[];
+  var busy = -1;
+  for (final t in s) {
+    if (t.i <= busy) continue;
+    out.add(t);
+    busy = t.exitI;
+  }
+  return out;
+}
+
+
+
+
+/// صفقة بدخول افتتاح الشمعة التالية، وقف عند [stop] (أو خلف آخر 3 شموع)، 1R ثم 2R
+T? sim(List<Candle> c, List<double> at, int i, int d, double? stopP) {
+  final n = c.length;
+  if (i >= n - 1 || at[i].isNaN) return null;
+  final a = at[i];
+  final entry = c[i + 1].open;
+  var ext = d > 0 ? c[i].low : c[i].high;
+  for (var j = i - 2; j <= i; j++) { ext = d > 0 ? math.min(ext, c[j].low) : math.max(ext, c[j].high); }
+  final sp = stopP ?? ext;
+  final risk = ((d > 0 ? entry - sp : sp - entry) + 0.1 * a).clamp(0.7 * a, 2.5 * a).toDouble();
+  final t1 = entry + d * risk, t2 = entry + d * 2 * risk;
+  var stop = entry - d * risk, got = false;
+  for (var j = i + 1; j < n; j++) {
+    final k = c[j];
+    if (d > 0 ? k.low <= stop : k.high >= stop) return T(i, j, d, 0, got ? 0.5 : -1, got);
+    if (!got && (d > 0 ? k.high >= t1 : k.low <= t1)) { got = true; stop = entry; }
+    if (got && (d > 0 ? k.high >= t2 : k.low <= t2)) return T(i, j, d, 0, 1.5, true);
+    if (j >= i + 80) return T(i, j, d, 0, got ? 0.5 : -1, got);
+  }
+  return null;
+}
+
+
+
+/// صفقة بأمر معلّق: دخول عند [entry] في الشمعة i، وقف عند [stop]، 1R ثم 2R (الأسوأ أولاً عند التعارض)
+T? simLimit(List<Candle> c, int i, int d, double entry, double stop) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final t1 = entry + d * risk, t2 = entry + d * 2 * risk;
+  var st = stop, got = false;
+  for (var j = i; j < n; j++) {
+    final k = c[j];
+    if (d > 0 ? k.low <= st : k.high >= st) return T(i, j, d, 0, got ? 0.5 : -1, got);
+    if (j == i) continue; // شمعة الدخول: لا نحسب الأهداف فيها (تحفّظ)
+    if (!got && (d > 0 ? k.high >= t1 : k.low <= t1)) { got = true; st = entry; }
+    if (got && (d > 0 ? k.high >= t2 : k.low <= t2)) return T(i, j, d, 0, 1.5, true);
+    if (j >= i + 80) return T(i, j, d, 0, got ? 0.5 : -1, got);
+  }
+  return null;
+}
+
+class Zone2 { final int made, d; final double prox, dist; Zone2(this.made, this.d, this.prox, this.dist); }
+
+
+
+/// إدارة التطبيق: نصف عند TP1 (rr1×R)، الوقف للدخول، ثم وقف متحرك (أعلى قمة 22 - 3 ATR)
+T? simApp(List<Candle> c, List<double> at, int i, int d, double entry, double stop, double rr1, int ei) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final t1 = entry + d * risk * rr1;
+  var st = stop, got = false;
+  for (var j = ei; j < n; j++) {
+    final b = c[j];
+    if (d > 0 ? b.low <= st : b.high >= st) {
+      final r2 = (st - entry) * d / risk;
+      return got ? T(i, j, d, 0, 0.5 * rr1 + 0.5 * r2, true) : T(i, j, d, 0, -1, false);
+    }
+    if (!got && (d > 0 ? b.high >= t1 : b.low <= t1)) { got = true; st = entry; }
+    else if (got) {
+      var hh = d > 0 ? -1e18 : 1e18;
+      for (var r = math.max(0, j - 21); r <= j; r++) { hh = d > 0 ? math.max(hh, c[r].high) : math.min(hh, c[r].low); }
+      final a = at[j].isNaN ? b.high - b.low : at[j];
+      final cand = hh - d * 3 * a;
+      st = d > 0 ? math.max(st, cand) : math.min(st, cand);
+    }
+    if (!got && j >= i + 80) { final r = (b.close - entry) * d / risk; return T(i, j, d, 0, r, r > 0); }
+    if (j >= i + 300) { final r2 = (b.close - entry) * d / risk; return T(i, j, d, 0, got ? 0.5 * rr1 + 0.5 * r2 : r2, got); }
+  }
+  return null;
+}
+
+
+/// هدف ثابت كبير (مثل الفيديو): وقف أو هدف [rr]R فقط
+T? simFixed(List<Candle> c, int i, int d, double entry, double stop, double rr) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final tp = entry + d * rr * risk;
+  for (var j = i; j < n; j++) {
+    final b = c[j];
+    if (d > 0 ? b.low <= stop : b.high >= stop) return T(i, j, d, 0, -1, false);
+    if (j > i && (d > 0 ? b.high >= tp : b.low <= tp)) return T(i, j, d, 0, rr, true);
+    if (j >= i + 300) { final r = (b.close - entry) * d / risk; return T(i, j, d, 0, r, r > 0); }
+  }
+  return null;
+}
+
+
+String stat(List<T> l) {
+  final w = l.where((t) => t.win).length;
+  final r = l.fold(0.0, (a, t) => a + t.r);
+  return 'win=${(100 * w / math.max(1, l.length)).toStringAsFixed(1)}% n=${l.length} totR=${r.toStringAsFixed(0)} avgR=${(r / math.max(1, l.length)).toStringAsFixed(3)}';
+}
+List<Candle> loadAny(String path) {
+  final out = <Candle>[];
+  for (final l in File(path).readAsLinesSync().skip(1)) {
+    final p = l.split(',');
+    if (p.length < 5) continue;
+    var ts = p[0].trim();
+    if (ts.isEmpty) continue;
+    ts = ts.replaceFirst(' ', 'T');
+    if (!ts.contains('+') && !ts.endsWith('Z')) ts = '${ts}Z';
+    final t = DateTime.tryParse(ts);
+    final v = [1, 2, 3, 4].map((i) => double.tryParse(p[i]) ?? double.nan).toList();
+    if (t == null || v.any((x) => x.isNaN)) continue;
+    out.add(Candle(t.toUtc(), v[0], v[1], v[2], v[3], p.length > 5 ? (double.tryParse(p[5]) ?? 0) : 0));
+  }
+  return out;
+}
+List<Candle> aggr(List<Candle> c, int mins) {
+  final out = <Candle>[];
+  int key(DateTime t) => t.millisecondsSinceEpoch ~/ (mins * 60000);
+  for (final k in c) {
+    if (out.isNotEmpty && key(out.last.time) == key(k.time)) {
+      final o = out.removeLast();
+      out.add(Candle(o.time, o.open, math.max(o.high, k.high), math.min(o.low, k.low), k.close, o.volume + k.volume));
+    } else {
+      out.add(Candle(DateTime.fromMillisecondsSinceEpoch(key(k.time) * mins * 60000, isUtc: true), k.open, k.high, k.low, k.close, k.volume));
+    }
+  }
+  return out;
+}
+
+void main() {
+  test('export King+indicators dataset', () {
+    final g = '$sp/gdf';
+    final sets = <(String, String, String, String, List<Candle> Function())>[
+      ('gold20', '15m', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_15m.csv')),
+      ('gold20', '1h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_1h.csv')),
+      ('gold20', '4h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_4h.csv')),
+      ('btc', '15m', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_15m.csv')),
+      ('btc', '1h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_1h.csv')),
+      ('btc', '4h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_4h.csv')),
+      ('eth', '15m', 'crypto', 'ETH', () => loadAny('$sp/data/eth_15m_1819.csv') + loadAny('$sp/data/eth_15m_2526.csv')),
+      ('eth', '1h', 'crypto', 'ETH', () => loadAny('$sp/data/eth_1h_1819.csv') + loadAny('$sp/data/eth_1h_2526.csv')),
+      ('eurusd19', '1h', 'forex', 'EUR/USD', () => loadAny('$sp/data/EUR_USD_1h.csv')),
+      ('gbpusd19', '1h', 'forex', 'GBP/USD', () => loadAny('$sp/data/GBP_USD_1h.csv')),
+      ('audusd19', '1h', 'forex', 'AUD/USD', () => loadAny('$sp/data/AUD_USD_1h.csv')),
+      ('usdcad19', '1h', 'forex', 'USD/CAD', () => loadAny('$sp/data/USD_CAD_1h.csv')),
+      ('nas19', '1h', 'index', 'NAS100', () => loadAny('$sp/data/NAS100_USD_1h.csv')),
+      ('oil19', '1h', 'commodity', 'WTI', () => loadAny('$sp/data/WTICO_USD_1h.csv')),
+      ('eurusd26', '1h', 'forex', 'EUR/USD', () => loadAny('$g/eurusd-1h-ohlcv-forex/EURUSD_1h.csv')),
+      ('gbpusd26', '1h', 'forex', 'GBP/USD', () => loadAny('$g/gbpusd-1h-ohlcv-forex/GBPUSD_1h.csv')),
+      ('usdjpy26', '1h', 'forex', 'USD/JPY', () => loadAny('$g/usdjpy-1h-ohlcv-forex/USDJPY_1h.csv')),
+      ('nas26', '1h', 'index', 'NAS100', () => loadAny('$g/nas100-1h-ohlcv-index/NAS100_1h.csv')),
+      ('us30_26', '1h', 'index', 'US30', () => loadAny('$g/us30-1h-ohlcv-index/US30_1h.csv')),
+      ('oil26', '1h', 'commodity', 'WTI', () => loadAny('$g/usoil-1h-ohlcv-commodities/USOIL_1h.csv')),
+      ('silver26', '15m', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s15m/XAGUSD_15m.csv')),
+      ('silver26', '1h', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s1h/XAGUSD_1h.csv')),
+    ];
+    const ind = ['i_st', 'i_stars', 'i_near', 'i_hot', 'i_held', 'i_sm', 'i_smstrong', 'i_km', 'i_all', 'i_alka', 'i_aab', 'i_zero', 'i_daily200', 'i_sr_behind', 'i_sr_ahead', 'i_ribage', 'i_lt'];
+    final out = StringBuffer()..writeln(['market', 'tf', 'year', 'dir', 'win', 'r', 'src', ...kingFeatures, ...ind].join(','));
+    for (final (mk, tf, cat, code, ld) in sets) {
+      final c = ld()..sort((a, b) => a.time.compareTo(b.time));
+      final n = c.length;
+      if (n < 400) continue;
+      final sym = code == 'XAU/USD' ? symbolByCode('XAU/USD') : MarketSymbol(code, code, cat, 'X', 2, false);
+      final f = buildForecast(c, history: n, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
+      final k = buildAlka(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+      final z = buildZeroOne(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+      final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
+      final all = combineAll(c, f.signals, const [], k.signals, const []);
+      final st = buildStar(c, mp);
+      final sm = buildSm(c, mp, stars: st);
+      final km = buildKm(c, sm);
+      final scS = StScorer(c);
+      final ks = KingScorer(c);
+      final at = atr(c, 14);
+      final rib = smRibbon(c); final rd = smDirFast(rib, n);
+      final smK = {for (final s in sm.signals) (s.i, s.dir)}, kmK = {for (final s in km.signals) (s.i, s.dir)}, allK = {for (final s in all.signals) (s.i, s.dir)};
+      final alkaAt = {for (final s in k.signals) (s.i, s.dir)}, aabAt = {for (final s in f.signals) (s.i, s.dir)}, zAt = {for (final s in z.signals) (s.i, s.dir)};
+      bool near(Set<(int, int)> st0, int i, int d) { for (var q = i - 3; q <= i; q++) { if (st0.contains((q, d))) return true; } return false; }
+      // يومي: متوسط 200 يوم من إغلاقات الأيام المكتملة
+      final dayClose = <int, double>{}; final dayKeys = <int>[];
+      for (final x in c) { final kd = x.time.millisecondsSinceEpoch ~/ 86400000; if (!dayClose.containsKey(kd)) dayKeys.add(kd); dayClose[kd] = x.close; }
+      final sma200 = <int, double>{}; // يوم → متوسط 200 يوم حتى اليوم السابق
+      for (var q = 200; q < dayKeys.length; q++) { var s0 = 0.0; for (var r = q - 200; r < q; r++) { s0 += dayClose[dayKeys[r]]!; } sma200[dayKeys[q]] = s0 / 200; }
+      // دعم/مقاومة (قمم وقيعان مؤكدة آخر 300 شمعة)
+      final piv = <(double, int)>[];
+      for (var j = 3; j < n - 3; j++) { var isH = true, isL = true; for (var q = j - 3; q <= j + 3; q++) { if (q == j) continue; if (c[q].high >= c[j].high) isH = false; if (c[q].low <= c[j].low) isL = false; } if (isH) piv.add((c[j].high, j)); if (isL) piv.add((c[j].low, j)); }
+      var pi0 = 0;
+      for (final (q, s) in mp.signals.indexed) {
+        if (s.exitI < 0 || s.result == 0 || s.i < 210) continue;
+        final x = ks.features(s.i, s.dir, s.entry, s.sl, mp.sources[q]);
+        if (x == null) continue;
+        final i = s.i, d = s.dir, a = at[i].isNaN ? 1.0 : at[i], px = c[i].close;
+        // دعم/مقاومة
+        while (pi0 < piv.length && piv[pi0].$2 < i - 300) { pi0++; }
+        var behind = 10.0, ahead = 10.0;
+        for (var q2 = pi0; q2 < piv.length && piv[q2].$2 + 3 <= i; q2++) {
+          final lv = piv[q2].$1;
+          final dd = (px - lv) * d / a;
+          if (dd >= 0) { behind = math.min(behind, dd); } else { ahead = math.min(ahead, -dd); }
+        }
+        var age = 0; for (var t = i; t > 0 && rd[t] == rd[i] && rd[i] != 0; t--) { age++; }
+        final kd = c[i].time.millisecondsSinceEpoch ~/ 86400000;
+        final s200 = sma200[kd];
+        final dUp = s200 == null ? 0.0 : (px > s200 ? 1.0 : -1.0);
+        final wide = !rib.first[i].isNaN && (rib.first[i] - rib.last[i]) * d / a >= 2;
+        final iv = <double>[
+          scS.score(i, d, mp.sources[q]), st.of(i, d).toDouble(), st.isNear(i, d) ? 1 : 0, st.isHot(i, d) ? 1 : 0, st.isHeld(i, d) ? 1 : 0,
+          smK.contains((i, d)) ? 1 : 0, (wide || st.isHeld(i, d) || st.isHot(i, d)) ? 1 : 0, kmK.contains((i, d)) ? 1 : 0, allK.contains((i, d)) ? 1 : 0,
+          near(alkaAt, i, d) ? 1 : 0, near(aabAt, i, d) ? 1 : 0, near(zAt, i, d) ? 1 : 0, dUp * d, behind, ahead, math.min(age, 200).toDouble(),
+          (dUp > 0 && d > 0) ? 1 : 0,
+        ];
+        out.writeln([mk, tf, c[i].time.year, d, s.result > 0 ? 1 : 0, s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1, mp.sources[q],
+          for (final v in x) v.toStringAsFixed(4), for (final v in iv) v.toStringAsFixed(4)].join(','));
+      }
+      print('done $mk $tf');
+    }
+    File('$sp/ai/signals2.csv').writeAsStringSync(out.toString());
+  }, timeout: const Timeout(Duration(hours: 2)));
+}
