@@ -377,6 +377,14 @@ class _ChartScreenState extends State<ChartScreen> {
           AppState st) =>
       [
         (
+          name: 'RS',
+          emoji: '🏆',
+          desc: 'الأقوى: النجوم + دخول بأمر معلّق عند منتصف شمعة الإشارة (سعر أفضل ووقف أقرب)',
+          health: null,
+          on: layers.rs,
+          toggle: () => layers.rs = !layers.rs
+        ),
+        (
           name: 'نجوم',
           emoji: '⭐',
           desc: 'كل إشارات Mp ونجوم الثقة: درجة ثقة ST + هدوء السوق (كل نجمة أدق)',
@@ -560,7 +568,9 @@ class _ChartScreenState extends State<ChartScreen> {
                     const SizedBox(width: 5),
                     Expanded(
                       child: Text(
-                        x.name == 'نجوم'
+                        x.name == 'RS'
+                            ? 'يظهر: ${st.rsMin} نجوم فما فوق'
+                            : x.name == 'نجوم'
                             ? (st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق')
                             : h == null
                             ? 'جاري الحساب…'
@@ -573,6 +583,14 @@ class _ChartScreenState extends State<ChartScreen> {
                       ),
                     ),
                   ]),
+                  if (x.name == 'RS')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text('المدى الطويل 65% • إدارة 80%',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
                   if (x.name == 'نجوم')
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
@@ -616,6 +634,19 @@ class _ChartScreenState extends State<ChartScreen> {
               const Text('شغّل أي عدد معاً. السطر الملوّن: أداؤه الآن على هذا السوق (آخر 5000 شمعة). السطر الأبيض: دقته على المدى الطويل (بهدف 1R، وبإدارة التطبيق).',
                   style: TextStyle(color: AppColors.muted, fontSize: 11)),
               const SizedBox(height: 8),
+              if (layers.rs)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    const Text('RS — أقل عدد نجوم:',
+                        style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 8),
+                    _seg(const [('0', 'الكل'), ('1', '1'), ('2', '2'), ('3', '3')], '${st.rsMin}', (v) {
+                      st.setRsMin(int.parse(v));
+                      setSheet(() {});
+                    }),
+                  ]),
+                ),
               if (layers.star)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -722,6 +753,10 @@ class _ChartScreenState extends State<ChartScreen> {
               head('التوصيات والمؤشرات'),
               sw('DM 🥇', 'خاص بالذهب: إشارات Mp مع الترند اليومي في السوق الهادئ — 59% بهدف 1R على ذهب 2021-2026', layers.dm, (x) {
                 layers.dm = x;
+              }),
+              sw('RS 🏆', 'النجوم + دخول بأمر معلّق عند منتصف شمعة الإشارة صالح 5 شموع — ≈ 65% بهدف 1R وربح أكبر',
+                  layers.rs, (x) {
+                layers.rs = x;
               }),
               sw('نجوم ⭐', 'كل إشارات Mp ومعها نجوم الثقة: درجة ثقة ST + هدوء السوق — 3 نجوم ≈ 64% بهدف 1R',
                   layers.star, (x) {
@@ -850,6 +885,7 @@ class _ChartScreenState extends State<ChartScreen> {
               dmR: st.dmR,
               stR: st.stR,
               starR: st.starR,
+              rsR: st.rsR,
               allR: st.allR,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -875,6 +911,7 @@ class _ChartScreenState extends State<ChartScreen> {
           _forecastBar(st.forecast!, st.symbol),
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
+        if (eff.rs && st.rsR != null) _decisionBar(st.rsR!.res.decision, st.symbol, tag: 'RS'),
         if (eff.star && st.starR != null) _starBar(st),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
         if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
@@ -892,7 +929,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAab && layers.sigs)
           _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
         else if (eff.sigs ||
-            (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st && !eff.star))
+            (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st && !eff.star && !eff.rs))
           _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
@@ -903,6 +940,7 @@ class _ChartScreenState extends State<ChartScreen> {
   /// كل الصفقات المفتوحة لأول مؤشر مشغّل عنده صفقة (مع محركين: قد تكون شراء + بيع).
   List<(String, PastSignal)> _openTrades(AppState st, ChartLayers eff) {
     final l = <(String, List<PastSignal>?)>[
+      if (eff.rs) ('RS', st.rsR?.res.signals),
       if (eff.star) ('نجوم', st.starR?.res.signals),
       if (eff.km) ('KM', st.kmR?.signals),
       if (eff.dm) ('DM', st.dmR?.signals),
@@ -981,7 +1019,7 @@ class _ChartScreenState extends State<ChartScreen> {
                     decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 10),
             Text(
-                'فحص الصفقة — $tag ${sg.dir > 0 ? 'شراء' : 'بيع'}${tag == 'نجوم' && st.starR != null ? ' ${'★' * st.starR!.of(sg.i, sg.dir)}${'☆' * (3 - st.starR!.of(sg.i, sg.dir))}' : ''}',
+                'فحص الصفقة — $tag ${sg.dir > 0 ? 'شراء' : 'بيع'}${tag == 'نجوم' && st.starR != null ? ' ${'★' * st.starR!.of(sg.i, sg.dir)}${'☆' * (3 - st.starR!.of(sg.i, sg.dir))}' : tag == 'RS' && st.rsR != null ? ' ${'★' * st.rsR!.of(sg.i, sg.dir)}${'☆' * (3 - st.rsR!.of(sg.i, sg.dir))}' : ''}',
                 style: const TextStyle(color: AppColors.text, fontSize: 17, fontWeight: FontWeight.w800)),
             const SizedBox(height: 10),
             Row(children: [
