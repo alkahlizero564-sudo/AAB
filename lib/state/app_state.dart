@@ -50,6 +50,7 @@ class AppState extends ChangeNotifier {
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
+  AllResult? revR; // الإشارات العكسية (من محركي الشراء والبيع) لمؤشر النجوم
   StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
   int starMin = 0; // أقل عدد نجوم يظهر
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
@@ -291,7 +292,7 @@ class AppState extends ChangeNotifier {
     final s = settings, sym = symbol, cfg = EngineConfig.current;
     final rr1 = settings.rr1For(symbol.category), rr2 = settings.rr2;
     final alkaTp1 = settings.alkaTp1;
-    (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) res;
+    (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast, AllResult) res;
     try {
       res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1));
     } catch (_) {
@@ -316,9 +317,10 @@ class AppState extends ChangeNotifier {
         settings.rr1For(symbol.category), settings.rr2, settings.alkaTp1));
   }
 
-  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) r) {
+  void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast, AllResult) r) {
     final prev = signal;
-    final (base, fc, al, ak, all, z, mp, fAll) = r;
+    final (base, fc, al, ak, all, z, mp, fAll, rev) = r;
+    revR = rev;
     _fAll = fAll;
     alka = ak;
     zero = z;
@@ -436,7 +438,7 @@ class AppState extends ChangeNotifier {
 
   void _rebuildStar() {
     final mp = mpR;
-    starR = mp == null ? null : buildStar(candles, mp, minStars: starMin);
+    starR = mp == null ? null : buildStar(candles, mp, minStars: starMin, rev: revR);
   }
 
   /// أقل عدد نجوم يظهر في مؤشر النجوم (0 = كل إشارات Mp).
@@ -446,9 +448,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// خيارات المحرك (مطفأة افتراضياً): محركان مستقلان، وإشارات إضافية في نفس الاتجاه.
-  Future<void> setEngineOptions({bool? twoEngines, bool? extraSameDir}) async {
-    if (twoEngines != null) settings.twoEngines = twoEngines;
+  /// خيار المحرك (مطفأ افتراضياً): إشارات إضافية في نفس الاتجاه.
+  Future<void> setEngineOptions({bool? extraSameDir}) async {
     if (extraSameDir != null) settings.extraSameDir = extraSameDir;
     await settings.save();
     notifyListeners();
@@ -596,7 +597,7 @@ class AppState extends ChangeNotifier {
 }
 
 /// كل الحسابات الثقيلة (تعمل داخل Isolate): المحرك القديم للطبقات، محرك التوصيات، و AAB Algo.
-(TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) _computeAll(List<Candle> c, List<Candle>? htf,
+(TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast, AllResult) _computeAll(List<Candle> c, List<Candle>? htf,
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final hist = c.length; // الإشارات على كل الشموع المحمّلة (300 أو 600)
@@ -608,18 +609,17 @@ class AppState extends ChangeNotifier {
   final all = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending);
   final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
-  // Mp بمحركين مستقلين: محرك شراء + محرك بيع (صفقات أكثر بنفس الدقة)
+  // محركان مستقلان (شراء + بيع) لاستخراج الإشارات العكسية لمؤشر النجوم
   AllResult side(int d) {
     final f = buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist, onlyDir: d);
     final k = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist, onlyDir: d);
     final zz = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist, onlyDir: d);
     return combineAll(c, f.signals, f.pending, k.signals, k.pending, zero: zz.signals, zeroPending: zz.pending, tag: 'Mp');
   }
-  var mp = s.twoEngines
-      ? mergeEngines(side(1), side(-1), 'Mp')
-      : combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending, zero: z.signals, zeroPending: z.pending, tag: 'Mp');
+  var mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending, zero: z.signals, zeroPending: z.pending, tag: 'Mp');
   if (s.extraSameDir) mp = _withExtras(c, mp, sym, alkaTp1, rr2, hist);
-  return (base, fc, al, ak, all, z, mp, fAll);
+  final rev = reverseSignals(mp, mergeEngines(side(1), side(-1), 'Mp'));
+  return (base, fc, al, ak, all, z, mp, fAll, rev);
 }
 
 /// إشارات إضافية في نفس اتجاه الصفقة المفتوحة، بعد أن تحقق TP1 (فتصبح الأولى بلا خطر).
