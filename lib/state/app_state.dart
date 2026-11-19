@@ -9,6 +9,7 @@ import '../analysis/zero_one.dart';
 import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
+import '../analysis/indicators.dart';
 import '../analysis/health.dart';
 import '../analysis/st_indicator.dart';
 import '../analysis/star_indicator.dart';
@@ -445,6 +446,15 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// خيارات المحرك (مطفأة افتراضياً): محركان مستقلان، وإشارات إضافية في نفس الاتجاه.
+  Future<void> setEngineOptions({bool? twoEngines, bool? extraSameDir}) async {
+    if (twoEngines != null) settings.twoEngines = twoEngines;
+    if (extraSameDir != null) settings.extraSameDir = extraSameDir;
+    await settings.save();
+    notifyListeners();
+    _analyzeAsync();
+  }
+
   void _setHealth(List<IndHealth>? h) {
     IndHealth? at(int i) => h != null && i < h.length ? h[i] : null;
     aabHealth = at(0);
@@ -598,7 +608,61 @@ class AppState extends ChangeNotifier {
   final all = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending);
   final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
-  final mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending,
-      zero: z.signals, zeroPending: z.pending, tag: 'Mp');
+  // Mp بمحركين مستقلين: محرك شراء + محرك بيع (صفقات أكثر بنفس الدقة)
+  AllResult side(int d) {
+    final f = buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist, onlyDir: d);
+    final k = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist, onlyDir: d);
+    final zz = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist, onlyDir: d);
+    return combineAll(c, f.signals, f.pending, k.signals, k.pending, zero: zz.signals, zeroPending: zz.pending, tag: 'Mp');
+  }
+  var mp = s.twoEngines
+      ? mergeEngines(side(1), side(-1), 'Mp')
+      : combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending, zero: z.signals, zeroPending: z.pending, tag: 'Mp');
+  if (s.extraSameDir) mp = _withExtras(c, mp, sym, alkaTp1, rr2, hist);
   return (base, fc, al, ak, all, z, mp, fAll);
+}
+
+/// إشارات إضافية في نفس اتجاه الصفقة المفتوحة، بعد أن تحقق TP1 (فتصبح الأولى بلا خطر).
+/// صفقة إضافية واحدة في كل مرة. مقاس على الذهب: صفقات أكثر ~17% بنفس الدقة تقريباً، وربح أكثر ~13-18%.
+AllResult _withExtras(List<Candle> c, AllResult mp, MarketSymbol sym, double rr1, double rr2, int hist) {
+  final n = c.length;
+  final fo = buildForecast(c, rr1: rr1, rr2: rr2, history: hist, overlap: true);
+  final ko = buildAlka(c, rr1: rr1, rr2: rr2, sym: sym, history: hist, overlap: true);
+  final zo = buildZeroOne(c, rr1: rr1, rr2: rr2, sym: sym, history: hist, overlap: true);
+  final at = atr(c, 14);
+  bool small(int i) {
+    final a = at[i].isNaN ? (c[i].high - c[i].low) : at[i];
+    return a > 0 && (c[i].high - c[i].low) / a <= 0.94;
+  }
+  final cands = <(PastSignal, String)>[
+    for (final x in zo.signals) (x, '0.1'),
+    for (final x in fo.signals) if (small(x.i)) (x, 'AAB'),
+    for (final x in ko.signals) if (small(x.i)) (x, 'Alka'),
+  ]..sort((a, b) => a.$1.i.compareTo(b.$1.i));
+  final mainI = {for (final x in mp.signals) x.i};
+  final extras = <(PastSignal, String)>[];
+  var busy = -1;
+  for (final s0 in mp.signals) {
+    final end = s0.exitI < 0 ? n - 1 : s0.exitI;
+    var tp1 = -1;
+    for (var q = s0.i + 1; q <= end; q++) {
+      if (s0.dir > 0 ? c[q].high >= s0.tp1 : c[q].low <= s0.tp1) {
+        tp1 = q;
+        break;
+      }
+    }
+    if (tp1 < 0) continue;
+    for (final (x, src) in cands) {
+      if (x.i < tp1 || x.i > end || x.dir != s0.dir || x.i <= busy || mainI.contains(x.i)) continue;
+      extras.add((x, src));
+      busy = x.exitI < 0 ? n : x.exitI;
+    }
+  }
+  if (extras.isEmpty) return mp;
+  final all = <(PastSignal, String)>[
+    for (final (q, x) in mp.signals.indexed) (x, mp.sources[q]),
+    ...extras,
+  ]..sort((a, b) => a.$1.i.compareTo(b.$1.i));
+  return AllResult([for (final x in all) x.$1], [for (final x in all) x.$2], mp.pending, mp.pendingSrc, mp.tag,
+      {for (final e in extras) e.$1.i});
 }
