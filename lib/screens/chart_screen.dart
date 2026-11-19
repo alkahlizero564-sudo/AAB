@@ -1095,9 +1095,10 @@ class _ChartScreenState extends State<ChartScreen> {
     final r = st.ltR;
     if (r == null) {
       return _decisionBar(
-          Decision(0, 0, double.nan, double.nan, double.nan, double.nan, 'LT: ${_ltStatus(st)}', ''),
+          const Decision(0, 0, double.nan, double.nan, double.nan, double.nan, '', ''),
           st.symbol,
-          tag: 'LT');
+          tag: 'LT',
+          waitText: _ltStatus(st));
     }
     final d = r.decision;
     if (d.state != 0) {
@@ -1106,11 +1107,9 @@ class _ChartScreenState extends State<ChartScreen> {
       return _decisionBar(d, st.symbol, tag: 'LT $kind');
     }
     final up = ltUptrend(st.tf == '1d' ? st.candles : (st.daily ?? const []));
-    return _decisionBar(
-        Decision(0, 0, double.nan, double.nan, double.nan, double.nan,
-            up ? 'LT: السوق فوق متوسط 200 يوم — انتظر إشارة شراء' : 'LT: السوق تحت متوسط 200 يوم — لا شراء (حماية)', ''),
-        st.symbol,
-        tag: 'LT');
+    return _decisionBar(const Decision(0, 0, double.nan, double.nan, double.nan, double.nan, '', ''), st.symbol,
+        tag: 'LT',
+        waitText: up ? 'السوق فوق متوسط 200 يوم — انتظر إشارة شراء' : 'تحت متوسط 200 يوم — لا شراء (حماية)');
   }
 
   /// قرار مؤشر النجوم مع عدد نجوم الإشارة الحالية.
@@ -1246,7 +1245,7 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   /// القرار الوحيد في شاشة الشارت (من محرك التوصيات المقاس).
-  Widget _decisionBar(Decision d, MarketSymbol sym, {String tag = ''}) {
+  Widget _decisionBar(Decision d, MarketSymbol sym, {String tag = '', String? waitText}) {
     if (d.state == 0) {
       return Container(
         width: double.infinity,
@@ -1262,9 +1261,9 @@ class _ChartScreenState extends State<ChartScreen> {
           ],
           const Icon(Icons.hourglass_empty_rounded, size: 14, color: AppColors.muted),
           const SizedBox(width: 4),
-          const Expanded(
-            child: Text('انتظار — لا توجد إشارة مكتملة الشروط',
-                style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
+          Expanded(
+            child: Text(waitText ?? 'انتظار — لا توجد إشارة مكتملة الشروط',
+                style: const TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600)),
           ),
         ]),
       );
