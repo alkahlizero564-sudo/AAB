@@ -466,14 +466,24 @@ class _Painter extends CustomPainter {
     double yOf(double p) => h * (hi - p) / (hi - lo);
     bool inY(double p) => p <= hi && p >= lo;
 
+    // خلفية بتدرج خفيف جداً
+    canvas.drawRect(
+        Rect.fromLTWH(0, 0, w, fullH),
+        Paint()
+          ..shader = const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF111117), AppColors.bg],
+          ).createShader(Rect.fromLTWH(0, 0, w, fullH)));
     // ── علامة مائية
     _txt(canvas, '${sym.code}  ${tf.toUpperCase()}', Offset(w / 2 - 70, h / 2 - 16),
         color: AppColors.accent.withOpacity(0.045), size: 26, bold: true);
 
     // ── شبكة + محور السعر بخطوات منتظمة
+    // شبكة أهدأ
     final gridP = Paint()
-      ..color = AppColors.border.withOpacity(0.45)
-      ..strokeWidth = 1;
+      ..color = AppColors.border.withOpacity(0.28)
+      ..strokeWidth = 0.7;
     final step = _niceStep((hi - lo) / 7);
     // لا نكتب رقم المحور تحت لافتة السعر الحالي والعدّاد (حتى لا يتداخلا)
     final lastPy = yOf(c.last.close).clamp(0.0, h - 26).toDouble();
@@ -497,6 +507,19 @@ class _Painter extends CustomPainter {
           color: newDay ? AppColors.text : AppColors.muted, bold: newDay);
       prevLabel = t;
     }
+    // فاصل الأيام (على الفريمات اليومية الداخلية): خط متقطع خفيف عند بداية كل يوم
+    if (tf != '1d' && tf != '4h') {
+      final sepP = Paint()
+        ..color = AppColors.gold.withOpacity(0.16)
+        ..strokeWidth = 1;
+      for (var i = math.max(i0, 1); i <= i1; i++) {
+        if (c[i].time.day == c[i - 1].time.day) continue;
+        final x = xOf(i - 0.5);
+        for (var y = 0.0; y < fullH; y += 8) {
+          canvas.drawLine(Offset(x, y), Offset(x, math.min(y + 4, fullH)), sepP);
+        }
+      }
+    }
     canvas.drawLine(Offset(w, 0), Offset(w, fullH), Paint()..color = AppColors.border);
     if (subH > 0) {
       canvas.drawLine(Offset(0, h), Offset(size.width, h), Paint()..color = AppColors.border);
@@ -515,8 +538,10 @@ class _Painter extends CustomPainter {
       for (var i = i0; i <= i1 && maxV > 0; i++) {
         final x = xOf(i.toDouble());
         final vh = h * 0.16 * c[i].volume / maxV;
-        canvas.drawRect(Rect.fromLTRB(x - vw / 2, h - vh, x + vw / 2, h),
-            Paint()..color = (c[i].close >= c[i].open ? _up : _down).withOpacity(0.28));
+        canvas.drawRRect(
+            RRect.fromRectAndCorners(Rect.fromLTRB(x - vw / 2, h - vh, x + vw / 2, h),
+                topLeft: const Radius.circular(1.5), topRight: const Radius.circular(1.5)),
+            Paint()..color = (c[i].close >= c[i].open ? _up : _down).withOpacity(0.22));
       }
     }
 
@@ -902,6 +927,36 @@ class _Painter extends CustomPainter {
           canvas.drawRect(r, bull ? upP : dnP);
         }
       }
+    }
+
+    // ── أعلى وأدنى سعر في المدى الظاهر (مثل TradingView)
+    if (L.type != 'line' && i1 > i0 + 5) {
+      var hiI = i0, loI = i0;
+      for (var i = i0; i <= i1; i++) {
+        if (k[i].high > k[hiI].high) hiI = i;
+        if (k[i].low < k[loI].low) loI = i;
+      }
+      void mark(int i, double p, bool top) {
+        final x = xOf(i.toDouble()), y = yOf(p);
+        final left = x > w * 0.6; // قرب الحافة اليمنى: النص على اليسار
+        final tp = TextPainter(
+          text: TextSpan(
+              text: sym.fmt(p),
+              style: TextStyle(fontFamily: chartFont, color: AppColors.text.withOpacity(0.85), fontSize: 9.5, fontWeight: FontWeight.w700)),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final x2 = left ? x - 16 : x + 16;
+        // لا يختبئ تحت سطر الأسعار والدقة أعلى الشارت
+        final ty = math.max(58.0, y - tp.height / 2 + (top ? -2 : 2));
+        canvas.drawLine(Offset(x + (left ? -2 : 2), y), Offset(x2, ty + tp.height / 2),
+            Paint()
+              ..color = AppColors.text.withOpacity(0.5)
+              ..strokeWidth = 0.8);
+        tp.paint(canvas, Offset(left ? x2 - tp.width - 2 : x2 + 2, ty));
+      }
+
+      mark(hiI, k[hiI].high, true);
+      mark(loI, k[loI].low, false);
     }
 
     // ── markers (CE flips, sweeps, S/R breaks) — من المحرك القديم، تُخفى مع المحرك الجديد

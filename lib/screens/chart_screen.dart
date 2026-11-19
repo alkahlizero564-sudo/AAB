@@ -1369,15 +1369,18 @@ class _ChartScreenState extends State<ChartScreen> {
     final label =
         '${tag.isEmpty ? '' : '$tag '}${d.state == 0 ? 'انتظار' : d.state == 1 ? (d.dir > 0 ? 'شراء' : 'بيع') : d.state == 2 ? '⏳ ${d.dir > 0 ? 'شراء' : 'بيع'}' : '⚡ يتكوّن'}';
     Widget item(String t, double v, Color c) => Expanded(
-          child: Column(children: [
-            Text(t, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
-            const SizedBox(height: 2),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(v.isNaN ? '-' : sym.fmt(v),
-                  style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.bold)),
-            ),
-          ]),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Column(children: [
+              Text(t, style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(v.isNaN ? '-' : sym.fmt(v),
+                    style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+            ]),
+          ),
         );
     return InkWell(
       onTap: () => setState(() => why = !why),
