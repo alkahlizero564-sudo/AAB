@@ -52,6 +52,6 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
       pSrc.add(mp.pendingSrc[q]);
     }
   }
-  final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
-  return StarResult(AllResult(sigs, src, [for (final p in pend) if (!openDirs.contains(p.dir)) p], [for (final (q, p) in pend.indexed) if (!openDirs.contains(p.dir)) pSrc[q]], 'نجوم'), stars);
+  final open = sigs.isNotEmpty && sigs.last.exitI < 0;
+  return StarResult(AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'نجوم'), stars);
 }
