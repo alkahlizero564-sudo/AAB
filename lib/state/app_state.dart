@@ -58,6 +58,7 @@ class AppState extends ChangeNotifier {
   AllResult? ltR; // مؤشر LT بعيد المدى (من الشموع اليومية)
   StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
   int starMin = 0; // أقل عدد نجوم يظهر
+  int kingTop = 30; // King يعرض أعلى كم % ثقة (15 / 30 / 50 / 70)
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
   AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp مع الترند اليومي في السوق الهادئ)
   List<Candle>? daily; // شموع يومية (للوحة الاتجاهات و DM)
@@ -337,7 +338,7 @@ class AppState extends ChangeNotifier {
     pqR = starR == null ? null : buildPq(mp, starR!, smR!, alka: ak.signals);
     kmR = buildKm(candles, smR!);
     stR = buildSt(candles, mp);
-    kingR = buildKing(candles, mp);
+    kingR = buildKing(candles, mp, top: kingTop);
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     _rebuildLt();
     allR = all;
@@ -459,6 +460,13 @@ class AppState extends ChangeNotifier {
   }
 
   /// أقل عدد نجوم يظهر في مؤشر النجوم (0 = كل إشارات Mp).
+  void setKingTop(int v) {
+    kingTop = v;
+    final mp = mpR;
+    if (mp != null) kingR = buildKing(candles, mp, top: kingTop);
+    notifyListeners();
+  }
+
   void setStarMin(int v) {
     starMin = v;
     _rebuildStar();

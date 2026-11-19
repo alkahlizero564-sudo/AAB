@@ -138,8 +138,18 @@ class KingScorer {
   }
 }
 
-/// King: إشارات Mp التي يضعها الذكاء الاصطناعي في أعلى 30% ثقة.
-KingResult buildKing(List<Candle> c, AllResult mp) {
+/// حد الثقة لكل خيار عرض: أعلى 15% / 30% / 50% / 70% من إشارات التدريب.
+/// بهدف 1R على بيانات لم يرها (كل الأسواق): 61.6% / 59.4% / 57.7% / 56.5% (كل الإشارات 55.4%).
+double kingThreshold(int top) => switch (top) {
+      15 => kingQ85,
+      50 => kingQ50,
+      70 => kingQ30,
+      _ => kingQ70,
+    };
+
+/// King: إشارات Mp التي يضعها الذكاء الاصطناعي في أعلى [top]% ثقة (الافتراضي 30%).
+KingResult buildKing(List<Candle> c, AllResult mp, {int top = 30}) {
+  final thr = kingThreshold(top);
   if (c.length < 260) return KingResult.empty;
   final sc = KingScorer(c);
   final conf = <(int, int), double>{};
@@ -148,7 +158,7 @@ KingResult buildKing(List<Candle> c, AllResult mp) {
     final p = sc.score(s.i, s.dir, s.entry, s.sl, mp.sources[q]);
     if (p.isNaN) continue;
     conf[(s.i, s.dir)] = p;
-    if (p >= kingQ70) {
+    if (p >= thr) {
       sigs.add(s);
       src.add(mp.sources[q]);
     }
@@ -158,7 +168,7 @@ KingResult buildKing(List<Candle> c, AllResult mp) {
     final pr = sc.score(p.i, p.dir, p.trigger, p.sl, mp.pendingSrc[q]);
     if (pr.isNaN) continue;
     conf[(p.i, p.dir)] = pr;
-    if (pr >= kingQ70) {
+    if (pr >= thr) {
       pend.add(p);
       pSrc.add(mp.pendingSrc[q]);
     }

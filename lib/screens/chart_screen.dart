@@ -380,7 +380,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'King',
           emoji: '🤖',
-          desc: 'ذكاء اصطناعي (100 شجرة قرارات): أعلى 30% ثقة من إشارات Mp مع نسبة الثقة — «قوي» = أعلى 15%',
+          desc: 'ذكاء اصطناعي (100 شجرة قرارات): الأقوى من إشارات Mp مع نسبة الثقة — اختر كم يعرض فوق، و«قوي» = أعلى 15%',
           health: null,
           on: layers.king,
           toggle: () => layers.king = !layers.king
@@ -677,6 +677,37 @@ class _ChartScreenState extends State<ChartScreen> {
               const Text('شغّل أي عدد معاً. السطر الملوّن: أداؤه الآن على هذا السوق (آخر 5000 شمعة). السطر الأبيض: دقته على المدى الطويل (بهدف 1R، وبإدارة التطبيق).',
                   style: TextStyle(color: AppColors.muted, fontSize: 11)),
               const SizedBox(height: 8),
+              if (layers.king)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    const Text('King يعرض:',
+                        style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: _seg(const [('15', 'الأقوى 15%'), ('30', '30%'), ('50', '50%'), ('70', '70%')],
+                            '${st.kingTop}', (v) {
+                          st.setKingTop(int.parse(v));
+                          setSheet(() {});
+                        }),
+                      ),
+                    ),
+                  ]),
+                ),
+              if (layers.king)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      switch (st.kingTop) {
+                        15 => 'أقل إشارات وأدقها: ~62% بهدف 1R (ذهب ~60%)',
+                        50 => 'إشارات أكثر (ضعف 30% تقريباً): ~58% بهدف 1R (ذهب ~56%)',
+                        70 => 'أكثر الإشارات: ~56.5% بهدف 1R (ذهب ~55%)',
+                        _ => 'المتوازن (الافتراضي): ~59% بهدف 1R (ذهب ~59%)',
+                      },
+                      style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                ),
               if (layers.star)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
