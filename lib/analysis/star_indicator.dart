@@ -15,11 +15,13 @@ class StarResult {
   final Map<(int, int), int> stars; // (شمعة الإشارة، الاتجاه) → عدد النجوم
   final Set<(int, int)> hot; // ضغط 🔥: نجمتان أو 3 في سوق مضغوط (ATR5/ATR50 < 0.6)
   final Set<(int, int)> held; // قاع أعلى فوق الدعم (للشراء) / قمة أدنى تحت المقاومة (للبيع) دون لمسه
-  const StarResult(this.res, this.stars, [this.hot = const {}, this.held = const {}]);
+  final Set<(int, int)> near; // دخول ممتاز: سعر الدخول قريب من قاع/قمة آخر 5 شموع (< 0.75 ATR)
+  const StarResult(this.res, this.stars, [this.hot = const {}, this.held = const {}, this.near = const {}]);
   static const empty = StarResult(AllResult([], [], [], [], 'نجوم'), {});
   int of(int i, int dir) => stars[(i, dir)] ?? 0;
   bool isHot(int i, int dir) => hot.contains((i, dir));
   bool isHeld(int i, int dir) => held.contains((i, dir));
+  bool isNear(int i, int dir) => near.contains((i, dir));
 }
 
 /// حد أعلى 10% من درجات ثقة ST (من بيانات التدريب نفسها)
@@ -42,12 +44,29 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
     return g > 3 ? 3 : g;
   }
 
+  // مكان الدخول: بُعد سعر الدخول عن قاع (للشراء) / قمة (للبيع) آخر 5 شموع بوحدات ATR.
+  // ذهب وبيتكوين 15m/1h (2016-2020 / 2021-2026) بهدف 1R: القريب (< 0.75) 58-64%، والمتأخر (≥ 1.25) 47-56%.
+  // على الفريمات الأقل من 4h نحذف الدخول المتأخر، ونعلّم القريب «دخول ممتاز». على 4h وما فوق لا فرق ثابت.
+  double dist(int i, int d, double entry) {
+    if (i < 4 || i >= c.length || at[i].isNaN || !(at[i] > 0)) return 1;
+    var ext = d > 0 ? double.infinity : -double.infinity;
+    for (var q = i - 4; q <= i; q++) {
+      ext = d > 0 ? math.min(ext, c[q].low) : math.max(ext, c[q].high);
+    }
+    return (entry - ext) * d / at[i];
+  }
+
+  final gaps = [for (var q = math.max(1, c.length - 200); q < c.length; q++) c[q].time.difference(c[q - 1].time).inMinutes.abs()]..sort();
+  final intraday = gaps.isNotEmpty && gaps[gaps.length ~/ 2] < 240;
+  final near = <(int, int)>{};
   final stars = <(int, int), int>{};
   final sigs = <PastSignal>[], src = <String>[];
   for (final (q, s) in mp.signals.indexed) {
     final g = starsOf(s.i, s.dir, mp.sources[q]);
     stars[(s.i, s.dir)] = g;
-    if (g >= minStars) {
+    final dd = dist(s.i, s.dir, s.entry);
+    if (intraday && dd < 0.75) near.add((s.i, s.dir));
+    if (g >= minStars && !(intraday && dd >= 1.25)) {
       sigs.add(s);
       src.add(mp.sources[q]);
     }
@@ -56,7 +75,9 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
   for (final (q, p) in mp.pending.indexed) {
     final g = p.i < 0 ? 0 : starsOf(p.i, p.dir, mp.pendingSrc[q]);
     stars[(p.i, p.dir)] = g;
-    if (g >= minStars) {
+    final dd = p.i < 0 ? 1.0 : dist(p.i, p.dir, p.trigger);
+    if (intraday && dd < 0.75) near.add((p.i, p.dir));
+    if (g >= minStars && !(intraday && dd >= 1.25)) {
       pend.add(p);
       pSrc.add(mp.pendingSrc[q]);
     }
@@ -71,7 +92,7 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
   };
   final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
   final keep = [for (var q = 0; q < pend.length; q++) if (!openDirs.contains(pend[q].dir)) q];
-  return StarResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'نجوم'), stars, hot, held);
+  return StarResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'نجوم'), stars, hot, held, near);
 }
 
 /// «قاع أعلى» (للشراء): أدنى سعر في آخر 3 شموع فوق أقرب دعم تحته بمسافة 0.3-1 ATR، أي أن السعر

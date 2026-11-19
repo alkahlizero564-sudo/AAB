@@ -426,6 +426,7 @@ class _Painter extends CustomPainter {
   String _starTag(StarResult r, int i, int d, bool extra) => [
         if (r.isHot(i, d)) 'ضغط',
         if (r.isHeld(i, d)) d > 0 ? 'قاع أعلى' : 'قمة أدنى',
+        if (r.isNear(i, d)) 'ممتاز',
         if (extra) '+',
       ].join(' ');
 
