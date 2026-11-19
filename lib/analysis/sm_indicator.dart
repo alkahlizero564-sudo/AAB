@@ -4,6 +4,7 @@ import 'forecast.dart';
 import 'alka.dart';
 import 'zero_one.dart';
 import 'indicators.dart';
+import 'star_indicator.dart';
 
 /// شريط المتوسطات (مثل DTC): 8 متوسطات EMA من 20 إلى 55.
 const smPeriods = [20, 25, 30, 35, 40, 45, 50, 55];
@@ -69,21 +70,36 @@ int trendOf(List<Candle> c) {
   return e20[i] > e50[i] ? 1 : -1;
 }
 
+/// إشارة SM «قوية»: شريط عريض (ترند واضح: المسافة بين أول وآخر متوسط ≥ 2 ATR)،
+/// أو «قاع أعلى/قمة أدنى»، أو «ضغط».
+/// ذهب وبيتكوين وإيثيريوم 5m-4h بهدف 1R: 61.4% مقابل 56.2% لكل SM (أفضل في 15 من 18 فريم وفترة)، ~22% من الإشارات.
+bool smStrong(List<Candle> c, List<List<double>> rib, List<double> at, StarResult st, int i, int dir) {
+  if (i < 0 || i >= c.length) return false;
+  final a = at[i];
+  final wide = !a.isNaN && a > 0 && !rib.first[i].isNaN && (rib.first[i] - rib.last[i]) * dir / a >= 2;
+  return wide || st.isHeld(i, dir) || st.isHot(i, dir);
+}
+
 /// مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات فقط.
 /// وعلى الفريمات الأقل من ساعة: يجب أن يوافقها أيضاً اتجاه الساعة (مثل لوحة DTC).
 /// الشريط السريع + منع المطاردة: الإشارة أبكر بحوالي 30% (2.25 ATR بدل 3.2 من بداية الحركة).
 /// مقاس على 26 سوقاً (1R ثم 2R): 58.2% ، رابح في 24 من 26 (Mp 57.1%).
-AllResult buildSm(List<Candle> c, AllResult mp) {
+/// تحسين 2026: نحذف الإشارات الأضعف — بلا نجوم، وشريط ضيق، وبلا «قاع أعلى» أو «ضغط».
+/// يحذف ~28% من الإشارات، ويرفع الدقة في 15 من 18 فريم وفترة (5m-4h، ذهب وبيتكوين وإيثيريوم)،
+/// ومنها بيتكوين 4h من 49-51% إلى 54%.
+AllResult buildSm(List<Candle> c, AllResult mp, {StarResult? stars}) {
   final n = c.length;
   final rib = smRibbon(c);
   final d = smDirFast(rib, n);
   final at = atr(c, 14);
+  final st = stars ?? buildStar(c, mp);
+  bool keep(int i, int dir) => st.of(i, dir) >= 1 || smStrong(c, rib, at, st, i, dir);
   // منع المطاردة: لا إشارة إذا ابتعد السعر عن EMA20 أكثر من 1.5 ATR في اتجاه الصفقة
   bool notLate(int i, int dir) => at[i].isNaN || at[i] <= 0 || (c[i].close - rib.first[i]) * dir / at[i] < 1.5;
   final baseMin = n > 1 ? c[n - 1].time.difference(c[n - 2].time).inMinutes.abs() : 60;
   final h1 = baseMin > 0 && baseMin < 60 ? htfTrend(c, 60) : null;
   bool ok(int i, int dir) =>
-      i >= 0 && i < n && d[i] == dir && notLate(i, dir) && (h1 == null || h1[i] == 0 || h1[i] == dir);
+      i >= 0 && i < n && d[i] == dir && notLate(i, dir) && (h1 == null || h1[i] == 0 || h1[i] == dir) && keep(i, dir);
   final sigs = <PastSignal>[], src = <String>[];
   for (final (q, s) in mp.signals.indexed) {
     if (ok(s.i, s.dir)) {

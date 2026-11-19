@@ -326,11 +326,11 @@ class AppState extends ChangeNotifier {
     alka = ak;
     zero = z;
     mpR = mp;
-    smR = buildSm(candles, mp);
+    _rebuildStar();
+    smR = buildSm(candles, mp, stars: starR);
     kmR = buildKm(candles, smR!);
     stR = buildSt(candles, mp);
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
-    _rebuildStar();
     _rebuildLt();
     allR = all;
     forecast = fc;

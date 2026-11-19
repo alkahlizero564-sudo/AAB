@@ -749,6 +749,40 @@ class _Painter extends CustomPainter {
           ..lineTo(x0, yOf(bot0))
           ..close();
         canvas.drawPath(fill, Paint()..color = col(i).withOpacity(0.10));
+        // بداية لون جديد للشريط (أخضر بعد أحمر أو العكس، متجاهلين الرمادي بينهما)
+        if (rd[i] != 0 && rd[i - 1] != rd[i]) {
+          var prev = 0;
+          for (var q = i - 1; q >= 0 && q >= i - 300; q--) {
+            if (rd[q] != 0) {
+              prev = rd[q];
+              break;
+            }
+          }
+          if (prev == -rd[i]) {
+            final up = rd[i] > 0;
+            final cc = up ? const Color(0xFF00C853) : const Color(0xFFFF1744);
+            final yy = up ? yOf(math.min(bot, c[i].low)) + 10 : yOf(math.max(top, c[i].high)) - 10;
+            final tri = Path();
+            if (up) {
+              tri..moveTo(x1, yy)..lineTo(x1 - 6, yy + 9)..lineTo(x1 + 6, yy + 9)..close();
+            } else {
+              tri..moveTo(x1, yy)..lineTo(x1 - 6, yy - 9)..lineTo(x1 + 6, yy - 9)..close();
+            }
+            canvas.drawPath(tri, Paint()..color = cc);
+            final tp = TextPainter(
+                text: TextSpan(
+                    text: up ? 'بداية صعود' : 'بداية هبوط',
+                    style: TextStyle(fontFamily: chartFont, color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+                textDirection: TextDirection.rtl)
+              ..layout();
+            final ty = up ? yy + 11 : yy - 11 - tp.height - 2;
+            final tx = (x1 - tp.width / 2).clamp(4.0, math.max(4.0, w - tp.width - 4)).toDouble();
+            canvas.drawRRect(
+                RRect.fromRectAndRadius(Rect.fromLTWH(tx - 4, ty, tp.width + 8, tp.height + 2), const Radius.circular(4)),
+                Paint()..color = cc.withOpacity(0.85));
+            tp.paint(canvas, Offset(tx, ty + 1));
+          }
+        }
         for (final r in rib) {
           if (r[i].isNaN || r[i - 1].isNaN) continue;
           canvas.drawLine(Offset(x0, yOf(r[i - 1])), Offset(x1, yOf(r[i])),
@@ -951,7 +985,15 @@ class _Painter extends CustomPainter {
       final keys = bySig.keys.toList()..sort((x, y) => x.$1.compareTo(y.$1));
       final sigs = [for (final k in keys) bySig[k]!.$1];
       final srcs = [for (final k in keys) bySig[k]!.$2];
-      final names = [for (final k in keys) '${(mr?.extra.contains(k.$1) ?? false) ? '+ ' : ''}${nameOf(bySig[k]!.$3, k.$1)}'];
+      // إشارة SM القوية (شريط عريض، أو قاع أعلى، أو ضغط): ~61% بدل ~56%
+      final smRib = L.sm && starr != null ? smRibbon(c) : null;
+      final smAt = smRib == null ? null : atr(c, 14);
+      bool strong(int i, int d, List<String> tags) =>
+          smRib != null && tags.contains('SM') && smStrong(c, smRib, smAt!, starr!, i, d);
+      final names = [
+        for (final k in keys)
+          '${(mr?.extra.contains(k.$1) ?? false) ? '+ ' : ''}${nameOf(bySig[k]!.$3, k.$1)}${strong(k.$1, k.$2, bySig[k]!.$3) ? ' قوي' : ''}'
+      ];
       final pk = byPend.keys.toList();
       final pends = [for (final k in pk) byPend[k]!.$1];
       final pSrcs = [for (final k in pk) byPend[k]!.$2];
