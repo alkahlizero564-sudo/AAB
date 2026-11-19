@@ -246,7 +246,8 @@ Forecast buildForecast(List<Candle> c,
     double rr2 = 2.0,
     int history = 300,
     ForecastCfg cfg = const ForecastCfg(),
-    int onlyDir = 0}) {
+    int onlyDir = 0,
+    bool overlap = false}) {
   final n = c.length;
   if (n < 70) return const Forecast();
   final cl = c.map((e) => e.close).toList();
@@ -433,7 +434,7 @@ Forecast buildForecast(List<Candle> c,
   var busyUntil = -1;
   (int, int, String)? waiting; // آخر إشارة لم تتأكد بعد (الشمعة، الاتجاه، السبب)
   for (var i = start; i < n - 1; i++) {
-    if (i <= busyUntil) continue;
+    if (!overlap && i <= busyUntil) continue; // overlap: للاختبار
     final (d, why, strong, keys) = decide(i);
     if (d == 0) continue;
     if (onlyDir != 0 && d != onlyDir) continue; // محرك اتجاه واحد

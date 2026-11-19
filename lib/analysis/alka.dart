@@ -90,7 +90,7 @@ List<(double, double, double)?> _profile(List<Candle> c) {
 /// [rr1] الهدف الأول بوحدات R. مع الوقف المتحرك بعده: 0.35R ≈ دقة 79% بنفس ربح الصفقة تقريباً
 /// (مقاس على 25 مجموعة بيانات حقيقية، قديمة وحديثة، منها البيتكوين والذهب).
 AlkaResult buildAlka(List<Candle> c,
-    {double rr1 = 0.35, double rr2 = 2.0, int history = 300, MarketSymbol? sym, bool trail = true, int onlyDir = 0}) {
+    {double rr1 = 0.35, double rr2 = 2.0, int history = 300, MarketSymbol? sym, bool trail = true, int onlyDir = 0, bool overlap = false}) {
   final n = c.length;
   if (n < 220) return const AlkaResult([], []);
   final at = atr(c, 14);
@@ -156,7 +156,7 @@ AlkaResult buildAlka(List<Candle> c,
   final pending = <PendingSetup>[];
   var busy = -1;
   for (var i = start; i < n - 1; i++) {
-    if (i <= busy) continue;
+    if (!overlap && i <= busy) continue; // overlap: كل الإشارات حتى أثناء صفقة (للاختبار)
     final st = setupAt(i);
     if (st == null) continue;
     final (d, why) = st;
