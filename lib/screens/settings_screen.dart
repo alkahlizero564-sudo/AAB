@@ -98,7 +98,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       metalTp07: metalTp07,
       alkaTp1: alkaTp1,
       autoHideWeak: autoHideWeak,
-      twoEngines: old.twoEngines,
       extraSameDir: old.extraSameDir,
       source: source,
       geminiModel: model.text.trim().isEmpty ? 'gemini-2.5-flash' : model.text,

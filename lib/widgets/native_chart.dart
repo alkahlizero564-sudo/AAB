@@ -934,8 +934,8 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'نجوم', AppColors.gold,
           sources: r.sources,
           pendingSrc: r.pendingSrc,
-          tagPer: [for (final sg in r.signals) (mr?.extra.contains(sg.i) ?? false) ? '+' : ''],
-          pendTagPer: [for (final p in r.pending) 'نجوم ${starr!.of(p.i, p.dir)}'],
+          tagPer: [for (final sg in r.signals) starr!.isRev(sg.i, sg.dir) ? 'عكس' : (mr?.extra.contains(sg.i) ?? false) ? '+' : ''],
+          pendTagPer: [for (final p in r.pending) '${starr!.isRev(p.i, p.dir) ? 'عكس ' : ''}نجوم ${starr!.of(p.i, p.dir)}'],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
     if (L.zero && zr != null) {

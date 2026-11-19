@@ -12,16 +12,41 @@ import 'st_indicator.dart';
 class StarResult {
   final AllResult res; // الإشارات التي نجومها ≥ الحد الأدنى
   final Map<(int, int), int> stars; // (شمعة الإشارة، الاتجاه) → عدد النجوم
-  const StarResult(this.res, this.stars);
+  final Set<(int, int)> rev; // إشارات عكسية (ظهرت وصفقة عكسها مفتوحة)
+  const StarResult(this.res, this.stars, [this.rev = const {}]);
   static const empty = StarResult(AllResult([], [], [], [], 'نجوم'), {});
   int of(int i, int dir) => stars[(i, dir)] ?? 0;
+  bool isRev(int i, int dir) => rev.contains((i, dir));
+}
+
+/// الإشارات العكسية: إشارات محرّكَي الشراء والبيع المستقلين [two] التي ظهرت وصفقة Mp عكسها ما زالت مفتوحة.
+/// مختبرة (ذهب وبيتكوين 15m/1h/4h): دقتها بهدف 1R 56.0% (2016-2020) و55.9% (2021-2026) مثل باقي الإشارات،
+/// لكن نجوم الثقة لا تميّزها (2-3★ منها ~55-57%) فتُعطى نجمة واحدة كحد أقصى.
+AllResult reverseSignals(AllResult mp, AllResult two) {
+  final have = {for (final s in mp.signals) (s.i, s.dir)};
+  bool oppOpenAt(int i, int d) => mp.signals.any((b) => b.dir == -d && b.i < i && (b.exitI < 0 || b.exitI > i));
+  final sigs = <PastSignal>[], src = <String>[];
+  for (final (q, s) in two.signals.indexed) {
+    if (have.contains((s.i, s.dir)) || !oppOpenAt(s.i, s.dir)) continue;
+    sigs.add(s);
+    src.add(two.sources[q]);
+  }
+  final pDirs = {for (final p in mp.pending) p.dir};
+  final openDirs = {for (final b in mp.signals) if (b.exitI < 0) b.dir};
+  final pend = <PendingSetup>[], pSrc = <String>[];
+  for (final (q, p) in two.pending.indexed) {
+    if (pDirs.contains(p.dir) || !openDirs.contains(-p.dir)) continue;
+    pend.add(p);
+    pSrc.add(two.pendingSrc[q]);
+  }
+  return AllResult(sigs, src, pend, pSrc, 'Mp↺');
 }
 
 
 /// حد أعلى 10% من درجات ثقة ST (من بيانات التدريب نفسها)
 const stTop10 = 0.5823269046477569;
 
-StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
+StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0, AllResult? rev}) {
   if (c.length < 120) return StarResult.empty;
   final sc = StScorer(c);
   final at = atr(c, 14);
@@ -52,6 +77,32 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0}) {
       pSrc.add(mp.pendingSrc[q]);
     }
   }
+  final revKeys = <(int, int)>{};
+  if (rev != null) {
+    for (final (q, s) in rev.signals.indexed) {
+      final g = starsOf(s.i, s.dir, rev.sources[q]).clamp(0, 1);
+      stars[(s.i, s.dir)] = g;
+      revKeys.add((s.i, s.dir));
+      if (g >= minStars) {
+        sigs.add(s);
+        src.add(rev.sources[q]);
+      }
+    }
+    for (final (q, p) in rev.pending.indexed) {
+      final g = p.i < 0 ? 0 : starsOf(p.i, p.dir, rev.pendingSrc[q]).clamp(0, 1);
+      stars[(p.i, p.dir)] = g;
+      revKeys.add((p.i, p.dir));
+      if (g >= minStars) {
+        pend.add(p);
+        pSrc.add(rev.pendingSrc[q]);
+      }
+    }
+    final order = [for (var q = 0; q < sigs.length; q++) q]..sort((a, b) => sigs[a].i.compareTo(sigs[b].i));
+    final s2 = [for (final q in order) sigs[q]], r2 = [for (final q in order) src[q]];
+    sigs..clear()..addAll(s2);
+    src..clear()..addAll(r2);
+  }
   final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
-  return StarResult(AllResult(sigs, src, [for (final p in pend) if (!openDirs.contains(p.dir)) p], [for (final (q, p) in pend.indexed) if (!openDirs.contains(p.dir)) pSrc[q]], 'نجوم'), stars);
+  final keep = [for (var q = 0; q < pend.length; q++) if (!openDirs.contains(pend[q].dir)) q];
+  return StarResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'نجوم'), stars, revKeys);
 }

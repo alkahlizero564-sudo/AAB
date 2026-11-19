@@ -709,11 +709,6 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               sw('الحجم', 'أعمدة حجم التداول أسفل الشموع', layers.vol, (x) => layers.vol = x),
               head('خيارات الصفقات (مطفأة افتراضياً)'),
-              sw('محركان: شراء + بيع',
-                  'محرك للشراء ومحرك للبيع يعملان معاً — صفقات أكثر ~50% بنفس الدقة، وقد تُفتح صفقة شراء وبيع معاً (حساب Hedging)',
-                  context.read<AppState>().settings.twoEngines, (x) {
-                context.read<AppState>().setEngineOptions(twoEngines: x);
-              }),
               sw('إشارات إضافية بعد TP1',
                   'إشارة "+" في نفس اتجاه الصفقة المفتوحة بعد أن تحقق TP1 (الأولى بلا خطر) — صفقات أكثر ~17%',
                   context.read<AppState>().settings.extraSameDir, (x) {
@@ -723,7 +718,7 @@ class _ChartScreenState extends State<ChartScreen> {
               sw('DM 🥇', 'خاص بالذهب: إشارات Mp مع الترند اليومي في السوق الهادئ — 59% بهدف 1R على ذهب 2021-2026', layers.dm, (x) {
                 layers.dm = x;
               }),
-              sw('نجوم ⭐', 'كل إشارات Mp ومعها نجوم الثقة: درجة ثقة ST + هدوء السوق — 3 نجوم ≈ 64% بهدف 1R',
+              sw('نجوم ⭐', 'كل إشارات Mp ومعها نجوم الثقة: درجة ثقة ST + هدوء السوق — 3 نجوم ≈ 64% بهدف 1R. «عكس» = إشارة عكس صفقة مفتوحة (~56%، نجمة واحدة كحد أقصى)',
                   layers.star, (x) {
                 layers.star = x;
               }),
