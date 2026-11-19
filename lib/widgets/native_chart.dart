@@ -129,7 +129,18 @@ class NativeChart extends StatefulWidget {
   State<NativeChart> createState() => _NativeChartState();
 }
 
-class _NativeChartState extends State<NativeChart> with SingleTickerProviderStateMixin {
+/// حالة الحركة الناعمة بين الإطارات: مدى السعر يتحرك تدريجياً بدل القفز،
+/// وإغلاق الشمعة الحية يتحرك بنعومة مع كل سعر جديد.
+class _Smooth {
+  String key = '';
+  double hi = double.nan, lo = double.nan;
+  int closeTs = 0;
+  double close = double.nan;
+  bool moving = false;
+  VoidCallback? onMove;
+}
+
+class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin {
   static const _homeShift = -6.0;
   double visible = 70, shift = _homeShift, _baseVisible = 70;
   double yZoom = 1, _baseYZoom = 1; // تكبير عمودي يدوي (اسحب على محور السعر)
@@ -137,6 +148,11 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
   double _chartW = 1;
   Offset? cross;
   late final Ticker _ticker;
+  final _sm = _Smooth();
+  late final Ticker _smTicker;
+  final _smTick = ValueNotifier<int>(0);
+  late final AnimationController _home;
+  double _hs0 = 0, _hv0 = 70, _hy0 = 1, _hs1 = 0, _hv1 = 70, _hy1 = 1;
   double _vel = 0; // سرعة التمرير بعد رفع الإصبع (شموع/ثانية)
   Duration _lastTick = Duration.zero;
   Timer? _clock;
@@ -146,6 +162,30 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
     super.initState();
     visible = _baseVisible = _defVisible(widget.tf);
     _ticker = createTicker(_onTick);
+    // إطارات إضافية فقط أثناء الحركة الناعمة (مدى السعر أو الشمعة الحية)
+    _smTicker = createTicker((_) {
+      if (_sm.moving) {
+        _smTick.value++;
+      } else {
+        _smTicker.stop();
+      }
+    });
+    _sm.onMove = () {
+      if (_smTicker.isActive) return;
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_smTicker.isActive && _sm.moving) _smTicker.start();
+      });
+    };
+    // رجوع ناعم لآخر سعر (نقرتان أو زر "آخر سعر")
+    _home = AnimationController(vsync: this, duration: const Duration(milliseconds: 380))
+      ..addListener(() {
+        final t = Curves.easeOutCubic.transform(_home.value);
+        setState(() {
+          shift = _hs0 + (_hs1 - _hs0) * t;
+          visible = _hv0 + (_hv1 - _hv0) * t;
+          yZoom = _hy0 + (_hy1 - _hy0) * t;
+        });
+      });
     // تحديث العدّاد التنازلي لإغلاق الشمعة كل ثانية
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && cross == null) setState(() {});
@@ -164,8 +204,22 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
     }
   }
 
+  void _goHome({bool resetZoom = false}) {
+    _stopFling();
+    _hs0 = shift;
+    _hv0 = visible;
+    _hy0 = yZoom;
+    _hs1 = _homeShift;
+    _hv1 = resetZoom ? _defVisible(widget.tf) : visible;
+    _hy1 = resetZoom ? 1 : yZoom;
+    _home.forward(from: 0);
+  }
+
   @override
   void dispose() {
+    _home.dispose();
+    _smTicker.dispose();
+    _smTick.dispose();
     _ticker.dispose();
     _clock?.cancel();
     super.dispose();
@@ -267,18 +321,16 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
             },
             onLongPressStart: (d) => setState(() => _setCross(d.localPosition)),
             onLongPressMoveUpdate: (d) => setState(() => _setCross(d.localPosition)),
-            onDoubleTap: () => setState(() {
-              _stopFling();
-              visible = _defVisible(widget.tf);
-              shift = _homeShift;
-              yZoom = 1;
-              _setCross(null);
-            }),
+            onDoubleTap: () {
+              setState(() => _setCross(null));
+              _goHome(resetZoom: true);
+            },
             child: CustomPaint(
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR),
+                  DateTime.now().toUtc(), widget.algo,
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm),
             ),
           ),
         ),
@@ -292,10 +344,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               shape: const StadiumBorder(side: BorderSide(color: AppColors.border)),
               child: InkWell(
                 customBorder: const StadiumBorder(),
-                onTap: () => setState(() {
-                  _stopFling();
-                  shift = _homeShift;
-                }),
+                onTap: () => _goHome(),
                 child: const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -353,8 +402,9 @@ class _Painter extends CustomPainter {
   final StResult? str;
   final StarResult? starr;
   final AllResult? ltr;
+  final _Smooth? sm;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -428,6 +478,7 @@ class _Painter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     _axis.clear();
+    sm?.moving = false;
     canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.bg);
     final n = c.length;
     if (n < 2) {
@@ -463,17 +514,52 @@ class _Painter extends CustomPainter {
       hi = mid + half;
       lo = mid - half;
     }
+    // حركة ناعمة لمدى السعر: يتجه للهدف تدريجياً بدل القفز أثناء التمرير والتكبير
+    final smo = sm;
+    if (smo != null) {
+      final key = '${sym.code}|$tf|${L.type}|${L.sub}|${L.vol}';
+      if (smo.key != key || smo.hi.isNaN || cross != null) {
+        smo
+          ..key = key
+          ..hi = hi
+          ..lo = lo;
+      } else {
+        final eps = (hi - lo) * 0.0015;
+        final dh = hi - smo.hi, dl = lo - smo.lo;
+        if (dh.abs() > eps || dl.abs() > eps) {
+          smo.hi += dh * 0.32;
+          smo.lo += dl * 0.32;
+          smo.moving = true;
+          smo.onMove?.call();
+        } else {
+          smo.hi = hi;
+          smo.lo = lo;
+        }
+        hi = smo.hi;
+        lo = smo.lo;
+      }
+    }
     double yOf(double p) => h * (hi - p) / (hi - lo);
     bool inY(double p) => p <= hi && p >= lo;
 
+    // خلفية بتدرج خفيف جداً
+    canvas.drawRect(
+        Rect.fromLTWH(0, 0, w, fullH),
+        Paint()
+          ..shader = const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF111117), AppColors.bg],
+          ).createShader(Rect.fromLTWH(0, 0, w, fullH)));
     // ── علامة مائية
     _txt(canvas, '${sym.code}  ${tf.toUpperCase()}', Offset(w / 2 - 70, h / 2 - 16),
         color: AppColors.accent.withOpacity(0.045), size: 26, bold: true);
 
     // ── شبكة + محور السعر بخطوات منتظمة
+    // شبكة أهدأ
     final gridP = Paint()
-      ..color = AppColors.border.withOpacity(0.45)
-      ..strokeWidth = 1;
+      ..color = AppColors.border.withOpacity(0.28)
+      ..strokeWidth = 0.7;
     final step = _niceStep((hi - lo) / 7);
     // لا نكتب رقم المحور تحت لافتة السعر الحالي والعدّاد (حتى لا يتداخلا)
     final lastPy = yOf(c.last.close).clamp(0.0, h - 26).toDouble();
@@ -497,6 +583,19 @@ class _Painter extends CustomPainter {
           color: newDay ? AppColors.text : AppColors.muted, bold: newDay);
       prevLabel = t;
     }
+    // فاصل الأيام (على الفريمات اليومية الداخلية): خط متقطع خفيف عند بداية كل يوم
+    if (tf != '1d' && tf != '4h') {
+      final sepP = Paint()
+        ..color = AppColors.gold.withOpacity(0.16)
+        ..strokeWidth = 1;
+      for (var i = math.max(i0, 1); i <= i1; i++) {
+        if (c[i].time.day == c[i - 1].time.day) continue;
+        final x = xOf(i - 0.5);
+        for (var y = 0.0; y < fullH; y += 8) {
+          canvas.drawLine(Offset(x, y), Offset(x, math.min(y + 4, fullH)), sepP);
+        }
+      }
+    }
     canvas.drawLine(Offset(w, 0), Offset(w, fullH), Paint()..color = AppColors.border);
     if (subH > 0) {
       canvas.drawLine(Offset(0, h), Offset(size.width, h), Paint()..color = AppColors.border);
@@ -515,8 +614,10 @@ class _Painter extends CustomPainter {
       for (var i = i0; i <= i1 && maxV > 0; i++) {
         final x = xOf(i.toDouble());
         final vh = h * 0.16 * c[i].volume / maxV;
-        canvas.drawRect(Rect.fromLTRB(x - vw / 2, h - vh, x + vw / 2, h),
-            Paint()..color = (c[i].close >= c[i].open ? _up : _down).withOpacity(0.28));
+        canvas.drawRRect(
+            RRect.fromRectAndCorners(Rect.fromLTRB(x - vw / 2, h - vh, x + vw / 2, h),
+                topLeft: const Radius.circular(1.5), topRight: const Radius.circular(1.5)),
+            Paint()..color = (c[i].close >= c[i].open ? _up : _down).withOpacity(0.22));
       }
     }
 
@@ -874,8 +975,33 @@ class _Painter extends CustomPainter {
       final wickDn = Paint()
         ..color = _down
         ..strokeWidth = math.max(1.0, barW * 0.08);
+      // الشمعة الحية: الإغلاق يتحرك بنعومة نحو السعر الجديد
+      var liveClose = k[n - 1].close;
+      final smo2 = sm;
+      if (smo2 != null && L.type == 'candle' && i1 == n - 1) {
+        final ts = k[n - 1].time.millisecondsSinceEpoch;
+        if (smo2.closeTs != ts || smo2.close.isNaN) {
+          smo2
+            ..closeTs = ts
+            ..close = liveClose;
+        } else {
+          final d = liveClose - smo2.close;
+          final a = (k[n - 1].high - k[n - 1].low).abs();
+          if (d.abs() > math.max(1e-9, a * 0.01)) {
+            smo2.close += d * 0.3;
+            smo2.moving = true;
+            smo2.onMove?.call();
+          } else {
+            smo2.close = liveClose;
+          }
+          liveClose = smo2.close;
+        }
+      }
       for (var i = i0; i <= i1; i++) {
-        final q = k[i];
+        final q0 = k[i];
+        final q = i == n - 1 && liveClose != q0.close
+            ? Candle(q0.time, q0.open, q0.high, q0.low, liveClose, q0.volume)
+            : q0;
         final x = xOf(i.toDouble());
         final bull = q.close >= q.open;
         if (_algoOn && i < al!.trend.length && al!.trend[i] != 0) {
@@ -902,6 +1028,36 @@ class _Painter extends CustomPainter {
           canvas.drawRect(r, bull ? upP : dnP);
         }
       }
+    }
+
+    // ── أعلى وأدنى سعر في المدى الظاهر (مثل TradingView)
+    if (L.type != 'line' && i1 > i0 + 5) {
+      var hiI = i0, loI = i0;
+      for (var i = i0; i <= i1; i++) {
+        if (k[i].high > k[hiI].high) hiI = i;
+        if (k[i].low < k[loI].low) loI = i;
+      }
+      void mark(int i, double p, bool top) {
+        final x = xOf(i.toDouble()), y = yOf(p);
+        final left = x > w * 0.6; // قرب الحافة اليمنى: النص على اليسار
+        final tp = TextPainter(
+          text: TextSpan(
+              text: sym.fmt(p),
+              style: TextStyle(fontFamily: chartFont, color: AppColors.text.withOpacity(0.85), fontSize: 9.5, fontWeight: FontWeight.w700)),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final x2 = left ? x - 16 : x + 16;
+        // لا يختبئ تحت سطر الأسعار والدقة أعلى الشارت
+        final ty = math.max(58.0, y - tp.height / 2 + (top ? -2 : 2));
+        canvas.drawLine(Offset(x + (left ? -2 : 2), y), Offset(x2, ty + tp.height / 2),
+            Paint()
+              ..color = AppColors.text.withOpacity(0.5)
+              ..strokeWidth = 0.8);
+        tp.paint(canvas, Offset(left ? x2 - tp.width - 2 : x2 + 2, ty));
+      }
+
+      mark(hiI, k[hiI].high, true);
+      mark(loI, k[loI].low, false);
     }
 
     // ── markers (CE flips, sweeps, S/R breaks) — من المحرك القديم، تُخفى مع المحرك الجديد
@@ -1101,7 +1257,7 @@ class _Painter extends CustomPainter {
       cy = cross!.dy.clamp(0.0, fullH).toDouble();
     }
     _header(canvas, cIdx ?? n - 1, w);
-    if (f != null) _legend(canvas);
+    if (f != null) _legend(canvas, w);
 
     // ── المؤشر المتقاطع
     if (cIdx != null) {
@@ -1596,7 +1752,9 @@ class _Painter extends CustomPainter {
   /// (وتتجنب لافتة السعر الحالي).
   void _paintAxisTags(Canvas cv, double w, double h, double lastY) {
     if (_axis.isEmpty) return;
-    final tags = [..._axis]..sort((a, b) => a.$1.compareTo(b.$1));
+    // نفس المستوى من أكثر من مؤشر (مثل النجوم و SM لنفس الصفقة) يُرسم مرة واحدة
+    final seen = <String>{};
+    final tags = [for (final t in _axis) if (seen.add('${t.$3}|${t.$2}')) t]..sort((a, b) => a.$1.compareTo(b.$1));
     const gap = 16.0;
     final ys = <double>[];
     for (final t in tags) {
@@ -1638,7 +1796,7 @@ class _Painter extends CustomPainter {
   }
 
   /// سطر واحد مختصر تحت شريط الأسعار: دقة المؤشرين + اتجاه AAB Algo.
-  void _legend(Canvas cv) {
+  void _legend(Canvas cv, double w) {
     final fc = f!;
     final spans = <TextSpan>[];
     void part(String t, Color col) {
@@ -1713,12 +1871,12 @@ class _Painter extends CustomPainter {
           style: TextStyle(fontFamily: chartFont, fontSize: 10),
           children: spans),
       textDirection: TextDirection.rtl,
-      maxLines: 1,
+      maxLines: 2,
       ellipsis: '…',
-    )..layout(maxWidth: 420);
+    )..layout(maxWidth: math.max(120.0, w - 16));
     cv.drawRRect(
-        RRect.fromRectAndRadius(Rect.fromLTWH(4, 21, tp.width + 8, tp.height + 4), const Radius.circular(4)),
-        Paint()..color = AppColors.surface.withOpacity(0.9));
+        RRect.fromRectAndRadius(Rect.fromLTWH(4, 21, tp.width + 8, tp.height + 4), const Radius.circular(6)),
+        Paint()..color = AppColors.surface.withOpacity(0.92));
     tp.paint(cv, const Offset(8, 23));
   }
 
