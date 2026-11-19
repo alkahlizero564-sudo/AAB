@@ -331,7 +331,7 @@ class AppState extends ChangeNotifier {
     mpR = mp;
     _rebuildStar();
     smR = buildSm(candles, mp, stars: starR);
-    pqR = starR == null ? null : buildPq(mp, starR!, smR!);
+    pqR = starR == null ? null : buildPq(mp, starR!, smR!, alka: ak.signals);
     kmR = buildKm(candles, smR!);
     stR = buildSt(candles, mp);
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);

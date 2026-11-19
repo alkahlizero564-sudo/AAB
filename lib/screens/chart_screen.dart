@@ -8,6 +8,7 @@ import '../analysis/forecast.dart';
 import '../analysis/health.dart';
 import '../analysis/trade_check.dart';
 import '../analysis/lt_indicator.dart';
+import '../analysis/pq_indicator.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -380,7 +381,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'PQ',
           emoji: '🔷',
-          desc: 'النجوم + SM + Alka في مؤشر واحد: الإشارات بنجمة فما فوق أو مع الشريط — ذهب ~57-61%',
+          desc: 'كل إشارات النجوم + SM + Alka في مؤشر واحد: القوية واضحة (ذهب ~57-61%) والضعيفة باهتة',
           health: null,
           on: layers.pq,
           toggle: () => layers.pq = !layers.pq
@@ -584,7 +585,12 @@ class _ChartScreenState extends State<ChartScreen> {
                             : x.name == 'LT'
                             ? _ltStatus(st)
                             : x.name == 'PQ'
-                            ? (st.pqR == null ? 'جاري الحساب…' : 'الآن ${(st.pqR!.winRate * 100).toStringAsFixed(0)}% من ${st.pqR!.closed} صفقة')
+                            ? (st.pqR == null
+                                ? 'جاري الحساب…'
+                                : switch (pqStrongStats(st.pqR!)) {
+                                    (final w, final n) when n > 0 => 'القوية الآن ${(100 * w / n).toStringAsFixed(0)}% من $n',
+                                    _ => 'لا صفقات قوية بعد',
+                                  })
                             : h == null
                             ? 'جاري الحساب…'
                             : h.trades < 20
