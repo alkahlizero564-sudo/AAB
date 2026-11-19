@@ -1183,18 +1183,19 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
-    // ── PQ: إشارات واحدة من النجوم و SM و Alka، مع نجوم الثقة والعلامات
+    // ── PQ: نفس إشارات النجوم و SM و Alka مجتمعة في مؤشر واحد (أخضر شراء، أحمر بيع)
     if (L.pq && pqr != null) {
       final r = pqr!;
       final smKeys = {for (final x in smr?.signals ?? const <PastSignal>[]) (x.i, x.dir)};
-      // أخضر للشراء وأحمر للبيع فقط (بدون ألوان المصادر)
+      final stK = starr == null ? const <(int, int)>{} : starr!.stars.keys.toSet();
+      bool inStars(PastSignal sg) => stK.contains((sg.i, sg.dir));
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'PQ', null,
           tagPer: [
             for (final sg in r.signals)
-              'PQ${starr != null ? ' ${_starTag(starr!, sg.i, sg.dir, false)}' : ''}${smKeys.contains((sg.i, sg.dir)) ? ' SM' : ''}'.trim()
+              'PQ${starr != null && inStars(sg) ? ' ${_starTag(starr!, sg.i, sg.dir, false)}' : ''}${smKeys.contains((sg.i, sg.dir)) ? ' SM' : ''}'.trim()
           ],
           pendTagPer: [for (final _ in r.pending) 'PQ'],
-          starsPer: starr == null ? null : [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
+          starsPer: starr == null ? null : [for (final sg in r.signals) inStars(sg) ? starr!.of(sg.i, sg.dir) : -1]);
     }
     // ── LT بعيد المدى: يُرسم على الفريم اليومي فقط
     if (L.lt && ltr != null && tf == '1d') {
@@ -1628,7 +1629,8 @@ class _Painter extends CustomPainter {
       List<String>? pendingSrc,
       List<String>? tagPer,
       List<String>? pendTagPer,
-      List<int>? starsPer}) {
+      List<int>? starsPer,
+      List<bool>? weakPer}) {
     final n = c.length;
     final placed = <Rect>[]; // لافتات مرسومة: نزيح الجديدة حتى لا تتراكب
     for (final (si, sg) in signals.indexed) {
@@ -1636,8 +1638,11 @@ class _Painter extends CustomPainter {
       final buy = sg.dir > 0;
       // إشارات 0.1 داخل Mp تحتفظ بلونها (أزرق/أصفر)
       final z = sources != null && si < sources.length && sources[si] == '0.1';
-      final col = z ? (buy ? zeroUp : zeroDown) : (buy ? upCol : downCol);
-      final txtCol = (darkText || z) && !buy ? AppColors.onAccent : Colors.white;
+      final weak = weakPer != null && si < weakPer.length && weakPer[si];
+      final col0 = z ? (buy ? zeroUp : zeroDown) : (buy ? upCol : downCol);
+      // الإشارة الضعيفة: باهتة
+      final col = weak ? Color.alphaBlend(col0.withOpacity(0.38), AppColors.bg) : col0;
+      final txtCol = weak ? Colors.white70 : ((darkText || z) && !buy ? AppColors.onAccent : Colors.white);
       final x = xOf(sg.i.toDouble());
       final k = c[sg.i];
       final tp = TextPainter(
@@ -1674,9 +1679,9 @@ class _Painter extends CustomPainter {
       cv.drawRRect(
           r,
           Paint()
-            ..color = border ?? Colors.white.withOpacity(0.85)
+            ..color = weak ? col0.withOpacity(0.7) : (border ?? Colors.white.withOpacity(0.85))
             ..style = PaintingStyle.stroke
-            ..strokeWidth = border == null ? 1 : 2);
+            ..strokeWidth = border == null || weak ? 1 : 2);
       tp.paint(cv, Offset(x + bw / 2 - 5 - tp.width, boxY + 2));
       if (ns >= 0) {
         // النجوم يسار النص: ذهبية ممتلئة، أو نجمة فارغة واحدة لإشارة بلا موافقة
@@ -1831,8 +1836,7 @@ class _Painter extends CustomPainter {
     }
     if (L.pq && pqr != null && pqr!.closed > 0) {
       final a = pqr!;
-      part('PQ ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
-          a.winRate >= 0.5 ? _up : _down);
+      part('PQ ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})', a.winRate >= 0.5 ? _up : _down);
     }
     if (L.lt && ltr != null && tf == '1d' && ltr!.closed > 0) {
       final a = ltr!;

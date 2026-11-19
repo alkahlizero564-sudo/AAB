@@ -380,7 +380,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'PQ',
           emoji: '🔷',
-          desc: 'النجوم + SM + Alka في مؤشر واحد: الإشارات بنجمة فما فوق أو مع الشريط — ذهب ~57-61%',
+          desc: 'نفس إشارات النجوم + SM + Alka مجتمعة في مؤشر واحد — أخضر للشراء وأحمر للبيع',
           health: null,
           on: layers.pq,
           toggle: () => layers.pq = !layers.pq
@@ -584,7 +584,9 @@ class _ChartScreenState extends State<ChartScreen> {
                             : x.name == 'LT'
                             ? _ltStatus(st)
                             : x.name == 'PQ'
-                            ? (st.pqR == null ? 'جاري الحساب…' : 'الآن ${(st.pqR!.winRate * 100).toStringAsFixed(0)}% من ${st.pqR!.closed} صفقة')
+                            ? (st.pqR == null || st.pqR!.closed == 0
+                                ? 'جاري الحساب…'
+                                : 'الآن ${(st.pqR!.winRate * 100).toStringAsFixed(0)}% من ${st.pqR!.closed} صفقة')
                             : h == null
                             ? 'جاري الحساب…'
                             : h.trades < 20
@@ -599,7 +601,7 @@ class _ChartScreenState extends State<ChartScreen> {
                   if (x.name == 'PQ')
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
-                      child: Text('المدى الطويل (ذهب): 57-61% • إدارة ~81%',
+                      child: Text('المدى الطويل (ذهب): 53-58% • إدارة ~78-81%',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
