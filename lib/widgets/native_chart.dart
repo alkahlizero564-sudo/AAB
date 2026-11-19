@@ -1187,9 +1187,8 @@ class _Painter extends CustomPainter {
     if (L.pq && pqr != null) {
       final r = pqr!;
       final smKeys = {for (final x in smr?.signals ?? const <PastSignal>[]) (x.i, x.dir)};
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'PQ', const Color(0xFF7C4DFF),
-          sources: r.sources,
-          pendingSrc: r.pendingSrc,
+      // أخضر للشراء وأحمر للبيع فقط (بدون ألوان المصادر)
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'PQ', null,
           tagPer: [
             for (final sg in r.signals)
               'PQ${starr != null ? ' ${_starTag(starr!, sg.i, sg.dir, false)}' : ''}${smKeys.contains((sg.i, sg.dir)) ? ' SM' : ''}'.trim()
@@ -1833,7 +1832,7 @@ class _Painter extends CustomPainter {
     if (L.pq && pqr != null && pqr!.closed > 0) {
       final a = pqr!;
       part('PQ ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
-          a.winRate >= 0.5 ? const Color(0xFFB388FF) : _down);
+          a.winRate >= 0.5 ? _up : _down);
     }
     if (L.lt && ltr != null && tf == '1d' && ltr!.closed > 0) {
       final a = ltr!;
