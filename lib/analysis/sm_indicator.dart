@@ -99,8 +99,8 @@ AllResult buildSm(List<Candle> c, AllResult mp) {
     }
   }
   // لا إشارة منتظرة وهناك صفقة SM مفتوحة
-  final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
-  return AllResult(sigs, src, [for (final p in pend) if (!openDirs.contains(p.dir)) p], [for (final (q, p) in pend.indexed) if (!openDirs.contains(p.dir)) pSrc[q]], 'SM');
+  final open = sigs.isNotEmpty && sigs.last.exitI < 0;
+  return AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'SM');
 }
 
 /// مؤشر KM: إشارات SM في السوق الهادئ فقط (تذبذب الآن أقل من 0.9 من متوسطه على 100 شمعة).
@@ -125,8 +125,8 @@ AllResult buildKm(List<Candle> c, AllResult sm) {
       pSrc.add(sm.pendingSrc[q]);
     }
   }
-  final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
-  return AllResult(sigs, src, [for (final p in pend) if (!openDirs.contains(p.dir)) p], [for (final (q, p) in pend.indexed) if (!openDirs.contains(p.dir)) pSrc[q]], 'KM');
+  final open = sigs.isNotEmpty && sigs.last.exitI < 0;
+  return AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'KM');
 }
 
 /// اتجاه اليومي عند كل شمعة من شموع يومية منفصلة: EMA20 مقابل EMA50 لآخر يوم اكتمل قبل الشمعة.
@@ -178,6 +178,6 @@ AllResult buildDm(List<Candle> c, MarketSymbol sym,
       pSrc.add(base.pendingSrc[q]);
     }
   }
-  final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
-  return AllResult(sigs, src, [for (final p in pend) if (!openDirs.contains(p.dir)) p], [for (final (q, p) in pend.indexed) if (!openDirs.contains(p.dir)) pSrc[q]], 'DM');
+  final open = sigs.isNotEmpty && sigs.last.exitI < 0;
+  return AllResult(sigs, src, open ? const [] : pend, open ? const [] : pSrc, 'DM');
 }
