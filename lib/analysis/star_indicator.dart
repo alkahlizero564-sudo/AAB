@@ -13,10 +13,12 @@ class StarResult {
   final AllResult res; // الإشارات التي نجومها ≥ الحد الأدنى
   final Map<(int, int), int> stars; // (شمعة الإشارة، الاتجاه) → عدد النجوم
   final Set<(int, int)> rev; // إشارات عكسية (ظهرت وصفقة عكسها مفتوحة)
-  const StarResult(this.res, this.stars, [this.rev = const {}]);
+  final Set<(int, int)> hot; // ضغط 🔥: نجمتان أو 3 في سوق مضغوط (ATR5/ATR50 < 0.6)
+  const StarResult(this.res, this.stars, [this.rev = const {}, this.hot = const {}]);
   static const empty = StarResult(AllResult([], [], [], [], 'نجوم'), {});
   int of(int i, int dir) => stars[(i, dir)] ?? 0;
   bool isRev(int i, int dir) => rev.contains((i, dir));
+  bool isHot(int i, int dir) => hot.contains((i, dir));
 }
 
 /// الإشارات العكسية: إشارات محرّكَي الشراء والبيع المستقلين [two] التي ظهرت وصفقة Mp عكسها ما زالت مفتوحة.
@@ -51,6 +53,11 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0, AllResult?
   final sc = StScorer(c);
   final at = atr(c, 14);
   final am = sma(at.map((v) => v.isNaN ? 0.0 : v).toList(), 100);
+  // ضغط 🔥 (فكرة Squeeze في TradingView): التذبذب في آخر 5 شموع أقل من 60% من آخر 50.
+  // مع نجمتين أو 3 (ذهب وبيتكوين 15m/1h/4h، بهدف 1R): 70.3% (2016-2020) و67.7% (2021-2026)
+  // مقابل 60.4% و58.4% بدونه. لا يفيد مع 0-1 نجمة.
+  final a5 = atr(c, 5), a50 = atr(c, 50);
+  bool squeezed(int i) => i >= 0 && i < c.length && !a5[i].isNaN && !a50[i].isNaN && a50[i] > 0 && a5[i] / a50[i] < 0.6;
   bool calm(int i) => i >= 0 && i < c.length && !at[i].isNaN && !am[i].isNaN && am[i] > 0 && at[i] / am[i] < 0.9;
   int starsOf(int i, int d, String src) {
     final p = sc.score(i, d, src);
@@ -77,6 +84,10 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0, AllResult?
       pSrc.add(mp.pendingSrc[q]);
     }
   }
+  final hot = <(int, int)>{
+    for (final e in stars.entries)
+      if (e.value >= 2 && squeezed(e.key.$1)) e.key
+  };
   final revKeys = <(int, int)>{};
   if (rev != null) {
     for (final (q, s) in rev.signals.indexed) {
@@ -104,5 +115,5 @@ StarResult buildStar(List<Candle> c, AllResult mp, {int minStars = 0, AllResult?
   }
   final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
   final keep = [for (var q = 0; q < pend.length; q++) if (!openDirs.contains(pend[q].dir)) q];
-  return StarResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'نجوم'), stars, revKeys);
+  return StarResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'نجوم'), stars, revKeys, hot);
 }
