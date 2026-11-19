@@ -378,6 +378,14 @@ class _ChartScreenState extends State<ChartScreen> {
           AppState st) =>
       [
         (
+          name: 'King',
+          emoji: '🤖',
+          desc: 'ذكاء اصطناعي (100 شجرة قرارات): أعلى 30% ثقة من إشارات Mp مع نسبة الثقة — «قوي» = أعلى 15%',
+          health: null,
+          on: layers.king,
+          toggle: () => layers.king = !layers.king
+        ),
+        (
           name: 'PQ',
           emoji: '🔷',
           desc: 'نفس إشارات النجوم + SM + Alka مجتمعة في مؤشر واحد — أخضر للشراء وأحمر للبيع',
@@ -583,6 +591,10 @@ class _ChartScreenState extends State<ChartScreen> {
                             ? (st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق')
                             : x.name == 'LT'
                             ? _ltStatus(st)
+                            : x.name == 'King'
+                            ? (st.kingR == null || st.kingR!.res.closed == 0
+                                ? 'جاري الحساب…'
+                                : 'الآن ${(st.kingR!.res.winRate * 100).toStringAsFixed(0)}% من ${st.kingR!.res.closed} صفقة')
                             : x.name == 'PQ'
                             ? (st.pqR == null || st.pqR!.closed == 0
                                 ? 'جاري الحساب…'
@@ -598,6 +610,14 @@ class _ChartScreenState extends State<ChartScreen> {
                       ),
                     ),
                   ]),
+                  if (x.name == 'King')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text('اختبار لم يره: 59% • «قوي» 62%',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
                   if (x.name == 'PQ')
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
@@ -959,6 +979,7 @@ class _ChartScreenState extends State<ChartScreen> {
               starR: st.starR,
               ltR: st.ltR,
               pqR: st.pqR,
+              kingR: st.kingR,
               allR: st.allR,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -1010,6 +1031,7 @@ class _ChartScreenState extends State<ChartScreen> {
       if (d.state == 2 && r.res.pending.isNotEmpty) n = r.of(r.res.pending.first.i, r.res.pending.first.dir);
       e.add((d.state == 0 ? 'نجوم' : 'نجوم $n/3', d, null));
     }
+    if (eff.king && st.kingR != null) e.add(('King', st.kingR!.res.decision, null));
     if (eff.pq && st.pqR != null) e.add(('PQ', st.pqR!.decision, null));
     if (eff.lt) e.add(_ltEntry(st));
     final fam = <(String, AllResult)>[
@@ -1025,7 +1047,7 @@ class _ChartScreenState extends State<ChartScreen> {
     if (eff.all && st.allR != null) e.add(('ALL', st.allR!.decision, null));
     if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
     if (eff.alka && st.alka != null) e.add(('Alka', st.alka!.decision, null));
-    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq;
+    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king;
     if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
 
     // تجميع الصفقات المتطابقة
@@ -1096,6 +1118,7 @@ class _ChartScreenState extends State<ChartScreen> {
   List<(String, PastSignal)> _openTrades(AppState st, ChartLayers eff) {
     final l = <(String, List<PastSignal>?)>[
       if (eff.star) ('نجوم', st.starR?.res.signals),
+      if (eff.king) ('King', st.kingR?.res.signals),
       if (eff.pq) ('PQ', st.pqR?.signals),
       if (eff.lt && st.tf == '1d') ('LT', st.ltR?.signals),
       if (eff.km) ('KM', st.kmR?.signals),

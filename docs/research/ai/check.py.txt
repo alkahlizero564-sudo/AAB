@@ -1,0 +1,24 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/signals.csv')
+meta=['market','tf','cat','ts','year','dir','win','r','src','stars','near','hot','held','st']
+feat=[c for c in df.columns if c not in meta]
+df['src_alka']=(df.src=='Alka')*1; df['src_aab']=(df.src=='AAB')*1; df['src_01']=(df.src=='0.1')*1
+df['tfm']=df.tf.map({'15m':15,'1h':60,'4h':240})
+feat+=['src_alka','src_aab','src_01','tfm']
+train=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~train & ~((df.market=='gold20')&(df.year<2010))
+tr,te=df[train],df[test].copy()
+for nt,leaf,depth in [(150,80,None),(150,120,10),(100,150,8)]:
+    m=RandomForestClassifier(n_estimators=nt,min_samples_leaf=leaf,max_depth=depth,max_features=0.3,n_jobs=-1,random_state=1).fit(tr[feat],tr.win)
+    ptr=m.predict_proba(tr[feat])[:,1]; te['p']=m.predict_proba(te[feat])[:,1]
+    q70,q85=np.quantile(ptr,.7),np.quantile(ptr,.85)
+    nodes=sum(e.tree_.node_count for e in m.estimators_)
+    print(f"trees={nt} leaf={leaf} depth={depth} nodes={nodes} | test all={te.win.mean()*100:.1f} top30={te.win[te.p>=q70].mean()*100:.1f}({(te.p>=q70).sum()}) top15={te.win[te.p>=q85].mean()*100:.1f}({(te.p>=q85).sum()})")
+    # عشريات
+    te['dec']=pd.qcut(te.p,10,labels=False)
+    print('  عشريات:', ' '.join(f"{v*100:.0f}" for v in te.groupby('dec').win.mean()))
+    for tf,g in te.groupby('tf'):
+        print(f"  {tf}: كل {g.win.mean()*100:.1f} | top30 {g.win[g.p>=q70].mean()*100:.1f}({(g.p>=q70).sum()}) | top15 {g.win[g.p>=q85].mean()*100:.1f}({(g.p>=q85).sum()}) | نجوم2+ {g.win[g.stars>=2].mean()*100:.1f}({(g.stars>=2).sum()})")
