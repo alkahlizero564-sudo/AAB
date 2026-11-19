@@ -7,7 +7,6 @@ import '../analysis/chart_reader.dart';
 import '../analysis/forecast.dart';
 import '../analysis/health.dart';
 import '../analysis/trade_check.dart';
-import '../analysis/star_decision.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -877,7 +876,6 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
         if (eff.star && st.starR != null) _starBar(st),
-        if (eff.star && st.starR != null) _decideButton(st),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
         if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
@@ -1054,96 +1052,6 @@ class _ChartScreenState extends State<ChartScreen> {
           Text(v, textDirection: TextDirection.ltr, style: TextStyle(color: col, fontSize: 16, fontWeight: FontWeight.w800)),
         ]),
       );
-
-  Widget _decideButton(AppState st) => Padding(
-        padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-        child: SizedBox(
-          width: double.infinity,
-          height: 38,
-          child: DecoratedBox(
-            decoration: BoxDecoration(gradient: AppColors.goldGrad, borderRadius: BorderRadius.circular(10)),
-            child: TextButton.icon(
-              style: TextButton.styleFrom(foregroundColor: AppColors.onAccent),
-              icon: const Icon(Icons.psychology_alt_rounded, size: 20),
-              label: const Text('حلل السوق وقرر', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-              onPressed: () => _showDecision(st),
-            ),
-          ),
-        ),
-      );
-
-  void _showDecision(AppState st) {
-    final d = decideStars(st.candles, st.starR!, st.symbol, health: st.mpHealth, board: st.board);
-    final col = switch (d.action) {
-      'enter' || 'ready' => d.dir > 0 ? AppColors.up : AppColors.down,
-      'hold' => AppColors.up,
-      'secure' => AppColors.gold,
-      'avoid' => AppColors.down,
-      _ => AppColors.muted,
-    };
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(
-                child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 10),
-            Text('قرار النجوم — ${st.symbol.code} • ${st.tf}',
-                style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-            const SizedBox(height: 6),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: col.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: col.withOpacity(0.8)),
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(d.title, style: TextStyle(color: col, fontSize: 17, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                Text(d.plan, style: const TextStyle(color: AppColors.text, fontSize: 13, height: 1.5)),
-              ]),
-            ),
-            const SizedBox(height: 10),
-            const Text('التحليل', style: TextStyle(color: AppColors.text, fontSize: 14, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 6),
-            for (final (sgn, t) in d.reasons)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 5),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Icon(
-                      sgn > 0
-                          ? Icons.check_circle_rounded
-                          : sgn < 0
-                              ? Icons.error_rounded
-                              : Icons.info_rounded,
-                      size: 16,
-                      color: sgn > 0
-                          ? AppColors.up
-                          : sgn < 0
-                              ? AppColors.down
-                              : AppColors.muted),
-                  const SizedBox(width: 6),
-                  Expanded(child: Text(t, style: const TextStyle(color: AppColors.text, fontSize: 12.5, height: 1.4))),
-                ]),
-              ),
-            const SizedBox(height: 8),
-            const Text('قرار مبني على اختبارات 10 سنوات وليس ضماناً — التزم بالوقف دائماً.',
-                style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
-          ]),
-        ),
-      ),
-    );
-  }
 
   /// قرار مؤشر النجوم مع عدد نجوم الإشارة الحالية.
   Widget _starBar(AppState st) {
