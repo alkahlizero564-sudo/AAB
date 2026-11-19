@@ -1,0 +1,23 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/fail_events.csv')
+feat=[c for c in df.columns if c not in ['market','tf','year','kind','dir','win','r','src_alka','src_aab','src_01']]
+for k in df.kind.unique(): df['k_'+k]=(df.kind==k)*1; feat.append('k_'+k)
+train=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~train & ~((df.market=='gold20')&(df.year<2010))
+tr,te=df[train],df[test].copy()
+print('train',len(tr),'win',round(tr.win.mean(),3),'| test',len(te),'win',round(te.win.mean(),3))
+m=RandomForestClassifier(n_estimators=100,min_samples_leaf=300,max_depth=8,max_features=0.3,n_jobs=-1,random_state=1).fit(tr[feat],tr.win)
+ptr=m.predict_proba(tr[feat])[:,1]; te['p']=m.predict_proba(te[feat])[:,1]
+q70,q85,q95=np.quantile(ptr,.7),np.quantile(ptr,.85),np.quantile(ptr,.95)
+def grp(mk):
+    return {'gold20':'ذهب 2019-25','btc':'بيتكوين 2021-26','eth':'إيثيريوم'}.get(mk, 'عملات/مؤشرات/فضة')
+te['grp']=te.market.map(grp)
+print(f"\n{'':22s} {'الكل':>14s} {'أعلى30%':>16s} {'أعلى15%':>16s} {'أعلى5%':>16s}")
+for name,gg in [('الكل',te)]+list(te.groupby('kind'))+list(te.groupby('grp')):
+    a=gg.win.mean(); b=gg.win[gg.p>=q70]; c=gg.win[gg.p>=q85]; d=gg.win[gg.p>=q95]
+    print(f"{name:22s} {a*100:6.1f}%({len(gg):6d}) {b.mean()*100:6.1f}%({len(b):6d}) {c.mean()*100:6.1f}%({len(c):5d}) {d.mean()*100:6.1f}%({len(d):5d})")
+te['dec']=pd.qcut(te.p,10,labels=False,duplicates='drop')
+print('عشريات:',' '.join(f"{v*100:.0f}" for v in te.groupby('dec').win.mean()))

@@ -1,0 +1,31 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/signals2.csv')
+base=[c for c in df.columns if c not in ['market','tf','year','dir','win','r','src'] and not c.startswith('i_')]
+ind=[c for c in df.columns if c.startswith('i_')]
+train=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~train & ~((df.market=='gold20')&(df.year<2010))
+tr,te=df[train],df[test].copy()
+def grp(mk): return {'gold20':'ذهب 2019-25','btc':'بيتكوين 2021-26','eth':'إيثيريوم'}.get(mk,'عملات/مؤشرات/نفط/فضة')
+te['grp']=te.market.map(grp)
+for name,feats in [('King الحالي (41)',base),('King + مؤشراتنا (58)',base+ind),('مؤشراتنا بس (17)',ind)]:
+    rs=[]
+    for seed in [1,2,3]:
+        m=RandomForestClassifier(n_estimators=100,min_samples_leaf=150,max_depth=8,max_features=0.3,n_jobs=-1,random_state=seed).fit(tr[feats],tr.win)
+        ptr=m.predict_proba(tr[feats])[:,1]; p=m.predict_proba(te[feats])[:,1]
+        rs.append((p,np.quantile(ptr,.7),np.quantile(ptr,.85),m))
+    print(f"\n== {name}")
+    for gname,idx in [('الكل',te.index)]+[(k,v.index) for k,v in te.groupby('grp')]:
+        line=f"  {gname:22s}"
+        for lab,qi in [('أعلى30%',1),('أعلى15%',2)]:
+            accs=[];ns=[]
+            for p,q70,q85,_ in rs:
+                pp=pd.Series(p,index=te.index)[idx]; sel=te.win[idx][pp>=(q70 if qi==1 else q85)]
+                accs.append(sel.mean()); ns.append(len(sel))
+            line+=f" | {lab} {np.mean(accs)*100:5.1f}% ({int(np.mean(ns))})"
+        print(line)
+    if name.startswith('King +'):
+        imp=sorted(zip(rs[0][3].feature_importances_,feats),reverse=True)[:12]
+        print('  أهم الخصائص:',[f for _,f in imp])
