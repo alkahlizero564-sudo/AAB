@@ -1,0 +1,45 @@
+import csv, json, sys, math
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+rows=[r for r in csv.reader(open(S+'/gold10/xau10_1d.csv'))][1:]
+t=[r[0][:10] for r in rows]; o=[float(r[1]) for r in rows]; h=[float(r[2]) for r in rows]; l=[float(r[3]) for r in rows]; c=[float(r[4]) for r in rows]
+n=len(c)
+def sma(v,p): return [sum(v[i-p+1:i+1])/p if i>=p-1 else None for i in range(n)]
+s200=sma(c,200); s5=sma(c,5)
+# RSI(2) Wilder (مثل indicators.dart)
+def rsi(v,p):
+    out=[None]*n; g=lo=0.0
+    for i in range(1,p+1):
+        d=v[i]-v[i-1]; g+=max(d,0); lo+=max(-d,0)
+    g/=p; lo/=p; out[p]=100 if lo==0 else 100-100/(1+g/lo)
+    for i in range(p+1,n):
+        d=v[i]-v[i-1]; g=(g*(p-1)+max(d,0))/p; lo=(lo*(p-1)+max(-d,0))/p
+        out[i]=100 if lo==0 else 100-100/(1+g/lo)
+    return out
+r2=rsi(c,2)
+tr=[h[0]-l[0]]+[max(h[i]-l[i],abs(h[i]-c[i-1]),abs(l[i]-c[i-1])) for i in range(1,n)]
+atr=[None]*n; a=sum(tr[:14])/14; atr[13]=a
+for i in range(14,n): a=(a*13+tr[i])/14; atr[i]=a
+trades=[]
+busy=-1
+for i in range(201,n-1):
+    if i<=busy or s200[i] is None or r2[i] is None: continue
+    if not (c[i]>s200[i] and r2[i]<10): continue
+    e=o[i+1]; stop=e-3*atr[i]; j=i+1; x=c[-1]; done=False
+    while j<n:
+        if l[j]<=stop: x=stop; done=True; break
+        if c[j]>s5[j] or j-i>=10: x=c[j]; done=True; break
+        j+=1
+    if j>=n: j=n-1
+    busy=j; trades.append(dict(k='ارتداد',i=i+1,j=j,e=e,x=x,open=not done))
+busy=-1
+for i in range(201,n-1):
+    if i<=busy or s200[i] is None: continue
+    if not (c[i]>max(h[i-55:i]) and c[i]>s200[i]): continue
+    e=o[i+1]; j=i+1; x=c[-1]; done=False
+    while j<n:
+        if c[j]<min(l[j-20:j]): x=c[j]; done=True; break
+        j+=1
+    if j>=n: j=n-1
+    busy=j; trades.append(dict(k='ترند',i=i+1,j=j,e=e,x=x,open=not done))
+json.dump(dict(t=t,o=o,h=h,l=l,c=c,s200=s200,trades=trades),open(S+'/lt/data.json','w'))
+print(len(trades), [ (x['k'],t[x['i']],t[x['j']],round(100*(x['x']/x['e']-1),1)) for x in trades if x['k']=='ترند'][-6:])

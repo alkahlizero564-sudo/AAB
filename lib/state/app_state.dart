@@ -13,6 +13,7 @@ import '../analysis/indicators.dart';
 import '../analysis/health.dart';
 import '../analysis/st_indicator.dart';
 import '../analysis/star_indicator.dart';
+import '../analysis/lt_indicator.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -50,6 +51,7 @@ class AppState extends ChangeNotifier {
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
+  AllResult? ltR; // مؤشر LT بعيد المدى (من الشموع اليومية)
   StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
   int starMin = 0; // أقل عدد نجوم يظهر
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
@@ -248,6 +250,7 @@ class AppState extends ChangeNotifier {
     kmR = null;
     stR = null;
     starR = null;
+    ltR = null;
     dmR = null;
     daily = null;
     board = {};
@@ -328,6 +331,7 @@ class AppState extends ChangeNotifier {
     stR = buildSt(candles, mp);
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     _rebuildStar();
+    _rebuildLt();
     allR = all;
     forecast = fc;
     signal = _unify(base, fc);
@@ -417,6 +421,7 @@ class AppState extends ChangeNotifier {
         out[t] = trendOf(c);
         if (t == '1d') {
           daily = c;
+          _rebuildLt();
           if (_fAll != null && alka != null && zero != null) {
             dmR = buildDm(candles, symbol, aab: _fAll!, alka: alka!, zero: zero!, daily: c);
             _rebuildStar();
@@ -433,6 +438,12 @@ class AppState extends ChangeNotifier {
 
   Future<List<Candle>> fetchLong({int count = 3000}) =>
       _market.fetch(symbol, tf, settings, count: count);
+
+  /// LT يعمل على الشموع اليومية: على فريم 1D من شموع الشارت، وفي غيره من الشموع اليومية المحمّلة.
+  void _rebuildLt() {
+    final d = tf == '1d' ? candles : daily;
+    ltR = d == null || d.length < 230 ? null : buildLt(d);
+  }
 
   void _rebuildStar() {
     final mp = mpR;

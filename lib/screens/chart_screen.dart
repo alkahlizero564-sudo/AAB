@@ -7,6 +7,7 @@ import '../analysis/chart_reader.dart';
 import '../analysis/forecast.dart';
 import '../analysis/health.dart';
 import '../analysis/trade_check.dart';
+import '../analysis/lt_indicator.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -376,6 +377,14 @@ class _ChartScreenState extends State<ChartScreen> {
   List<({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle})> _indicators(
           AppState st) =>
       [
+        (
+          name: 'LT',
+          emoji: '🏔️',
+          desc: 'بعيد المدى (يومي، شراء فقط): ترند ~67% وارتداد ~70% — صفقتان تقريباً في الشهر',
+          health: null,
+          on: layers.lt,
+          toggle: () => layers.lt = !layers.lt
+        ),
         (
           name: 'نجوم',
           emoji: '⭐',
@@ -846,6 +855,7 @@ class _ChartScreenState extends State<ChartScreen> {
               dmR: st.dmR,
               stR: st.stR,
               starR: st.starR,
+              ltR: st.ltR,
               allR: st.allR,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -872,6 +882,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (eff.all && st.allR != null) _decisionBar(st.allR!.decision, st.symbol, tag: 'ALL'),
         if (eff.star && st.starR != null) _starBar(st),
+        if (eff.lt) _ltBar(st),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
         if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
@@ -888,7 +899,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAab && layers.sigs)
           _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk')
         else if (eff.sigs ||
-            (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st && !eff.star))
+            (!eff.all && !eff.alka && !eff.mp && !eff.zero && !eff.sm && !eff.km && !eff.dm && !eff.st && !eff.star && !eff.lt))
           _decisionBar(st.forecast!.decision, st.symbol, tag: 'AAB'),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
@@ -900,6 +911,7 @@ class _ChartScreenState extends State<ChartScreen> {
   List<(String, PastSignal)> _openTrades(AppState st, ChartLayers eff) {
     final l = <(String, List<PastSignal>?)>[
       if (eff.star) ('نجوم', st.starR?.res.signals),
+      if (eff.lt && st.tf == '1d') ('LT', st.ltR?.signals),
       if (eff.km) ('KM', st.kmR?.signals),
       if (eff.dm) ('DM', st.dmR?.signals),
       if (eff.st) ('ST', st.stR?.res.signals),
@@ -1048,6 +1060,29 @@ class _ChartScreenState extends State<ChartScreen> {
           Text(v, textDirection: TextDirection.ltr, style: TextStyle(color: col, fontSize: 16, fontWeight: FontWeight.w800)),
         ]),
       );
+
+  /// قرار مؤشر LT (من الشموع اليومية في أي فريم): صفقة مفتوحة أو حالة السوق.
+  Widget _ltBar(AppState st) {
+    final r = st.ltR;
+    if (r == null) {
+      return _decisionBar(
+          const Decision(0, 0, double.nan, double.nan, double.nan, double.nan, 'LT: جاري تحميل الشموع اليومية…', ''),
+          st.symbol,
+          tag: 'LT');
+    }
+    final d = r.decision;
+    if (d.state != 0) {
+      final oi = r.signals.lastIndexWhere((x) => x.exitI < 0);
+      final kind = oi >= 0 ? r.sources[oi] : '';
+      return _decisionBar(d, st.symbol, tag: 'LT $kind');
+    }
+    final up = ltUptrend(st.tf == '1d' ? st.candles : (st.daily ?? const []));
+    return _decisionBar(
+        Decision(0, 0, double.nan, double.nan, double.nan, double.nan,
+            up ? 'LT: السوق فوق متوسط 200 يوم — انتظر إشارة شراء' : 'LT: السوق تحت متوسط 200 يوم — لا شراء (حماية)', ''),
+        st.symbol,
+        tag: 'LT');
+  }
 
   /// قرار مؤشر النجوم مع عدد نجوم الإشارة الحالية.
   Widget _starBar(AppState st) {

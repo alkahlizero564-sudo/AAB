@@ -1,0 +1,85 @@
+const { chromium } = require('playwright');
+const fs = require('fs');
+const S = '/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad/lt';
+const D = JSON.parse(fs.readFileSync(S + '/data.json'));
+function page(from, to, title, sub, showBounce) {
+  const idx = D.t.map((x, i) => [x, i]).filter(([x]) => x >= from && x <= to).map(([, i]) => i);
+  const i0 = idx[0], i1 = idx[idx.length - 1];
+  const W = 1080, H = 1350, padL = 20, padR = 110, top = 210, bot = 1180;
+  let hi = -1e9, lo = 1e9;
+  for (let i = i0; i <= i1; i++) { hi = Math.max(hi, D.h[i]); lo = Math.min(lo, D.l[i]); if (D.s200[i]) lo = Math.min(lo, D.s200[i]); }
+  const pad = (hi - lo) * 0.06; hi += pad; lo -= pad;
+  const n = i1 - i0 + 1, bw = (W - padL - padR) / n;
+  const x = i => padL + (i - i0 + 0.5) * bw, y = p => top + (bot - top) * (hi - p) / (hi - lo);
+  let svg = '';
+  // grid + price axis
+  const step = Math.pow(10, Math.floor(Math.log10((hi - lo) / 6)));
+  const st = [1, 2, 2.5, 5, 10].map(m => m * step).find(s => (hi - lo) / s <= 8);
+  for (let p = Math.ceil(lo / st) * st; p <= hi; p += st) svg += `<line x1="${padL}" x2="${W - padR}" y1="${y(p)}" y2="${y(p)}" stroke="#1f2633"/><text x="${W - padR + 8}" y="${y(p) + 6}" fill="#7d8799" font-size="18">${p.toFixed(0)}</text>`;
+  // trend trade bands
+  for (const tr of D.trades) {
+    if (tr.k !== 'ترند' || tr.j < i0 || tr.i > i1) continue;
+    const a = Math.max(tr.i, i0), b = Math.min(tr.j, i1);
+    const win = tr.x > tr.e;
+    svg += `<rect x="${x(a) - bw / 2}" y="${top}" width="${(b - a + 1) * bw}" height="${bot - top}" fill="${win ? '#16c784' : '#ea3943'}" opacity="0.08"/>`;
+  }
+  // candles
+  for (let i = i0; i <= i1; i++) {
+    const up = D.c[i] >= D.o[i], col = up ? '#16c784' : '#ea3943';
+    svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${y(D.h[i])}" y2="${y(D.l[i])}" stroke="${col}" stroke-width="1.2"/>`;
+    const yt = y(Math.max(D.o[i], D.c[i])), yb = y(Math.min(D.o[i], D.c[i]));
+    svg += `<rect x="${x(i) - bw * 0.35}" y="${yt}" width="${Math.max(1, bw * 0.7)}" height="${Math.max(1, yb - yt)}" fill="${col}"/>`;
+  }
+  // SMA200
+  let path = '';
+  for (let i = i0; i <= i1; i++) if (D.s200[i]) path += (path ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(D.s200[i]).toFixed(1);
+  svg += `<path d="${path}" stroke="#d4af37" stroke-width="2.5" fill="none" stroke-dasharray="8 6"/>`;
+  // markers
+  for (const tr of D.trades) {
+    if (tr.i < i0 || tr.i > i1) continue;
+    const pct = 100 * (tr.x / tr.e - 1), win = pct > 0;
+    if (tr.k === 'ترند') {
+      const yi = y(D.l[tr.i]) + 14;
+      svg += `<path d="M ${x(tr.i)} ${yi} l -14 26 l 28 0 z" fill="#16c784"/>`;
+      svg += `<rect x="${x(tr.i) - 92}" y="${yi + 32}" width="184" height="64" rx="12" fill="#0d3b2a" stroke="#16c784" stroke-width="2"/>`;
+      svg += `<text x="${x(tr.i)}" y="${yi + 58}" fill="#fff" font-size="22" font-weight="800" text-anchor="middle">LT شراء ترند</text>`;
+      svg += `<text x="${x(tr.i)}" y="${yi + 86}" fill="${win ? '#16c784' : '#ea3943'}" font-size="22" font-weight="800" text-anchor="middle">${tr.open ? 'مفتوحة ' : ''}\u2066${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%\u2069</text>`;
+      if (tr.j <= i1 && !tr.open) {
+        const yj = y(D.h[tr.j]) - 16;
+        svg += `<rect x="${x(tr.j) - 46}" y="${yj - 34}" width="92" height="34" rx="9" fill="#2a1d0b" stroke="#d4af37" stroke-width="2"/><text x="${x(tr.j)}" y="${yj - 10}" fill="#d4af37" font-size="19" font-weight="700" text-anchor="middle">خروج</text>`;
+      }
+    } else if (showBounce) {
+      const yi = y(D.l[tr.i]) + 10;
+      svg += `<path d="M ${x(tr.i)} ${yi} l -9 17 l 18 0 z" fill="#4fc3f7"/>`;
+      svg += `<text x="${x(tr.i)}" y="${yi + 40}" fill="${win ? '#4fc3f7' : '#ea3943'}" font-size="16" font-weight="700" text-anchor="middle">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%</text>`;
+    }
+  }
+  // months axis
+  let lastM = '';
+  const every = n > 700 ? 6 : n > 300 ? 3 : 2;
+  for (let i = i0; i <= i1; i++) { const m = D.t[i].slice(0, 7); if (m !== lastM && ((+m.slice(5, 7)) - 1) % every === 0) { svg += `<text x="${x(i)}" y="${bot + 34}" fill="#7d8799" font-size="17" text-anchor="middle">${m}</text>`; } lastM = m; }
+  const legend = `<div class="lg"><span><i style="background:#16c784"></i>شراء ترند: كسر قمة 55 يوم فوق متوسط 200</span>${showBounce ? '<span><i style="background:#4fc3f7"></i>شراء ارتداد: RSI(2)&lt;10 فوق متوسط 200</span>' : ''}<span><i style="background:#d4af37"></i>متوسط 200 يوم</span></div>`;
+  return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><style>
+  @font-face{font-family:Cairo;src:url(file://${S}/Cairo-Regular.ttf)}@font-face{font-family:Cairo;font-weight:700;src:url(file://${S}/Cairo-Bold.ttf)}@font-face{font-family:Cairo;font-weight:800;src:url(file://${S}/Cairo-ExtraBold.ttf)}
+  body{margin:0;background:#0b0e14;font-family:Cairo;color:#e8ecf3;width:${W}px;height:${H}px;overflow:hidden}
+  h1{margin:0;padding:34px 36px 0;font-size:42px;color:#d4af37}.sub{padding:6px 36px 0;font-size:24px;color:#aab3c2}
+  .lg{position:absolute;top:1240px;right:36px;left:36px;display:flex;flex-wrap:wrap;gap:12px 28px;font-size:20px;color:#c5ccd8}.lg i{display:inline-block;width:16px;height:16px;border-radius:4px;margin-left:8px;vertical-align:middle}
+  svg{position:absolute;top:0;left:0}text{font-family:Cairo}</style></head><body><h1>${title}</h1><div class="sub">${sub}</div>
+  <svg width="${W}" height="${H}" direction="ltr">${svg}</svg>${legend}</body></html>`;
+}
+(async () => {
+  const b = await chromium.launch();
+  const p = await b.newPage({ viewport: { width: 1080, height: 1350 } });
+  const pages = [
+    ['lt_gold_trend.png', '2023-06-01', '2026-11-30', 'مؤشر LT — الذهب يومي', 'صفقات «شراء الترند» 2023–2026 · 5 من 6 رابحة', false],
+    ['lt_gold_2025.png', '2025-06-01', '2026-11-30', 'مؤشر LT — الذهب يومي', 'الترند (أخضر) والارتداد (أزرق) · يونيو 2025 – نوفمبر 2026', true],
+    ['lt_gold_2018.png', '2018-01-01', '2020-12-31', 'مؤشر LT — الذهب يومي', 'صفقات «شراء الترند» 2018–2020', false],
+  ];
+  for (const [f, a, z, t, s, sb] of pages) {
+    fs.writeFileSync(S + '/p.html', page(a, z, t, s, sb));
+    await p.goto('file://' + S + '/p.html');
+    await p.waitForTimeout(300);
+    await p.screenshot({ path: S + '/' + f });
+  }
+  await b.close();
+})();

@@ -30,6 +30,7 @@ class ChartLayers {
   bool zero = false; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
   bool vol = true; // أعمدة الحجم أسفل الشارت
   bool sr = false; // مستويات الدعم والمقاومة (زر في أعلى الشارت)
+  bool lt = false; // مؤشر LT بعيد المدى (يُرسم على الفريم اليومي)
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -57,6 +58,7 @@ class ChartLayers {
     ..star = star ?? this.star
     ..vol = vol
     ..sr = sr
+    ..lt = lt
     ..type = type
     ..sub = sub;
 }
@@ -94,6 +96,7 @@ class NativeChart extends StatefulWidget {
   final AllResult? dmR;
   final StResult? stR;
   final StarResult? starR;
+  final AllResult? ltR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -114,6 +117,7 @@ class NativeChart extends StatefulWidget {
     this.dmR,
     this.stR,
     this.starR,
+    this.ltR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -274,7 +278,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR),
             ),
           ),
         ),
@@ -348,8 +352,9 @@ class _Painter extends CustomPainter {
   final AllResult? dmr;
   final StResult? str;
   final StarResult? starr;
+  final AllResult? ltr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -975,6 +980,12 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
+    // ── LT بعيد المدى: يُرسم على الفريم اليومي فقط
+    if (L.lt && ltr != null && tf == '1d') {
+      final r = ltr!;
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'LT', const Color(0xFF4FC3F7),
+          sources: r.sources, tagPer: [for (final x in r.sources) 'LT $x']);
+    }
     if (L.zero && zr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, zr!.signals, zr!.pending, '0.1', null,
           upCol: zeroUp, downCol: zeroDown, darkText: true);
@@ -1599,6 +1610,11 @@ class _Painter extends CustomPainter {
       final a = dmr!;
       part('DM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
           a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
+    if (L.lt && ltr != null && tf == '1d' && ltr!.closed > 0) {
+      final a = ltr!;
+      part('LT ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
+          a.winRate >= 0.5 ? const Color(0xFF4FC3F7) : _down);
     }
     if (L.star && starr != null && starr!.res.closed > 0) {
       final a = starr!.res;
