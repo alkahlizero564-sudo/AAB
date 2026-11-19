@@ -971,7 +971,6 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
         if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk'),
         ..._bars(st, eff, showAab: !(hideAab && layers.sigs)),
-        for (final ot in _openTrades(st, eff)) _checkButton(st, ot.$1, ot.$2),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
     ]);
@@ -1023,8 +1022,22 @@ class _ChartScreenState extends State<ChartScreen> {
         g.$1.add(t);
       }
     }
+    // زر فحص الصفقة داخل الشريط نفسه (بدل زر كامل العرض)
+    final open = _openTrades(st, eff);
+    final price = st.candles.isEmpty ? double.nan : st.candles.last.close;
+    VoidCallback? checkFor(Decision d) {
+      if (d.state != 1) return null;
+      for (final (t, sg) in open) {
+        if (sg.dir == d.dir && st.symbol.fmt(sg.entry) == st.symbol.fmt(d.entry)) {
+          return () => _showTradeCheck(st, t, sg);
+        }
+      }
+      return null;
+    }
+
     return [
-      for (final g in groups.values) _decisionBar(g.$2, st.symbol, tag: g.$1.join(' · ')),
+      for (final g in groups.values)
+        _decisionBar(g.$2, st.symbol, tag: g.$1.join(' · '), price: price, onCheck: checkFor(g.$2)),
       if (waiting.isNotEmpty) _waitLine(waiting),
     ];
   }
@@ -1077,25 +1090,6 @@ class _ChartScreenState extends State<ChartScreen> {
     }
     return const [];
   }
-
-  Widget _checkButton(AppState st, String tag, PastSignal sg) => Padding(
-        padding: const EdgeInsets.fromLTRB(10, 4, 10, 4),
-        child: SizedBox(
-          width: double.infinity,
-          height: 36,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.gold,
-              side: const BorderSide(color: AppColors.gold, width: 1),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            icon: const Icon(Icons.manage_search_rounded, size: 18),
-            label: Text('افحص صفقتي ($tag ${sg.dir > 0 ? 'شراء' : 'بيع'})',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
-            onPressed: () => _showTradeCheck(st, tag, sg),
-          ),
-        ),
-      );
 
   void _showTradeCheck(AppState st, String tag, PastSignal sg) {
     final r = checkTrade(st.candles, sg);
@@ -1343,7 +1337,8 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   /// القرار الوحيد في شاشة الشارت (من محرك التوصيات المقاس).
-  Widget _decisionBar(Decision d, MarketSymbol sym, {String tag = '', String? waitText}) {
+  Widget _decisionBar(Decision d, MarketSymbol sym,
+      {String tag = '', String? waitText, double price = double.nan, VoidCallback? onCheck}) {
     if (d.state == 0) {
       return Container(
         width: double.infinity,
@@ -1400,8 +1395,26 @@ class _ChartScreenState extends State<ChartScreen> {
                 color: col,
                 borderRadius: BorderRadius.circular(7),
               ),
-              child:
-                  Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+                if (d.state == 1 && !price.isNaN)
+                  Builder(builder: (_) {
+                    final risk = !d.risk.isNaN && d.risk > 0 ? d.risk : (d.entry - d.sl).abs();
+                    final r = risk > 0 ? (price - d.entry) * d.dir / risk : double.nan;
+                    if (r.isNaN) return const SizedBox.shrink();
+                    return Container(
+                      margin: const EdgeInsets.only(top: 3),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(5)),
+                      child: Text('الآن \u2066${r >= 0 ? '+' : ''}${r.toStringAsFixed(2)}R\u2069',
+                          textDirection: TextDirection.rtl,
+                          style: TextStyle(
+                              color: r >= 0 ? const Color(0xFFB9F6CA) : const Color(0xFFFFCDD2),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800)),
+                    );
+                  }),
+              ]),
             ),
             const SizedBox(width: 6),
             if (d.state == 1 || d.state == 2) ...[
@@ -1409,7 +1422,21 @@ class _ChartScreenState extends State<ChartScreen> {
               item('وقف', d.sl, AppColors.down),
               item('TP1', d.tp1, AppColors.up),
               item('TP2', d.tp2, AppColors.up),
-              Icon(why ? Icons.expand_more_rounded : Icons.info_outline_rounded, size: 16, color: AppColors.muted),
+              if (onCheck != null)
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: onCheck,
+                  child: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.gold, width: 1),
+                    ),
+                    child: const Icon(Icons.manage_search_rounded, size: 17, color: AppColors.gold),
+                  ),
+                )
+              else
+                Icon(why ? Icons.expand_more_rounded : Icons.info_outline_rounded, size: 16, color: AppColors.muted),
             ] else
               Expanded(child: Text(d.title, style: TextStyle(color: col, fontSize: 12, fontWeight: FontWeight.w600))),
           ]),
