@@ -75,10 +75,16 @@ class KingScorer {
   }
 
   double score(int i, int dir, double entry, double sl, String src) {
-    if (i < 210 || i >= c.length) return double.nan;
+    final x = features(i, dir, entry, sl, src);
+    return x == null ? double.nan : _predict(x);
+  }
+
+  /// الخصائص الـ 41 بنفس ترتيب [kingFeatures] (null إن لم تتوفر).
+  List<double>? features(int i, int dir, double entry, double sl, String src) {
+    if (i < 210 || i >= c.length) return null;
     final d = dir.toDouble();
     final a = at[i].isNaN ? (c[i].high - c[i].low) : at[i];
-    if (!(a > 0)) return double.nan;
+    if (!(a > 0)) return null;
     double nz(double x) => x.isNaN || x.isInfinite ? 0 : x;
     final kk = c[i], rng = math.max(1e-9, kk.high - kk.low);
     double ret(int b) => (kk.close - c[i - b].close) * d / a;
@@ -128,7 +134,7 @@ class KingScorer {
     for (var q = 0; q < x.length; q++) {
       x[q] = (x[q] * 10000).roundToDouble() / 10000;
     }
-    return _predict(x);
+    return x;
   }
 }
 
