@@ -329,7 +329,7 @@ class _ChartScreenState extends State<ChartScreen> {
       );
 
   Widget _iconTool(IconData i, String tip, VoidCallback onTap, {bool primary = false}) => Padding(
-        padding: const EdgeInsetsDirectional.only(start: 6),
+        padding: const EdgeInsetsDirectional.only(start: 5),
         child: Tooltip(
           message: tip,
           child: InkWell(
@@ -794,7 +794,6 @@ class _ChartScreenState extends State<ChartScreen> {
         ),
         child: Row(children: [
           const _CompactSymbol(),
-          const SizedBox(width: 8),
           const SizedBox(width: 6),
           Container(
             width: 8,
@@ -811,6 +810,8 @@ class _ChartScreenState extends State<ChartScreen> {
           const Spacer(),
           _iconTool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(st), primary: true),
           _iconTool(Icons.leaderboard_outlined, 'مقارنة المؤشرات', () => _showBench(st)),
+          _iconTool(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', () => setState(() => layers.sr = !layers.sr),
+              primary: layers.sr),
           _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
           _iconTool(
               full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded, full ? 'إظهار الأدوات' : 'شاشة كاملة',

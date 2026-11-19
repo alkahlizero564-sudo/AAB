@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import '../analysis/sr_levels.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/st_indicator.dart';
@@ -28,6 +29,7 @@ class ChartLayers {
   bool sm = false; // مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات + رسم الشريط
   bool zero = false; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
   bool vol = true; // أعمدة الحجم أسفل الشارت
+  bool sr = false; // مستويات الدعم والمقاومة (زر في أعلى الشارت)
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -54,6 +56,7 @@ class ChartLayers {
     ..st = st ?? this.st
     ..star = star ?? this.star
     ..vol = vol
+    ..sr = sr
     ..type = type
     ..sub = sub;
 }
@@ -578,6 +581,23 @@ class _Painter extends CustomPainter {
               ..strokeWidth = key ? 1.2 : 0.8);
         _txt(canvas, 'Fib ${f.ratio}  ${sym.fmt(f.price)}', Offset(4, y - 11),
             color: AppColors.gold.withOpacity(0.9), size: 9);
+      }
+    }
+
+    // ── الدعم والمقاومة
+    if (L.sr && c.length >= 40) {
+      for (final l in srLevels(c)) {
+        if (!inY(l.price)) continue;
+        final col = l.resistance ? _down : _up;
+        final yT = yOf(l.hi), yB = yOf(l.lo);
+        canvas.drawRect(Rect.fromLTRB(0, math.min(yT, yB) - 1.5, w, math.max(yT, yB) + 1.5),
+            Paint()..color = col.withOpacity(0.10 + 0.04 * math.min(3, l.touches - 1)));
+        final y = yOf(l.price);
+        canvas.drawLine(Offset(0, y), Offset(w, y), Paint()
+          ..color = col.withOpacity(0.85)
+          ..strokeWidth = l.touches >= 3 ? 1.6 : 1.0);
+        _txt(canvas, '${l.resistance ? 'مقاومة' : 'دعم'} ${sym.fmt(l.price)}${l.touches > 1 ? '  ×${l.touches}' : ''}',
+            Offset(4, y - 13), color: col, size: 9.5, bold: true, rtl: true, bg: Colors.black54);
       }
     }
 
