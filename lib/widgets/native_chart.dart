@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import '../analysis/sr_levels.dart';
 import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/st_indicator.dart';
@@ -28,6 +29,7 @@ class ChartLayers {
   bool sm = false; // مؤشر SM: إشارات Mp التي يوافقها شريط المتوسطات + رسم الشريط
   bool zero = false; // مؤشر 0.1: مصيدة سيولة + شمعة رفض (أزرق شراء، أصفر بيع)
   bool vol = true; // أعمدة الحجم أسفل الشارت
+  bool sr = false; // مستويات الدعم والمقاومة (زر في أعلى الشارت)
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -54,6 +56,7 @@ class ChartLayers {
     ..st = st ?? this.st
     ..star = star ?? this.star
     ..vol = vol
+    ..sr = sr
     ..type = type
     ..sub = sub;
 }
@@ -361,7 +364,7 @@ class _Painter extends CustomPainter {
 
   void _txt(Canvas cv, String t, Offset o,
       {Color color = AppColors.muted, double size = 10, Color? bg, bool bold = false,
-      bool rtl = false}) {
+      bool rtl = false, bool endAt = false}) {
     final tp = TextPainter(
       text: TextSpan(
           text: t,
@@ -372,6 +375,7 @@ class _Painter extends CustomPainter {
               fontWeight: bold ? FontWeight.w700 : FontWeight.w400)),
       textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
     )..layout();
+    if (endAt) o = Offset(o.dx - tp.width, o.dy); // o = نهاية النص (يمينه)
     if (bg != null) {
       cv.drawRect(Rect.fromLTWH(o.dx - 2, o.dy - 1, tp.width + 4, tp.height + 2),
           Paint()..color = bg);
@@ -578,6 +582,32 @@ class _Painter extends CustomPainter {
               ..strokeWidth = key ? 1.2 : 0.8);
         _txt(canvas, 'Fib ${f.ratio}  ${sym.fmt(f.price)}', Offset(4, y - 11),
             color: AppColors.gold.withOpacity(0.9), size: 9);
+      }
+    }
+
+    // ── الدعم والمقاومة (المقاومة العليا والدعم السفلي أوضح، وتظهر على حافة الشارت لو خارج المدى)
+    if (L.sr && c.length >= 40) {
+      for (final l in srLevels(c)) {
+        final col = l.resistance ? _down : _up;
+        final name = l.major ? (l.resistance ? 'مقاومة عليا' : 'دعم سفلي') : (l.resistance ? 'مقاومة' : 'دعم');
+        final label = '$name ${sym.fmt(l.price)}${l.touches > 1 ? '  ×${l.touches}' : ''}';
+        if (!inY(l.price)) {
+          if (!l.major) continue;
+          // خارج المدى المرئي: علامة على الحافة
+          final above = l.price > hi;
+          final yy = above ? 50.0 : h - 20;
+          _txt(canvas, '$label (${above ? 'فوق' : 'تحت'} الشاشة)', Offset(w - 72, yy), color: col, size: 10, bold: true, rtl: true, bg: Colors.black87, endAt: true);
+          continue;
+        }
+        final yT = yOf(l.hi), yB = yOf(l.lo);
+        canvas.drawRect(Rect.fromLTRB(0, math.min(yT, yB) - 1.5, w, math.max(yT, yB) + 1.5),
+            Paint()..color = col.withOpacity(l.major ? 0.22 : 0.08 + 0.03 * math.min(3, l.touches - 1)));
+        final y = yOf(l.price);
+        canvas.drawLine(Offset(0, y), Offset(w, y), Paint()
+          ..color = col.withOpacity(l.major ? 1 : 0.6)
+          ..strokeWidth = l.major ? 2.2 : (l.touches >= 3 ? 1.3 : 0.9));
+        _txt(canvas, label, Offset(w - 72, y - (l.major ? 15 : 13)),
+            color: col, size: l.major ? 11 : 9.5, bold: true, rtl: true, bg: Colors.black54, endAt: true);
       }
     }
 
