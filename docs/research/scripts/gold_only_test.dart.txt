@@ -1,0 +1,250 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'package:aab/analysis/alka.dart';
+import 'package:aab/analysis/star_indicator.dart';
+import 'package:aab/analysis/st_indicator.dart';
+import 'package:aab/analysis/sm_indicator.dart';
+import 'package:aab/analysis/patterns.dart';
+import 'package:aab/analysis/zero_one.dart';
+import 'package:aab/analysis/all_indicator.dart';
+import 'package:aab/analysis/indicators.dart';
+import 'package:aab/analysis/forecast.dart';
+import 'package:aab/data/symbols.dart';
+import 'package:aab/models.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+const sp = '/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad';
+List<Candle> load(String path) {
+  final out = <Candle>[];
+  for (final l in File(path).readAsLinesSync().skip(1)) {
+    final p = l.split(',');
+    if (p.length < 6) continue;
+    final v = [1, 2, 3, 4, 5].map((i) => double.tryParse(p[i]) ?? double.nan).toList();
+    var ts = p[0].trim();
+    if (!ts.contains('T')) ts = ts.contains(':') ? '${ts.replaceFirst(' ', 'T')}Z' : '${ts}T00:00:00Z';
+    final t = DateTime.tryParse(ts);
+    if (t == null || v.take(4).any((x) => x.isNaN)) continue;
+    out.add(Candle(t.toUtc(), v[0], v[1], v[2], v[3], v[4].isNaN ? 0 : v[4]));
+  }
+  return out;
+}
+String gdf(String r) => Directory('$sp/gdf/$r').listSync().whereType<File>().firstWhere((f) => f.path.endsWith('.csv')).path;
+
+class T { final int i, exitI, dir, src; final double r; final bool win; T(this.i, this.exitI, this.dir, this.src, this.r, this.win); }
+
+List<T> trades(List<PastSignal> l, int src) => [
+      for (final s in l)
+        if (s.result != 0 && s.exitI >= 0) T(s.i, s.exitI, s.dir, src, s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1, s.result > 0)
+    ];
+
+/// صفقة واحدة في كل مرة (بترتيب ظهور الإشارة)
+List<T> oneAtATime(List<T> l) {
+  final s = [...l]..sort((a, b) => a.i != b.i ? a.i.compareTo(b.i) : a.src.compareTo(b.src));
+  final out = <T>[];
+  var busy = -1;
+  for (final t in s) {
+    if (t.i <= busy) continue;
+    out.add(t);
+    busy = t.exitI;
+  }
+  return out;
+}
+
+
+
+
+/// صفقة بدخول افتتاح الشمعة التالية، وقف عند [stop] (أو خلف آخر 3 شموع)، 1R ثم 2R
+T? sim(List<Candle> c, List<double> at, int i, int d, double? stopP) {
+  final n = c.length;
+  if (i >= n - 1 || at[i].isNaN) return null;
+  final a = at[i];
+  final entry = c[i + 1].open;
+  var ext = d > 0 ? c[i].low : c[i].high;
+  for (var j = i - 2; j <= i; j++) { ext = d > 0 ? math.min(ext, c[j].low) : math.max(ext, c[j].high); }
+  final sp = stopP ?? ext;
+  final risk = ((d > 0 ? entry - sp : sp - entry) + 0.1 * a).clamp(0.7 * a, 2.5 * a).toDouble();
+  final t1 = entry + d * risk, t2 = entry + d * 2 * risk;
+  var stop = entry - d * risk, got = false;
+  for (var j = i + 1; j < n; j++) {
+    final k = c[j];
+    if (d > 0 ? k.low <= stop : k.high >= stop) return T(i, j, d, 0, got ? 0.5 : -1, got);
+    if (!got && (d > 0 ? k.high >= t1 : k.low <= t1)) { got = true; stop = entry; }
+    if (got && (d > 0 ? k.high >= t2 : k.low <= t2)) return T(i, j, d, 0, 1.5, true);
+    if (j >= i + 80) return T(i, j, d, 0, got ? 0.5 : -1, got);
+  }
+  return null;
+}
+
+
+
+/// صفقة بأمر معلّق: دخول عند [entry] في الشمعة i، وقف عند [stop]، 1R ثم 2R (الأسوأ أولاً عند التعارض)
+T? simLimit(List<Candle> c, int i, int d, double entry, double stop) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final t1 = entry + d * risk, t2 = entry + d * 2 * risk;
+  var st = stop, got = false;
+  for (var j = i; j < n; j++) {
+    final k = c[j];
+    if (d > 0 ? k.low <= st : k.high >= st) return T(i, j, d, 0, got ? 0.5 : -1, got);
+    if (j == i) continue; // شمعة الدخول: لا نحسب الأهداف فيها (تحفّظ)
+    if (!got && (d > 0 ? k.high >= t1 : k.low <= t1)) { got = true; st = entry; }
+    if (got && (d > 0 ? k.high >= t2 : k.low <= t2)) return T(i, j, d, 0, 1.5, true);
+    if (j >= i + 80) return T(i, j, d, 0, got ? 0.5 : -1, got);
+  }
+  return null;
+}
+
+class Zone2 { final int made, d; final double prox, dist; Zone2(this.made, this.d, this.prox, this.dist); }
+
+
+
+/// إدارة التطبيق: نصف عند TP1 (rr1×R)، الوقف للدخول، ثم وقف متحرك (أعلى قمة 22 - 3 ATR)
+T? simApp(List<Candle> c, List<double> at, int i, int d, double entry, double stop, double rr1, int ei) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final t1 = entry + d * risk * rr1;
+  var st = stop, got = false;
+  for (var j = ei; j < n; j++) {
+    final b = c[j];
+    if (d > 0 ? b.low <= st : b.high >= st) {
+      final r2 = (st - entry) * d / risk;
+      return got ? T(i, j, d, 0, 0.5 * rr1 + 0.5 * r2, true) : T(i, j, d, 0, -1, false);
+    }
+    if (!got && (d > 0 ? b.high >= t1 : b.low <= t1)) { got = true; st = entry; }
+    else if (got) {
+      var hh = d > 0 ? -1e18 : 1e18;
+      for (var r = math.max(0, j - 21); r <= j; r++) { hh = d > 0 ? math.max(hh, c[r].high) : math.min(hh, c[r].low); }
+      final a = at[j].isNaN ? b.high - b.low : at[j];
+      final cand = hh - d * 3 * a;
+      st = d > 0 ? math.max(st, cand) : math.min(st, cand);
+    }
+    if (!got && j >= i + 80) { final r = (b.close - entry) * d / risk; return T(i, j, d, 0, r, r > 0); }
+    if (j >= i + 300) { final r2 = (b.close - entry) * d / risk; return T(i, j, d, 0, got ? 0.5 * rr1 + 0.5 * r2 : r2, got); }
+  }
+  return null;
+}
+
+
+/// هدف ثابت كبير (مثل الفيديو): وقف أو هدف [rr]R فقط
+T? simFixed(List<Candle> c, int i, int d, double entry, double stop, double rr) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final tp = entry + d * rr * risk;
+  for (var j = i; j < n; j++) {
+    final b = c[j];
+    if (d > 0 ? b.low <= stop : b.high >= stop) return T(i, j, d, 0, -1, false);
+    if (j > i && (d > 0 ? b.high >= tp : b.low <= tp)) return T(i, j, d, 0, rr, true);
+    if (j >= i + 300) { final r = (b.close - entry) * d / risk; return T(i, j, d, 0, r, r > 0); }
+  }
+  return null;
+}
+
+
+String stat(List<T> l) {
+  final w = l.where((t) => t.win).length;
+  final r = l.fold(0.0, (a, t) => a + t.r);
+  return 'win=${(100 * w / math.max(1, l.length)).toStringAsFixed(1)}% n=${l.length} totR=${r.toStringAsFixed(0)} avgR=${(r / math.max(1, l.length)).toStringAsFixed(3)}';
+}
+void main() {
+  test('gold theories', () {
+    final split = DateTime.utc(2021, 1, 1);
+    final res = <String, List<T>>{};
+    void add(String k, T? t) { if (t != null) (res[k] ??= []).add(t); }
+    final mres = <String, List<double>>{};
+    void madd(String k, bool w, double r) { final v = mres[k] ??= [0, 0, 0]; if (w) v[0]++; v[1]++; v[2] += r; }
+    final c = load('$sp/gold10/xau10_15m.csv');
+    final n = c.length;
+    final at = atr(c, 14);
+    String per(int i) => c[i].time.isBefore(split) ? 'train' : 'test';
+    int dkey(DateTime t) => t.year * 400 + t.month * 32 + t.day;
+    // تجهيز: نطاق آسيا لكل يوم، قمة/قاع اليوم السابق
+    var day = -1; var aH = -1e18, aL = 1e18; var dH = -1e18, dL = 1e18; var pH = double.nan, pL = double.nan;
+    var aDone = false, aTraded = false, sweepDone = false, nyDone = false;
+    double lonOpen = double.nan;
+    for (var i = 20; i < n - 1; i++) {
+      final k = c[i], t = k.time;
+      if (dkey(t) != day) {
+        if (day >= 0) { pH = dH; pL = dL; }
+        day = dkey(t); aH = -1e18; aL = 1e18; dH = -1e18; dL = 1e18; aDone = false; aTraded = false; sweepDone = false; nyDone = false; lonOpen = double.nan;
+      }
+      final h = t.hour, a = at[i];
+      if (a.isNaN) { dH = math.max(dH, k.high); dL = math.min(dL, k.low); continue; }
+      if (h < 7) { aH = math.max(aH, k.high); aL = math.min(aL, k.low); }
+      if (h == 7 && t.minute == 0) lonOpen = k.open;
+      // A) كسر نطاق آسيا في لندن (07-12 UTC)
+      if (h >= 7 && h < 12 && !aTraded && aH > aL) {
+        final d = k.close > aH ? 1 : k.close < aL ? -1 : 0;
+        if (d != 0) {
+          aTraded = true;
+          add('${per(i)} A1 Asia-break follow', sim(c, at, i, d, null));
+          add('${per(i)} A2 Asia-break fade', sim(c, at, i, -d, null));
+          add('${per(i)} A3 follow stop@mid', sim(c, at, i, d, (aH + aL) / 2));
+        }
+      }
+      // B) كنس قمة/قاع أمس ثم إغلاق عائد (07-17 UTC)
+      if (h >= 7 && h < 17 && !sweepDone && !pH.isNaN) {
+        if (k.high > pH && k.close < pH) { sweepDone = true; add('${per(i)} B PDH/PDL sweep-reverse', sim(c, at, i, -1, k.high + 0.1 * a)); }
+        else if (k.low < pL && k.close > pL) { sweepDone = true; add('${per(i)} B PDH/PDL sweep-reverse', sim(c, at, i, 1, k.low - 0.1 * a)); }
+      }
+      // D) انعكاس نيويورك: عند 14:30 UTC إن تحركت لندن > 3 ATR → عكسها
+      if (h == 14 && t.minute == 30 && !nyDone && !lonOpen.isNaN) {
+        nyDone = true;
+        final mv = (k.close - lonOpen) / a;
+        if (mv.abs() > 3) { add('${per(i)} D NY fade London', sim(c, at, i, mv > 0 ? -1 : 1, null)); add('${per(i)} D NY follow London', sim(c, at, i, mv > 0 ? 1 : -1, null)); }
+      }
+      // C) الأرقام المستديرة: لمس مضاعفات 50$ (مقابل مستويات 25$ الوسطية كمقارنة)
+      for (final (name, step, off) in [('round50', 50.0, 0.0), ('mid25', 50.0, 25.0), ('round10', 10.0, 0.0), ('mid5', 10.0, 5.0)]) {
+        final lv = ((c[i - 1].close - off) / step).round() * step + off;
+        final prev = c[i - 1];
+        int side;
+        if (prev.low > lv && k.low <= lv) { side = 1; } else if (prev.high < lv && k.high >= lv) { side = -1; } else { continue; }
+        var r2 = 0;
+        for (var j = i + 1; j < math.min(n, i + 200); j++) {
+          final up = side > 0 ? c[j].high >= lv + a : c[j].low <= lv - a;
+          final dn = side > 0 ? c[j].low <= lv - a : c[j].high >= lv + a;
+          if (dn) { r2 = -1; break; }
+          if (up) { r2 = 1; break; }
+        }
+        if (r2 != 0) madd('${per(i)} C touch $name bounce', r2 > 0, r2.toDouble());
+      }
+      dH = math.max(dH, k.high); dL = math.min(dL, k.low);
+    }
+    // E) فجوة افتتاح الأسبوع: إن كانت > 0.5 ATR → نراهن على سدها
+    for (var i = 1; i < n - 1; i++) {
+      if (c[i].time.difference(c[i - 1].time).inHours < 24 || at[i - 1].isNaN) continue;
+      final g = (c[i].open - c[i - 1].close) / at[i - 1];
+      if (g.abs() < 0.5) continue;
+      final d = g > 0 ? -1 : 1;
+      // هل تُسد الفجوة قبل أن يمتد السعر بمقدارها بعيداً؟
+      final tgt = c[i - 1].close, gap = (c[i].open - c[i - 1].close).abs();
+      final bad = c[i].open - d * gap;
+      var r2 = 0;
+      for (var j = i; j < math.min(n, i + 96); j++) {
+        final hitT = d > 0 ? c[j].high >= tgt : c[j].low <= tgt;
+        final hitB = d > 0 ? c[j].low <= bad : c[j].high >= bad;
+        if (hitB) { r2 = -1; break; }
+        if (hitT) { r2 = 1; break; }
+      }
+      if (r2 != 0) madd('${per(i)} E weekly-gap fill (1:1)', r2 > 0, r2.toDouble());
+    }
+    // F) إشارات Mp حسب الجلسة
+    final sym = symbolByCode('XAU/USD');
+    final f = buildForecast(c, history: n, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
+    final k = buildAlka(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+    final z = buildZeroOne(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+    final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
+    for (final s in mp.signals) {
+      if (s.exitI < 0 || s.result == 0) continue;
+      final h = c[s.i].time.hour;
+      final ses = h < 7 ? '1 Asia 00-07' : h < 12 ? '2 London 07-12' : h < 17 ? '3 NY 12-17' : '4 late 17-24';
+      madd('${per(s.i)} F Mp $ses', s.result > 0, s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1);
+    }
+    final keys = res.keys.toList()..sort();
+    for (final key in keys) { print('R ${key.padRight(34)} ${stat(oneAtATime(res[key]!))}'); }
+    final mk = mres.keys.toList()..sort();
+    for (final key in mk) { final v = mres[key]!; print('M ${key.padRight(34)} ${(100 * v[0] / v[1]).toStringAsFixed(1)}% n=${v[1].toInt()}'); }
+  }, timeout: const Timeout(Duration(hours: 1)));
+}

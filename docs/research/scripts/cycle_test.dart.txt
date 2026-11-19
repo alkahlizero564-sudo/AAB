@@ -1,0 +1,237 @@
+import 'dart:io';
+import 'dart:math' as math;
+import 'package:aab/analysis/alka.dart';
+import 'package:aab/analysis/star_indicator.dart';
+import 'package:aab/analysis/st_indicator.dart';
+import 'package:aab/analysis/sm_indicator.dart';
+import 'package:aab/analysis/patterns.dart';
+import 'package:aab/analysis/zero_one.dart';
+import 'package:aab/analysis/all_indicator.dart';
+import 'package:aab/analysis/indicators.dart';
+import 'package:aab/analysis/forecast.dart';
+import 'package:aab/data/symbols.dart';
+import 'package:aab/models.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+const sp = '/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad';
+List<Candle> load(String path) {
+  final out = <Candle>[];
+  for (final l in File(path).readAsLinesSync().skip(1)) {
+    final p = l.split(',');
+    if (p.length < 6) continue;
+    final v = [1, 2, 3, 4, 5].map((i) => double.tryParse(p[i]) ?? double.nan).toList();
+    var ts = p[0].trim();
+    if (!ts.contains('T')) ts = ts.contains(':') ? '${ts.replaceFirst(' ', 'T')}Z' : '${ts}T00:00:00Z';
+    final t = DateTime.tryParse(ts);
+    if (t == null || v.take(4).any((x) => x.isNaN)) continue;
+    out.add(Candle(t.toUtc(), v[0], v[1], v[2], v[3], v[4].isNaN ? 0 : v[4]));
+  }
+  return out;
+}
+String gdf(String r) => Directory('$sp/gdf/$r').listSync().whereType<File>().firstWhere((f) => f.path.endsWith('.csv')).path;
+
+class T { final int i, exitI, dir, src; final double r; final bool win; T(this.i, this.exitI, this.dir, this.src, this.r, this.win); }
+
+List<T> trades(List<PastSignal> l, int src) => [
+      for (final s in l)
+        if (s.result != 0 && s.exitI >= 0) T(s.i, s.exitI, s.dir, src, s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1, s.result > 0)
+    ];
+
+/// صفقة واحدة في كل مرة (بترتيب ظهور الإشارة)
+List<T> oneAtATime(List<T> l) {
+  final s = [...l]..sort((a, b) => a.i != b.i ? a.i.compareTo(b.i) : a.src.compareTo(b.src));
+  final out = <T>[];
+  var busy = -1;
+  for (final t in s) {
+    if (t.i <= busy) continue;
+    out.add(t);
+    busy = t.exitI;
+  }
+  return out;
+}
+
+
+
+
+/// صفقة بدخول افتتاح الشمعة التالية، وقف عند [stop] (أو خلف آخر 3 شموع)، 1R ثم 2R
+T? sim(List<Candle> c, List<double> at, int i, int d, double? stopP) {
+  final n = c.length;
+  if (i >= n - 1 || at[i].isNaN) return null;
+  final a = at[i];
+  final entry = c[i + 1].open;
+  var ext = d > 0 ? c[i].low : c[i].high;
+  for (var j = i - 2; j <= i; j++) { ext = d > 0 ? math.min(ext, c[j].low) : math.max(ext, c[j].high); }
+  final sp = stopP ?? ext;
+  final risk = ((d > 0 ? entry - sp : sp - entry) + 0.1 * a).clamp(0.7 * a, 2.5 * a).toDouble();
+  final t1 = entry + d * risk, t2 = entry + d * 2 * risk;
+  var stop = entry - d * risk, got = false;
+  for (var j = i + 1; j < n; j++) {
+    final k = c[j];
+    if (d > 0 ? k.low <= stop : k.high >= stop) return T(i, j, d, 0, got ? 0.5 : -1, got);
+    if (!got && (d > 0 ? k.high >= t1 : k.low <= t1)) { got = true; stop = entry; }
+    if (got && (d > 0 ? k.high >= t2 : k.low <= t2)) return T(i, j, d, 0, 1.5, true);
+    if (j >= i + 80) return T(i, j, d, 0, got ? 0.5 : -1, got);
+  }
+  return null;
+}
+
+
+
+/// صفقة بأمر معلّق: دخول عند [entry] في الشمعة i، وقف عند [stop]، 1R ثم 2R (الأسوأ أولاً عند التعارض)
+T? simLimit(List<Candle> c, int i, int d, double entry, double stop) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final t1 = entry + d * risk, t2 = entry + d * 2 * risk;
+  var st = stop, got = false;
+  for (var j = i; j < n; j++) {
+    final k = c[j];
+    if (d > 0 ? k.low <= st : k.high >= st) return T(i, j, d, 0, got ? 0.5 : -1, got);
+    if (j == i) continue; // شمعة الدخول: لا نحسب الأهداف فيها (تحفّظ)
+    if (!got && (d > 0 ? k.high >= t1 : k.low <= t1)) { got = true; st = entry; }
+    if (got && (d > 0 ? k.high >= t2 : k.low <= t2)) return T(i, j, d, 0, 1.5, true);
+    if (j >= i + 80) return T(i, j, d, 0, got ? 0.5 : -1, got);
+  }
+  return null;
+}
+
+class Zone2 { final int made, d; final double prox, dist; Zone2(this.made, this.d, this.prox, this.dist); }
+
+
+
+/// إدارة التطبيق: نصف عند TP1 (rr1×R)، الوقف للدخول، ثم وقف متحرك (أعلى قمة 22 - 3 ATR)
+T? simApp(List<Candle> c, List<double> at, int i, int d, double entry, double stop, double rr1, int ei) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final t1 = entry + d * risk * rr1;
+  var st = stop, got = false;
+  for (var j = ei; j < n; j++) {
+    final b = c[j];
+    if (d > 0 ? b.low <= st : b.high >= st) {
+      final r2 = (st - entry) * d / risk;
+      return got ? T(i, j, d, 0, 0.5 * rr1 + 0.5 * r2, true) : T(i, j, d, 0, -1, false);
+    }
+    if (!got && (d > 0 ? b.high >= t1 : b.low <= t1)) { got = true; st = entry; }
+    else if (got) {
+      var hh = d > 0 ? -1e18 : 1e18;
+      for (var r = math.max(0, j - 21); r <= j; r++) { hh = d > 0 ? math.max(hh, c[r].high) : math.min(hh, c[r].low); }
+      final a = at[j].isNaN ? b.high - b.low : at[j];
+      final cand = hh - d * 3 * a;
+      st = d > 0 ? math.max(st, cand) : math.min(st, cand);
+    }
+    if (!got && j >= i + 80) { final r = (b.close - entry) * d / risk; return T(i, j, d, 0, r, r > 0); }
+    if (j >= i + 300) { final r2 = (b.close - entry) * d / risk; return T(i, j, d, 0, got ? 0.5 * rr1 + 0.5 * r2 : r2, got); }
+  }
+  return null;
+}
+
+
+/// هدف ثابت كبير (مثل الفيديو): وقف أو هدف [rr]R فقط
+T? simFixed(List<Candle> c, int i, int d, double entry, double stop, double rr) {
+  final n = c.length;
+  final risk = (entry - stop).abs();
+  if (risk <= 0) return null;
+  final tp = entry + d * rr * risk;
+  for (var j = i; j < n; j++) {
+    final b = c[j];
+    if (d > 0 ? b.low <= stop : b.high >= stop) return T(i, j, d, 0, -1, false);
+    if (j > i && (d > 0 ? b.high >= tp : b.low <= tp)) return T(i, j, d, 0, rr, true);
+    if (j >= i + 300) { final r = (b.close - entry) * d / risk; return T(i, j, d, 0, r, r > 0); }
+  }
+  return null;
+}
+
+
+String stat(List<T> l) {
+  final w = l.where((t) => t.win).length;
+  final r = l.fold(0.0, (a, t) => a + t.r);
+  return 'win=${(100 * w / math.max(1, l.length)).toStringAsFixed(1)}% n=${l.length} totR=${r.toStringAsFixed(0)} avgR=${(r / math.max(1, l.length)).toStringAsFixed(3)}';
+}
+/// دورة السوق: تجميع → انفجار → تصحيح → انعكاس
+class Ev { final int i, d; final String kind; final double stop; Ev(this.i, this.d, this.kind, this.stop); }
+
+(List<Ev>, List<String>) cycle(List<Candle> c, List<double> at) {
+  final n = c.length;
+  final a5 = atr(c, 5), a50 = atr(c, 50);
+  final phase = List.filled(n, 'none');
+  final ev = <Ev>[];
+  var lastAccum = -1000; double bHi = 0, bLo = 0;
+  var dir = 0, startI = -1; double origin = 0, ext = 0; var corrDone = false, revAt = -1000;
+  for (var i = 60; i < n - 1; i++) {
+    final a = a50[i];
+    if (a.isNaN || at[i].isNaN) continue;
+    final k = c[i];
+    // تجميع: تذبذب منخفض ونطاق ضيق لآخر 10 شموع
+    var hi = -1e18, lo = 1e18;
+    for (var q = i - 9; q <= i; q++) { hi = math.max(hi, c[q].high); lo = math.min(lo, c[q].low); }
+    final accum = a5[i] / a < 0.7 && hi - lo < 3 * a;
+    if (accum && dir == 0) { lastAccum = i; bHi = hi; bLo = lo; phase[i] = 'accum'; continue; }
+    // انفجار: كسر صندوق التجميع خلال 10 شموع بشمعة كبيرة
+    if (dir == 0 && i - lastAccum <= 10 && i - lastAccum >= 1) {
+      final big = k.high - k.low > 1.2 * at[i];
+      if (big && k.close > bHi) { dir = 1; origin = bLo; ext = k.high; startI = i; corrDone = false; phase[i] = 'explosion'; ev.add(Ev(i, 1, 'H1 explosion', 0)); continue; }
+      if (big && k.close < bLo) { dir = -1; origin = bHi; ext = k.low; startI = i; corrDone = false; phase[i] = 'explosion'; ev.add(Ev(i, -1, 'H1 explosion', 0)); continue; }
+    }
+    if (dir != 0) {
+      if (i - startI > 120) { dir = 0; continue; }
+      // انعكاس: كسر نقطة بداية الانفجار
+      if ((dir > 0 && k.close < origin) || (dir < 0 && k.close > origin)) {
+        ev.add(Ev(i, -dir, 'H3 reversal', 0));
+        phase[i] = 'reversal'; revAt = i; dir = 0; continue;
+      }
+      if (dir > 0 ? k.high > ext : k.low < ext) { ext = dir > 0 ? k.high : k.low; phase[i] = 'explosion'; continue; }
+      final retr = dir > 0 ? (ext - k.close) / math.max(1e-9, ext - origin) : (k.close - ext) / math.max(1e-9, origin - ext);
+      phase[i] = retr < 0.382 ? 'explosion' : 'correction';
+      // نهاية التصحيح: تراجع 38-79% ثم شمعة استئناف تغلق فوق قمة الشمعة السابقة
+      if (!corrDone && retr >= 0.382 && retr <= 0.786) {
+        final resume = dir > 0 ? (k.close > c[i - 1].high && k.close > k.open) : (k.close < c[i - 1].low && k.close < k.open);
+        if (resume) { ev.add(Ev(i, dir, 'H2 correction-end', 0)); corrDone = true; }
+      }
+    } else if (i - revAt <= 20) {
+      phase[i] = 'after-reversal';
+    }
+  }
+  return (ev, phase);
+}
+
+void main() {
+  test('market cycle', () {
+    final split = DateTime.utc(2021, 1, 1);
+    final res = <String, List<T>>{};
+    void add(String k, T? t) { if (t != null) (res[k] ??= []).add(t); }
+    final mres = <String, List<double>>{};
+    void madd(String k, bool w, double r) { final v = mres[k] ??= [0, 0, 0]; if (w) v[0]++; v[1]++; v[2] += r; }
+    for (final m in ['xau', 'btc']) {
+      for (final tf in ['15m', '1h', '4h']) {
+        final c = load('$sp/gold10/${m}10_$tf.csv');
+        final n = c.length;
+        final at = atr(c, 14);
+        final (ev, phase) = cycle(c, at);
+        for (final e in ev) {
+          final per = c[e.i].time.isBefore(split) ? 'train' : 'test';
+          add('$per ${e.kind}', sim(c, at, e.i, e.d, null));
+          add('$per ${e.kind} [$tf]', sim(c, at, e.i, e.d, null));
+        }
+        final sym = m == 'xau' ? symbolByCode('XAU/USD') : const MarketSymbol('BTC/USD', 'بيتكوين', 'crypto', 'B', 0, false);
+        final f = buildForecast(c, history: n, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
+        final k = buildAlka(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+        final z = buildZeroOne(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+        final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
+        final st = buildStar(c, mp);
+        for (final s in mp.signals) {
+          if (s.exitI < 0 || s.result == 0) continue;
+          final per = c[s.i].time.isBefore(split) ? 'train' : 'test';
+          final r = s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0;
+          madd('$per Mp phase=${phase[s.i]}', s.result > 0, r);
+          madd('$per Mp all', s.result > 0, r);
+          if (st.of(s.i, s.dir) >= 2) madd('$per Mp2-3★ phase=${phase[s.i]}', s.result > 0, r);
+        }
+      }
+    }
+    final keys = res.keys.toList()..sort();
+    for (final key in keys) { print('R ${key.padRight(34)} ${stat(oneAtATime(res[key]!))}'); }
+    final mk = mres.keys.toList()..sort();
+    for (final key in mk) { final v = mres[key]!; print('M ${key.padRight(34)} ${(100 * v[0] / v[1]).toStringAsFixed(1)}% n=${v[1].toInt()} R=${v[2].toStringAsFixed(0)}'); }
+  }, timeout: const Timeout(Duration(hours: 1)));
+}
