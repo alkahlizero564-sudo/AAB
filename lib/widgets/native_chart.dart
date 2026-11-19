@@ -6,7 +6,6 @@ import '../analysis/aab_algo.dart';
 import '../analysis/alka.dart';
 import '../analysis/st_indicator.dart';
 import '../analysis/star_indicator.dart';
-import '../analysis/rs_indicator.dart';
 import '../analysis/zero_one.dart';
 import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
@@ -23,7 +22,6 @@ class ChartLayers {
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
   bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
   bool dm = false; // مؤشر DM: خاص بالذهب (Mp مع الترند اليومي في السوق الهادئ)
-  bool rs = false; // مؤشر RS: النجوم + دخول بأمر معلّق عند منتصف شمعة الإشارة
   bool star = false; // مؤشر النجوم: كل إشارات Mp مع نجوم بعدد المؤشرات الموافقة (SM و KM و ST و DM)
   bool st = false; // مؤشر ST: إشارات Mp عالية الثقة حسب النموذج المتعلّم
   bool km = false; // مؤشر KM: إشارات SM في السوق الهادئ (الأدق، صفقات قليلة)
@@ -34,7 +32,7 @@ class ChartLayers {
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
-  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km, bool? dm, bool? st, bool? star, bool? rs}) => ChartLayers()
+  ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km, bool? dm, bool? st, bool? star}) => ChartLayers()
     ..fib = fib
     ..vp = vp
     ..zones = zones
@@ -55,7 +53,6 @@ class ChartLayers {
     ..dm = dm ?? this.dm
     ..st = st ?? this.st
     ..star = star ?? this.star
-    ..rs = rs ?? this.rs
     ..vol = vol
     ..type = type
     ..sub = sub;
@@ -94,7 +91,6 @@ class NativeChart extends StatefulWidget {
   final AllResult? dmR;
   final StResult? stR;
   final StarResult? starR;
-  final RsResult? rsR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -115,7 +111,6 @@ class NativeChart extends StatefulWidget {
     this.dmR,
     this.stR,
     this.starR,
-    this.rsR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -276,7 +271,7 @@ class _NativeChartState extends State<NativeChart> with SingleTickerProviderStat
               size: Size.infinite,
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
-                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.rsR),
+                  DateTime.now().toUtc(), widget.algo, widget.repaint, widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR),
             ),
           ),
         ),
@@ -350,9 +345,8 @@ class _Painter extends CustomPainter {
   final AllResult? dmr;
   final StResult? str;
   final StarResult? starr;
-  final RsResult? rsr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.rsr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -943,15 +937,6 @@ class _Painter extends CustomPainter {
           tagPer: [for (final sg in r.signals) (mr?.extra.contains(sg.i) ?? false) ? '+' : ''],
           pendTagPer: [for (final p in r.pending) 'نجوم ${starr!.of(p.i, p.dir)}'],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
-    }
-    if (L.rs && rsr != null) {
-      final r = rsr!.res;
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'RS', AppColors.gold,
-          sources: r.sources,
-          pendingSrc: r.pendingSrc,
-          tagPer: [for (final _ in r.signals) 'RS'],
-          pendTagPer: [for (final p in r.pending) 'RS ${rsr!.of(p.i, p.dir)}★ معلّق'],
-          starsPer: [for (final sg in r.signals) rsr!.of(sg.i, sg.dir)]);
     }
     if (L.zero && zr != null) {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, zr!.signals, zr!.pending, '0.1', null,
@@ -1576,11 +1561,6 @@ class _Painter extends CustomPainter {
     if (L.dm && dmr != null && dmr!.closed > 0) {
       final a = dmr!;
       part('DM ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
-          a.winRate >= 0.5 ? AppColors.gold : _down);
-    }
-    if (L.rs && rsr != null && rsr!.res.closed > 0) {
-      final a = rsr!.res;
-      part('RS ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})',
           a.winRate >= 0.5 ? AppColors.gold : _down);
     }
     if (L.star && starr != null && starr!.res.closed > 0) {

@@ -13,7 +13,6 @@ import '../analysis/indicators.dart';
 import '../analysis/health.dart';
 import '../analysis/st_indicator.dart';
 import '../analysis/star_indicator.dart';
-import '../analysis/rs_indicator.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -51,8 +50,6 @@ class AppState extends ChangeNotifier {
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
-  RsResult? rsR; // مؤشر RS (النجوم + دخول بأمر معلّق عند منتصف شمعة الإشارة)
-  int rsMin = 1; // أقل عدد نجوم في RS
   StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
   int starMin = 0; // أقل عدد نجوم يظهر
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
@@ -251,7 +248,6 @@ class AppState extends ChangeNotifier {
     kmR = null;
     stR = null;
     starR = null;
-    rsR = null;
     dmR = null;
     daily = null;
     board = {};
@@ -441,14 +437,6 @@ class AppState extends ChangeNotifier {
   void _rebuildStar() {
     final mp = mpR;
     starR = mp == null ? null : buildStar(candles, mp, minStars: starMin);
-    rsR = mp == null ? null : buildRs(candles, mp, minStars: rsMin, rr1: settings.alkaTp1, rr2: settings.rr2);
-  }
-
-  /// أقل عدد نجوم في RS.
-  void setRsMin(int v) {
-    rsMin = v;
-    _rebuildStar();
-    notifyListeners();
   }
 
   /// أقل عدد نجوم يظهر في مؤشر النجوم (0 = كل إشارات Mp).
