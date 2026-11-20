@@ -1,0 +1,37 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+import lightgbm as lgb
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/signals2.csv')
+base=[c for c in df.columns if c not in ['market','tf','year','dir','win','r','src'] and not c.startswith('i_')]
+ind=[c for c in df.columns if c.startswith('i_')]
+kingTrain=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+bigTrain=kingTrain | ((df.market=='eth')&(df.year<=2019)) | (df.market.str.endswith('19'))
+test=~bigTrain & ~((df.market=='gold20')&(df.year<2010))
+te=df[test].copy()
+print('King train',kingTrain.sum(),'big train',bigTrain.sum(),'test',test.sum(), 'test win', round(te.win.mean()*100,1))
+def grp(mk): return {'gold20':'ذهب19-25','btc':'بيتكوين21-26','eth':'إيثيريوم25-26'}.get(mk,'عملات/مؤشرات/فضة26')
+te['grp']=te.market.map(grp)
+def ev(name,ptr,pte):
+    out=f"{name:34s}"
+    for lab,q in [('30%',.7),('15%',.85),('7%',.93)]:
+        t=np.quantile(ptr,q); sel=pte>=t
+        out+=f" | {lab} {te.win[sel].mean()*100:5.1f}%({sel.sum():4d})"
+    gl=[]
+    for g,gg in te.groupby('grp'):
+        t=np.quantile(ptr,.85); s=pte[te.grp==g]>=t
+        gl.append(f"{g} {gg.win[s].mean()*100:4.1f}")
+    print(out+'  [15%: '+', '.join(gl)+']')
+def fit_rf(X,y,seed=1,n=100,leaf=150,depth=8): return RandomForestClassifier(n_estimators=n,min_samples_leaf=leaf,max_depth=depth,max_features=0.3,n_jobs=-1,random_state=seed).fit(X,y)
+tr=df[kingTrain]; m=fit_rf(tr[base],tr.win); ev('King',m.predict_proba(tr[base])[:,1],m.predict_proba(te[base])[:,1])
+for fs_name,fs in [('41',base),('58',base+ind)]:
+    for trn_name,trm in [('king-train',kingTrain),('big-train',bigTrain)]:
+        tr=df[trm]
+        m=fit_rf(tr[fs],tr.win,n=300,leaf=120,depth=10); ptr=m.predict_proba(tr[fs])[:,1]; pte=m.predict_proba(te[fs])[:,1]
+        ev(f'RF300 {fs_name} {trn_name}',ptr,pte)
+        g=lgb.LGBMClassifier(n_estimators=400,learning_rate=0.015,num_leaves=15,min_child_samples=200,subsample=0.8,subsample_freq=1,colsample_bytree=0.5,reg_lambda=10,verbose=-1,random_state=1).fit(tr[fs],tr.win)
+        gtr=g.predict_proba(tr[fs])[:,1]; gte=g.predict_proba(te[fs])[:,1]
+        ev(f'LGB {fs_name} {trn_name}',gtr,gte)
+        r=lambda a,ref: np.searchsorted(np.sort(ref),a)/len(ref)
+        ev(f'RF+LGB {fs_name} {trn_name}',(r(ptr,ptr)+r(gtr,gtr))/2,(r(pte,ptr)+r(gte,gtr))/2)
