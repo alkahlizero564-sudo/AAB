@@ -1,0 +1,50 @@
+import pandas as pd, numpy as np, warnings, json
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/signals2.csv')
+base=[c for c in df.columns if c not in ['market','tf','year','dir','win','r','src'] and not c.startswith('i_')]
+feat=base+['i_st','i_stars','i_near','i_hot','i_held','i_sm','i_smstrong','i_km','i_daily200','i_sr_behind','i_sr_ahead','i_ribage','i_lt']
+train=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+tr=df[train]
+m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=1).fit(tr[feat].values.astype(np.float32),tr.win)
+ptr=m.predict_proba(tr[feat].values.astype(np.float32))[:,1]
+q70,q85=float(np.quantile(ptr,.7)),float(np.quantile(ptr,.85)); q50,q30=float(np.quantile(ptr,.5)),float(np.quantile(ptr,.3))
+F,T,L,R,V,off=[],[],[],[],[],[]
+for e in m.estimators_:
+    t=e.tree_; base=len(F); off.append(base)
+    for i in range(t.node_count):
+        leaf=t.children_left[i]==-1
+        F.append(-1 if leaf else int(t.feature[i])); T.append(float(t.threshold[i]) if not leaf else 0.0)
+        L.append(-1 if leaf else base+int(t.children_left[i])); R.append(-1 if leaf else base+int(t.children_right[i]))
+        v=t.value[i][0]; V.append(float(v[1]/v.sum()) if leaf else 0.0)
+# تحقق: إعادة الحساب يدوياً
+def pred(x):
+    s=0
+    for o in off:
+        n=o
+        while F[n]!=-1: n=L[n] if x[F[n]]<=T[n] else R[n]
+        s+=V[n]
+    return s/len(off)
+xs=tr[feat].values.astype(np.float32)[:200]
+print('max diff', max(abs(pred(x)-p) for x,p in zip(xs,m.predict_proba(xs)[:,1])))
+def fl(a): return ','.join(f'{x:.6g}' for x in a)
+def il(a): return ','.join(str(x) for x in a)
+dart=f"""// ملف مولّد تلقائياً — نموذج King (غابة قرارات: 150 شجرة، عمق 10، 54 معلومة)
+// التدريب: ذهب 2010-2018 وبيتكوين 2017-2020 (إشارات Mp + معلومات مؤشراتنا، بهدف 1R).
+// لا تعدّل يدوياً.
+const kingFeatures = {json.dumps(feat)};
+const kingQ70 = {q70};
+const kingQ85 = {q85};
+const kingQ50 = {q50};
+const kingQ30 = {q30};
+const kingTreeStart = <int>[{il(off)}];
+const kingFeat = <int>[{il(F)}];
+const kingThr = <double>[{fl(T)}];
+const kingLeft = <int>[{il(L)}];
+const kingRight = <int>[{il(R)}];
+const kingVal = <double>[{fl(V)}];
+"""
+open('/home/user/AAB/lib/analysis/king_model.dart','w').write(dart)
+print('nodes',len(F),'q70',q70,'q85',q85, 'feat', len(feat))
+print(feat)

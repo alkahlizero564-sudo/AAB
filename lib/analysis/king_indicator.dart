@@ -5,13 +5,17 @@ import 'forecast.dart';
 import 'indicators.dart';
 import 'king_model.dart';
 import 'sm_indicator.dart';
+import 'st_indicator.dart';
+import 'star_indicator.dart';
 
-/// مؤشر King 🤖: ذكاء اصطناعي (غابة قرارات من 100 شجرة) يقيّم كل إشارة Mp بـ 41 معلومة
-/// (الترند، التذبذب، الزخم، المتوسطات، شكل الشمعة، مكان الدخول، الساعة، الفريم الأكبر...).
-/// تدرّب على ذهب 2010-2018 وبيتكوين 2017-2020، واختُبر على 20 ألف إشارة لم يرها
+/// مؤشر King 🤖: ذكاء اصطناعي (غابة قرارات من 150 شجرة بعمق 10) يقيّم كل إشارة Mp بـ 54 معلومة:
+/// 41 من السوق (الترند، التذبذب، الزخم، المتوسطات، شكل الشمعة، مكان الدخول، الساعة، الفريم الأكبر...)
+/// و13 من تحليل مؤشراتنا (ST والنجوم وقريب/ضغط/قاع أعلى، SM وKM، متوسط 200 يوم، الدعم والمقاومة، عمر الشريط).
+/// تدرّب على ذهب 2010-2018 وبيتكوين 2017-2020، واختُبر على إشارات لم يرها
 /// (ذهب 2019-2025، بيتكوين 2021-2026، إيثيريوم، 5 أزواج عملات، مؤشرات، نفط، فضة):
-///  - يعرض أعلى 30% ثقة: 59.4% بهدف 1R (كل الإشارات 55.4%، النجوم بنجمتين 58.5%).
-///  - «قوي» = أعلى 15%: 61.6%. الذهب 2019-2025: ~61%.
+///  - يعرض أعلى 30% ثقة: 59.5% بهدف 1R (كل الإشارات 55.4%).
+///  - «قوي» = أعلى 15%: 62.4% (النموذج السابق 61.5%). الذهب 2019-2025: 61.0%.
+///  - خيار «دخول قريب فقط» (الدخول أقل من 0.75 ATR من قاع/قمة آخر 5 شموع): أعلى 30% → 60.6% بنصف الصفقات.
 class KingResult {
   final AllResult res;
   final Map<(int, int), double> conf; // (شمعة الإشارة، الاتجاه) → احتمال النجاح المقدّر
@@ -74,9 +78,14 @@ class KingScorer {
     tfm = base <= 30 ? 15 : base <= 120 ? 60 : 240;
   }
 
-  double score(int i, int dir, double entry, double sl, String src) {
+  double score(int i, int dir, double entry, double sl, String src, [KingCtx? ctx]) {
     final x = features(i, dir, entry, sl, src);
-    return x == null ? double.nan : _predict(x);
+    if (x == null) return double.nan;
+    if (kingFeatures.length > x.length) {
+      if (ctx == null) return double.nan;
+      x.addAll(ctx.extra(this, i, dir, src));
+    }
+    return _predict(x);
   }
 
   /// الخصائص الـ 41 بنفس ترتيب [kingFeatures] (null إن لم تتوفر).
@@ -138,8 +147,87 @@ class KingScorer {
   }
 }
 
+/// معلومات مؤشراتنا الـ 13 (بنفس حساب ملف التدريب).
+class KingCtx {
+  final List<Candle> c;
+  final StarResult st;
+  final Set<(int, int)> sm, km;
+  final StScorer sc;
+  final Map<int, double> sma200 = {}; // يوم → متوسط 200 يوم حتى اليوم السابق
+  final List<(double, int)> piv = []; // قمم وقيعان (3 شموع كل جانب)
+  KingCtx(this.c, this.st, AllResult smR, AllResult kmR, {List<Candle>? daily})
+      : sc = StScorer(c),
+        sm = {for (final s in smR.signals) (s.i, s.dir), for (final p in smR.pending) (p.i, p.dir)},
+        km = {for (final s in kmR.signals) (s.i, s.dir), for (final p in kmR.pending) (p.i, p.dir)} {
+    final dayClose = <int, double>{};
+    final dayKeys = <int>[];
+    final src = daily != null && daily.length >= 201 ? daily : c;
+    for (final x in src) {
+      final kd = x.time.millisecondsSinceEpoch ~/ 86400000;
+      if (!dayClose.containsKey(kd)) dayKeys.add(kd);
+      dayClose[kd] = x.close;
+    }
+    if (dayKeys.length > 200) {
+      var s0 = 0.0;
+      for (var r = 0; r < 200; r++) {
+        s0 += dayClose[dayKeys[r]]!;
+      }
+      for (var q = 200; q < dayKeys.length; q++) {
+        sma200[dayKeys[q]] = s0 / 200;
+        s0 += dayClose[dayKeys[q]]! - dayClose[dayKeys[q - 200]]!;
+      }
+      // اليوم الحالي (لم يكتمل بعد في اليومي) يأخذ متوسط آخر 200 يوم مكتمل
+      sma200.putIfAbsent(dayKeys.last + 1, () => s0 / 200);
+    }
+    final n = c.length;
+    for (var j = 3; j < n - 3; j++) {
+      var isH = true, isL = true;
+      for (var q = j - 3; q <= j + 3; q++) {
+        if (q == j) continue;
+        if (c[q].high >= c[j].high) isH = false;
+        if (c[q].low <= c[j].low) isL = false;
+      }
+      if (isH) piv.add((c[j].high, j));
+      if (isL) piv.add((c[j].low, j));
+    }
+  }
+
+  List<double> extra(KingScorer k, int i, int d, String src) {
+    final a = k.at[i].isNaN ? 1.0 : k.at[i], px = c[i].close;
+    var behind = 10.0, ahead = 10.0;
+    for (final (lv, j) in piv) {
+      if (j < i - 300 || j + 3 > i) continue;
+      final dd = (px - lv) * d / a;
+      if (dd >= 0) {
+        behind = math.min(behind, dd);
+      } else {
+        ahead = math.min(ahead, -dd);
+      }
+    }
+    final rd = k.rdF;
+    var age = 0;
+    for (var t = i; t > 0 && rd[t] == rd[i] && rd[i] != 0; t--) {
+      age++;
+    }
+    final s200 = sma200[c[i].time.millisecondsSinceEpoch ~/ 86400000];
+    final dUp = s200 == null ? 0.0 : (px > s200 ? 1.0 : -1.0);
+    final rib = k.rib;
+    final wide = !rib.first[i].isNaN && (rib.first[i] - rib.last[i]) * d / a >= 2;
+    final held = st.isHeld(i, d), hot = st.isHot(i, d);
+    final x = <double>[
+      sc.score(i, d, src), st.of(i, d).toDouble(), st.isNear(i, d) ? 1 : 0, hot ? 1 : 0, held ? 1 : 0,
+      sm.contains((i, d)) ? 1 : 0, (wide || held || hot) ? 1 : 0, km.contains((i, d)) ? 1 : 0,
+      dUp * d, behind, ahead, math.min(age, 200).toDouble(), (dUp > 0 && d > 0) ? 1 : 0,
+    ];
+    for (var q = 0; q < x.length; q++) {
+      x[q] = (x[q] * 10000).roundToDouble() / 10000;
+    }
+    return x;
+  }
+}
+
 /// حد الثقة لكل خيار عرض: أعلى 15% / 30% / 50% / 70% من إشارات التدريب.
-/// بهدف 1R على بيانات لم يرها (كل الأسواق): 61.6% / 59.4% / 57.7% / 56.5% (كل الإشارات 55.4%).
+/// بهدف 1R على بيانات لم يرها (كل الأسواق): 62.4% / 59.5% / 57.8% / 56.5% تقريباً (كل الإشارات 55.4%).
 double kingThreshold(int top) => switch (top) {
       15 => kingQ85,
       50 => kingQ50,
@@ -147,28 +235,44 @@ double kingThreshold(int top) => switch (top) {
       _ => kingQ70,
     };
 
+/// بُعد سعر الدخول عن قاع (للشراء) / قمة (للبيع) آخر 5 شموع بوحدات ATR.
+double kingEntryDist(List<Candle> c, List<double> at, int i, int d, double entry) {
+  if (i < 4 || i >= c.length || at[i].isNaN || !(at[i] > 0)) return 1;
+  var ext = d > 0 ? double.infinity : -double.infinity;
+  for (var q = i - 4; q <= i; q++) {
+    ext = d > 0 ? math.min(ext, c[q].low) : math.max(ext, c[q].high);
+  }
+  return (entry - ext) * d / at[i];
+}
+
 /// King: إشارات Mp التي يضعها الذكاء الاصطناعي في أعلى [top]% ثقة (الافتراضي 30%).
-KingResult buildKing(List<Candle> c, AllResult mp, {int top = 30}) {
+/// [nearOnly]: يعرض فقط الإشارات التي دخولها قريب (< 0.75 ATR من قاع/قمة آخر 5 شموع).
+KingResult buildKing(List<Candle> c, AllResult mp,
+    {int top = 30, StarResult? stars, AllResult? sm, AllResult? km, List<Candle>? daily, bool nearOnly = false}) {
   final thr = kingThreshold(top);
   if (c.length < 260) return KingResult.empty;
   final sc = KingScorer(c);
+  final st = stars ?? buildStar(c, mp);
+  final smR = sm ?? buildSm(c, mp, stars: st);
+  final ctx = KingCtx(c, st, smR, km ?? buildKm(c, smR), daily: daily);
+  bool far(int i, int d, double e) => nearOnly && kingEntryDist(c, sc.at, i, d, e) >= 0.75;
   final conf = <(int, int), double>{};
   final sigs = <PastSignal>[], src = <String>[];
   for (final (q, s) in mp.signals.indexed) {
-    final p = sc.score(s.i, s.dir, s.entry, s.sl, mp.sources[q]);
+    final p = sc.score(s.i, s.dir, s.entry, s.sl, mp.sources[q], ctx);
     if (p.isNaN) continue;
     conf[(s.i, s.dir)] = p;
-    if (p >= thr) {
+    if (p >= thr && !far(s.i, s.dir, s.entry)) {
       sigs.add(s);
       src.add(mp.sources[q]);
     }
   }
   final pend = <PendingSetup>[], pSrc = <String>[];
   for (final (q, p) in mp.pending.indexed) {
-    final pr = sc.score(p.i, p.dir, p.trigger, p.sl, mp.pendingSrc[q]);
+    final pr = sc.score(p.i, p.dir, p.trigger, p.sl, mp.pendingSrc[q], ctx);
     if (pr.isNaN) continue;
     conf[(p.i, p.dir)] = pr;
-    if (pr >= thr) {
+    if (pr >= thr && !far(p.i, p.dir, p.trigger)) {
       pend.add(p);
       pSrc.add(mp.pendingSrc[q]);
     }

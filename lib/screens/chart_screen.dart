@@ -380,7 +380,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'King',
           emoji: '🤖',
-          desc: 'ذكاء اصطناعي (100 شجرة قرارات): الأقوى من إشارات Mp مع نسبة الثقة — اختر كم يعرض فوق، و«قوي» = أعلى 15%',
+          desc: 'ذكاء اصطناعي (150 شجرة، 54 معلومة من السوق ومؤشراتنا): الأقوى من إشارات Mp مع نسبة الثقة — اختر كم يعرض فوق، و«قوي» = أعلى 15%',
           health: null,
           on: layers.king,
           toggle: () => layers.king = !layers.king
@@ -613,7 +613,7 @@ class _ChartScreenState extends State<ChartScreen> {
                   if (x.name == 'King')
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
-                      child: Text('اختبار لم يره: 59% • «قوي» 62%',
+                      child: Text('اختبار لم يره: 59.5% • «قوي» 62.4%',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
@@ -700,13 +700,37 @@ class _ChartScreenState extends State<ChartScreen> {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                      switch (st.kingTop) {
-                        15 => 'أقل إشارات وأدقها: ~62% بهدف 1R (ذهب ~60%)',
-                        50 => 'إشارات أكثر (ضعف 30% تقريباً): ~58% بهدف 1R (ذهب ~56%)',
-                        70 => 'أكثر الإشارات: ~56.5% بهدف 1R (ذهب ~55%)',
-                        _ => 'المتوازن (الافتراضي): ~59% بهدف 1R (ذهب ~59%)',
-                      },
+                      st.kingNearOnly
+                          ? switch (st.kingTop) {
+                              15 => 'الأقوى + دخول قريب: ~63% بهدف 1R (ذهب ~61%) — نصف الصفقات تقريباً',
+                              50 => '50% + دخول قريب: ~59% بهدف 1R (ذهب ~57%) — ثلث الصفقات تقريباً',
+                              70 => '70% + دخول قريب: ~59% بهدف 1R (ذهب ~57%) — ربع الصفقات تقريباً',
+                              _ => '30% + دخول قريب: ~60.5% بهدف 1R (ذهب ~59%) — أقل من نصف الصفقات',
+                            }
+                          : switch (st.kingTop) {
+                              15 => 'أقل إشارات وأدقها: ~62.4% بهدف 1R (ذهب ~61%)',
+                              50 => 'إشارات أكثر (ضعف 30% تقريباً): ~57.5% بهدف 1R (ذهب ~56%)',
+                              70 => 'أكثر الإشارات: ~56.6% بهدف 1R (ذهب ~55%)',
+                              _ => 'المتوازن (الافتراضي): ~59.3% بهدف 1R (ذهب ~58.5%)',
+                            },
                       style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                ),
+              if (layers.king)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(children: [
+                    const Expanded(
+                      child: Text('دخول قريب فقط (قريب من قاع/قمة آخر 5 شموع)',
+                          style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ),
+                    Switch(
+                      value: st.kingNearOnly,
+                      onChanged: (v) {
+                        st.setKingNearOnly(v);
+                        setSheet(() {});
+                      },
+                    ),
+                  ]),
                 ),
               if (layers.star)
                 Padding(
