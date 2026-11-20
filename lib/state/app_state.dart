@@ -59,6 +59,7 @@ class AppState extends ChangeNotifier {
   StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
   int starMin = 0; // أقل عدد نجوم يظهر
   int kingTop = 30; // King يعرض أعلى كم % ثقة (15 / 30 / 50 / 70)
+  bool kingNearOnly = false; // King: دخول قريب فقط (< 0.75 ATR من قاع/قمة آخر 5 شموع)
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
   AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp مع الترند اليومي في السوق الهادئ)
   List<Candle>? daily; // شموع يومية (للوحة الاتجاهات و DM)
@@ -338,7 +339,7 @@ class AppState extends ChangeNotifier {
     pqR = starR == null ? null : buildPq(mp, starR!, smR!, alka: ak.signals);
     kmR = buildKm(candles, smR!);
     stR = buildSt(candles, mp);
-    kingR = buildKing(candles, mp, top: kingTop);
+    _rebuildKing();
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     _rebuildLt();
     allR = all;
@@ -434,6 +435,7 @@ class AppState extends ChangeNotifier {
           if (_fAll != null && alka != null && zero != null) {
             dmR = buildDm(candles, symbol, aab: _fAll!, alka: alka!, zero: zero!, daily: c);
             _rebuildStar();
+            _rebuildKing();
           }
           _healthCache.remove('${symbol.code}|$tf'); // نعيد حساب صحة DM باليومي الصحيح
           _loadHealth(force: true);
@@ -462,9 +464,20 @@ class AppState extends ChangeNotifier {
   /// أقل عدد نجوم يظهر في مؤشر النجوم (0 = كل إشارات Mp).
   void setKingTop(int v) {
     kingTop = v;
-    final mp = mpR;
-    if (mp != null) kingR = buildKing(candles, mp, top: kingTop);
+    _rebuildKing();
     notifyListeners();
+  }
+
+  void setKingNearOnly(bool v) {
+    kingNearOnly = v;
+    _rebuildKing();
+    notifyListeners();
+  }
+
+  void _rebuildKing() {
+    final mp = mpR;
+    if (mp == null) return;
+    kingR = buildKing(candles, mp, top: kingTop, stars: starR, sm: smR, km: kmR, daily: daily, nearOnly: kingNearOnly);
   }
 
   void setStarMin(int v) {
