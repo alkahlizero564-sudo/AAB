@@ -37,7 +37,7 @@ class AppState extends ChangeNotifier {
   String tf = '5m';
   int tab = 0;
   /// عدد الشموع المحمّلة لكل فريم
-  static int candleCount(String tf) => tf == '1m' || tf == '5m' ? 600 : 300;
+  static int candleCount(String tf) => tf == '1m' || tf == '5m' ? 600 : 500;
 
   bool chartFull = false; // شاشة كاملة للشارت: يخفي شريط التنقل أيضاً
 
@@ -66,6 +66,12 @@ class AppState extends ChangeNotifier {
   Forecast? _fAll; // إشارات AAB بهدف Alka (لـ DM المستقل)
   Map<String, int> board = {}; // لوحة الاتجاهات (مثل DTC): 1h / 4h / 1d → +1 صاعد ، -1 هابط
   DateTime? _boardAt;
+  List<IndHealth?> kingHealth = const []; // King: [15,30,50,70] × [عادي، دخول قريب]
+  IndHealth? get kingHealthNow {
+    final ti = const [15, 30, 50, 70].indexOf(kingTop);
+    final q = (ti < 0 ? 1 : ti) * 2 + (kingNearOnly ? 1 : 0);
+    return q < kingHealth.length ? kingHealth[q] : null;
+  }
   IndHealth? aabHealth, alkaHealth, allHealth, zeroHealth, mpHealth, smHealth, kmHealth, dmHealth, stHealth; // أداء المؤشرات على هذا السوق والفريم (آخر 5000 شمعة)
   bool healthLoading = false;
   final _healthCache = <String, (List<IndHealth>, DateTime)>{};
@@ -505,6 +511,7 @@ class AppState extends ChangeNotifier {
     kmHealth = at(6);
     dmHealth = at(7);
     stHealth = at(8);
+    kingHealth = [for (var q = 0; q < 8; q++) at(9 + q)];
   }
 
   /// صحة AAB و Alka على هذا السوق (تُحسب في الخلفية وتُحفظ ساعتين).
