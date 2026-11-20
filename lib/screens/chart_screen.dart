@@ -381,7 +381,7 @@ class _ChartScreenState extends State<ChartScreen> {
           name: 'King',
           emoji: '🤖',
           desc: 'ذكاء اصطناعي (150 شجرة، 54 معلومة من السوق ومؤشراتنا): الأقوى من إشارات Mp مع نسبة الثقة — اختر كم يعرض فوق، و«قوي» = أعلى 15%',
-          health: null,
+          health: st.kingHealthNow,
           on: layers.king,
           toggle: () => layers.king = !layers.king
         ),
@@ -591,10 +591,6 @@ class _ChartScreenState extends State<ChartScreen> {
                             ? (st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق')
                             : x.name == 'LT'
                             ? _ltStatus(st)
-                            : x.name == 'King'
-                            ? (st.kingR == null || st.kingR!.res.closed == 0
-                                ? 'جاري الحساب…'
-                                : 'الآن ${(st.kingR!.res.winRate * 100).toStringAsFixed(0)}% من ${st.kingR!.res.closed} صفقة')
                             : x.name == 'PQ'
                             ? (st.pqR == null || st.pqR!.closed == 0
                                 ? 'جاري الحساب…'

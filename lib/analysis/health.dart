@@ -5,6 +5,9 @@ import 'sm_indicator.dart';
 import 'all_indicator.dart';
 import 'forecast.dart';
 import 'st_indicator.dart';
+import 'star_indicator.dart';
+import 'king_indicator.dart';
+import 'indicators.dart';
 
 /// صحة مؤشر على سوق معيّن: أداؤه على آخر 5000 شمعة بنفس الإدارة العادلة (1R ثم 2R).
 class IndHealth {
@@ -69,7 +72,23 @@ List<IndHealth> computeHealth(List<Candle> c,
   final km = buildKm(c, sm);
   final dm = buildDm(c, sym, aab: f, alka: k, zero: z, daily: daily);
   final st = buildSt(c, mp).res;
+  // King: كل خيارات العرض (15/30/50/70) × (دخول قريب فقط: لا/نعم) من تقييم واحد
+  final stars = buildStar(c, mp);
+  final kg = buildKing(c, mp, top: 70, stars: stars, sm: sm, km: km, daily: daily);
+  final at = atr(c, 14);
+  final kingH = <IndHealth>[];
+  for (final top in const [15, 30, 50, 70]) {
+    for (final nearOnly in const [false, true]) {
+      final thr = kingThreshold(top);
+      final l = [
+        for (final s in mp.signals)
+          if (kg.of(s.i, s.dir) >= thr && (!nearOnly || kingEntryDist(c, at, s.i, s.dir, s.entry) < 0.75)) s
+      ];
+      final closed = l.where((s) => s.result != 0).toList();
+      kingH.add(h(l, closed.where((s) => s.result > 0).length, closed.length));
+    }
+  }
   return [h(f.signals, f.wins, f.closed), h(k.signals, k.wins, k.closed), h(all.signals, all.wins, all.closed),
       h(z.signals, z.wins, z.closed), h(mp.signals, mp.wins, mp.closed), h(sm.signals, sm.wins, sm.closed), h(km.signals, km.wins, km.closed), h(dm.signals, dm.wins, dm.closed),
-      h(st.signals, st.wins, st.closed)];
+      h(st.signals, st.wins, st.closed), ...kingH];
 }
