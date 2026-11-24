@@ -1307,7 +1307,36 @@ class _Painter extends CustomPainter {
         y += 6;
       }
       if (cy <= h) {
-        _pill(canvas, sym.fmt(hi - cy / h * (hi - lo)), Offset(w + 1, cy - 7), AppColors.accent);
+        final price = hi - cy / h * (hi - lo);
+        _pill(canvas, sym.fmt(price), Offset(w + 1, cy - 7), AppColors.accent);
+        // نقطة التقاطع + بطاقة صغيرة: البعد عن السعر الحالي (%) وعدد الشموع من الآن
+        canvas.drawCircle(Offset(cx!, cy), 6, Paint()..color = AppColors.accent.withOpacity(0.22));
+        canvas.drawCircle(Offset(cx, cy), 2.6, Paint()..color = AppColors.accent);
+        final last = c[n - 1].close;
+        final pct = (price - last) / last * 100;
+        final bars = n - 1 - cIdx;
+        final txt = '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%${bars > 0 ? '  ·  $bars شمعة' : ''}';
+        final tp = TextPainter(
+          text: TextSpan(
+              text: txt,
+              style: TextStyle(
+                  fontFamily: chartFont, color: pct >= 0 ? AppColors.up : AppColors.down, fontSize: 10, fontWeight: FontWeight.w700)),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        final bw = tp.width + 12, bh = tp.height + 6;
+        var bx = cx + 10;
+        if (bx + bw > w - 4) bx = cx - 10 - bw;
+        var by = cy - bh - 10;
+        if (by < 4) by = cy + 10;
+        final r = RRect.fromRectAndRadius(Rect.fromLTWH(bx, by, bw, bh), const Radius.circular(6));
+        canvas.drawRRect(r, Paint()..color = AppColors.card.withOpacity(0.94));
+        canvas.drawRRect(
+            r,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 0.8
+              ..color = AppColors.border);
+        tp.paint(canvas, Offset(bx + 6, by + 3));
       }
       final t = c[cIdx].time;
       _pill(canvas, '${_date(t)} ${_time(t)}', Offset(cx! - 34, fullH + 2), AppColors.accent);
