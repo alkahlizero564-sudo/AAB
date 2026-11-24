@@ -668,11 +668,13 @@ class AppState extends ChangeNotifier {
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final hist = c.length; // الإشارات على كل الشموع المحمّلة (300 أو 600)
-  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist);
+  // توصيات AAB المعروضة: التأكيد خلال شمعة واحدة فقط (بدل 3) — نفس الدقة بلا دخول متأخر
+  // (ذهب وبيتكوين وإيثيريوم ويورو 15m-4h، 1R: 54.8-55.1% مقابل 54.6-54.7%؛ الدخول الفوري بلا تأكيد 50.4-51.1%)
+  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist, cfg: const ForecastCfg(confirm: 1));
   final al = aabAlgo(c, sens: 2.0, withPanel: false);
   final ak = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
-  // ALL: AAB بنفس هدف Alka، ثم الدمج مع فلتر الشمعة الصغيرة
-  final fAll = alkaTp1 == rr1 ? fc : buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist);
+  // ALL و Mp (وما بُني عليها: النجوم، ST، SM، King): AAB بالإعداد الأصلي الذي تدرّبت عليه النماذج
+  final fAll = buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist);
   final all = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending);
   final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)

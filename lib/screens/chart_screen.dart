@@ -1,5 +1,6 @@
 import 'dart:isolate';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../analysis/all_indicator.dart';
 import 'package:provider/provider.dart';
 import '../analysis/benchmark.dart';
@@ -1053,6 +1054,7 @@ class _ChartScreenState extends State<ChartScreen> {
         km: layers.km && !hideKm,
         dm: layers.dm && !hideDm,
         st: layers.st && !hideSt);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAlerts(st, eff));
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
       Container(
@@ -1292,6 +1294,64 @@ class _ChartScreenState extends State<ChartScreen> {
       if (open.isNotEmpty) return open;
     }
     return const [];
+  }
+
+  /// تنبيه فوري: أول ما تظهر إشارة جديدة (عند إغلاق الشمعة) في أي مؤشر مشغّل — اهتزاز + شريط تنبيه.
+  final Set<String> _seenSig = {};
+  String _seenMk = '';
+  DateTime _seenAt = DateTime(2000);
+  void _checkAlerts(AppState st, ChartLayers eff) {
+    final n = st.candles.length;
+    if (n < 3) return;
+    final mk = '${st.symbol.code}|${st.tf}';
+    if (mk != _seenMk) _seenAt = DateTime.now();
+    _seenMk = mk;
+    // أول ثوانٍ بعد تغيير الرمز/الفريم: نسجّل الإشارات الموجودة بدون تنبيه (حتى تكتمل البيانات)
+    final first = st.loading || DateTime.now().difference(_seenAt).inSeconds < 8;
+    final l = <(String, List<PastSignal>?, List<PendingSetup>?)>[
+      if (eff.king) ('King', st.kingR?.res.signals, st.kingR?.res.pending),
+      if (eff.star) ('نجوم', st.starR?.res.signals, st.starR?.res.pending),
+      if (eff.pq) ('PQ', st.pqR?.signals, st.pqR?.pending),
+      if (eff.sm) ('SM', st.smView?.signals, st.smView?.pending),
+      if (eff.st) ('ST', st.stR?.res.signals, st.stR?.res.pending),
+      if (eff.km) ('KM', st.kmR?.signals, st.kmR?.pending),
+      if (eff.mp) ('Mp', st.mpR?.signals, st.mpR?.pending),
+      if (eff.sigs) ('AAB', st.forecast?.signals, st.forecast?.pending),
+    ];
+    final fresh = <String>[];
+    for (final (name, sg, pd) in l) {
+      for (final x in sg ?? const <PastSignal>[]) {
+        if (x.exitI >= 0 || x.i < n - 3) continue;
+        if (_seenSig.add('$mk|$name|s|${x.i}|${x.dir}') && !first) {
+          fresh.add('$name: ${x.dir > 0 ? 'شراء' : 'بيع'} الآن عند ${st.symbol.fmt(x.entry)}');
+        }
+      }
+      for (final p in pd ?? const <PendingSetup>[]) {
+        if (p.i < n - 3) continue;
+        if (_seenSig.add('$mk|$name|p|${p.i}|${p.dir}') && !first) {
+          fresh.add('$name: ${p.dir > 0 ? 'شراء' : 'بيع'} عند ${p.dir > 0 ? 'اختراق' : 'كسر'} ${st.symbol.fmt(p.trigger)}');
+        }
+      }
+    }
+    if (fresh.isEmpty || !mounted) return;
+    HapticFeedback.heavyImpact();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 90),
+        backgroundColor: AppColors.card,
+        duration: const Duration(seconds: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.gold)),
+        content: Row(children: [
+          const Icon(Icons.notifications_active_rounded, color: AppColors.gold, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('إشارة جديدة — ${st.symbol.code} ${st.tf.toUpperCase()}\n${fresh.take(3).join('\n')}',
+                style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+      ));
   }
 
   void _showTradeCheck(AppState st, String tag, PastSignal sg) {
