@@ -1,0 +1,95 @@
+    const ff = ['f_fib', 'f_avwap', 'f_vp', 'f_flow', 'fibv', 'avd', 'vpd', 'volr', 'clpos', 'sw_depth', 'risk5'];
+    final out = StringBuffer()..writeln(['market', 'tf', 'year', 'dir', 'win', 'r', 'vwin', 'vr', ...kingFeatures.take(37), ...ff].join(','));
+    for (final (mk, tf, cat, code, ld) in sets) {
+      final c = ld()..sort((a, b) => a.time.compareTo(b.time));
+      final n = c.length;
+      if (n < 400) continue;
+      final at = atr(c, 14);
+      final ks = KingScorer(c);
+      final vol = [for (final x in c) x.volume > 0 ? x.volume : 1.0];
+      final vma = sma(vol, 20);
+      final hi = <Pv>[], lo = <Pv>[];
+      var cnt = 0;
+      final usedPiv = <String>{};
+      for (var i = 7; i < n - 2; i++) {
+        final j0 = i - 3;
+        var isH = true, isL = true;
+        for (var q = j0 - 3; q <= j0 + 3; q++) {
+          if (q == j0) continue;
+          if (c[q].high >= c[j0].high) isH = false;
+          if (c[q].low <= c[j0].low) isL = false;
+        }
+        if (isH) hi.add(Pv(j0, c[j0].high));
+        if (isL) lo.add(Pv(j0, c[j0].low));
+        if (i < 210 || at[i].isNaN) continue;
+        final a = at[i], k = c[i];
+        for (final d in const [1, -1]) {
+          // 1) سحب السيولة: الشمعة تكسر قاعاً مؤكداً (آخر 100 شمعة) وتغلق فوقه
+          final ls = d > 0 ? lo : hi, hs = d > 0 ? hi : lo;
+          Pv? L;
+          for (var q = ls.length - 1; q >= 0 && ls[q].j >= i - 100; q--) {
+            final p = ls[q];
+            if (p.j + 3 > i - 1) continue;
+            if ((d > 0 ? k.low < p.p && k.close > p.p : k.high > p.p && k.close < p.p)) { L = p; break; }
+          }
+          if (L == null || !usedPiv.add('$d-${L.j}')) continue;
+          final ext = d > 0 ? k.low : k.high;
+          // 2) فيبوناتشي: موقع قاع السحب في مدى آخر 100 شمعة (التصحيح من القمة)
+          var h100 = -1e18, l100 = 1e18;
+          for (var q = i - 100; q <= i; q++) { h100 = math.max(h100, c[q].high); l100 = math.min(l100, c[q].low); }
+          final fibv = d > 0 ? (h100 - ext) / math.max(1e-9, h100 - l100) : (ext - l100) / math.max(1e-9, h100 - l100);
+          // 3) VWAP مثبّت من آخر قمة مؤكدة (للشراء) — الإغلاق فوقه = المشترون استعادوا متوسط البائعين
+          double avwap = double.nan;
+          if (hs.isNotEmpty) {
+            final an = hs.last.j;
+            var pv = 0.0, vv = 0.0;
+            for (var q = an; q <= i; q++) { final tp = (c[q].high + c[q].low + c[q].close) / 3; pv += tp * vol[q]; vv += vol[q]; }
+            avwap = pv / vv;
+          }
+          final avd = avwap.isNaN ? 0.0 : (k.close - avwap) * d / a;
+          // 4) فوليوم بروفايل آخر 150 شمعة: قرب قاع السحب من أسفل منطقة القيمة (VAL) أو عقدة حجم قوية
+          var vlo = 1e18, vhi = -1e18;
+          final v0 = i - 150;
+          for (var q = v0; q < i; q++) { vlo = math.min(vlo, c[q].low); vhi = math.max(vhi, c[q].high); }
+          final step = (vhi - vlo) / 30;
+          final w = List<double>.filled(30, 0);
+          for (var q = v0; q < i; q++) {
+            final b0 = ((c[q].low - vlo) / step).floor().clamp(0, 29).toInt(), b1 = ((c[q].high - vlo) / step).floor().clamp(0, 29).toInt();
+            for (var b = b0; b <= b1; b++) { w[b] += vol[q] / (b1 - b0 + 1); }
+          }
+          var pocB = 0;
+          for (var b = 1; b < 30; b++) { if (w[b] > w[pocB]) pocB = b; }
+          final total = w.fold<double>(0, (x, y) => x + y);
+          var acc = w[pocB], up = pocB, dn = pocB;
+          while (acc < total * 0.7 && (up < 29 || dn > 0)) {
+            final nu = up < 29 ? w[up + 1] : -1.0, nd = dn > 0 ? w[dn - 1] : -1.0;
+            if (nu >= nd) { up++; acc += w[up]; } else { dn--; acc += w[dn]; }
+          }
+          final vah = vlo + step * (up + 1), val = vlo + step * dn;
+          final edgeV = d > 0 ? val : vah;
+          final vpd = (ext - edgeV).abs() / a;
+          final eb = ((L.p - vlo) / step).floor().clamp(0, 29).toInt();
+          final node = w[eb] / math.max(1e-9, w[pocB]);
+          // 5) تدفق الأوامر (تقريب ExoChart): حجم الشمعة أعلى من متوسطه وإغلاق قوي في اتجاه الصفقة (امتصاص)
+          final volr = vma[i].isNaN ? 1.0 : vol[i] / math.max(1e-9, vma[i]);
+          final rg = math.max(1e-9, k.high - k.low);
+          final clpos = d > 0 ? (k.close - k.low) / rg : (k.high - k.close) / rg;
+          final fFib = fibv >= 0.618 ? 1.0 : 0.0, fAv = avd > 0 ? 1.0 : 0.0, fVp = (vpd < 0.5 || node >= 0.7) ? 1.0 : 0.0, fFl = (volr >= 1.2 && clpos >= 0.6) ? 1.0 : 0.0;
+          final stop = ext - d * 0.1 * a;
+          final e1 = c[i + 1].open;
+          if ((e1 - stop) * d < 0.2 * a) continue;
+          final t0 = sim(c, at, i, d, stop);
+          final v = simFixed(c, i + 1, d, e1, stop, 2);
+          final x = ks.features(i, d, k.close, stop, 'SW');
+          if (t0 == null || v == null || x == null) continue;
+          cnt++;
+          final fv = [fFib, fAv, fVp, fFl, fibv, avd, vpd, volr, clpos, (L.p - ext) * d / a, (e1 - stop) * d / a];
+          out.writeln([mk, tf, c[i].time.year, d, t0.win ? 1 : 0, t0.r, v.win ? 1 : 0, v.r.toStringAsFixed(3),
+            for (final q in x.take(37)) q.toStringAsFixed(4), for (final q in fv) q.toStringAsFixed(4)].join(','));
+        }
+      }
+      print('done $mk $tf n=$cnt');
+    }
+    File('$sp/ai/five.csv').writeAsStringSync(out.toString());
+  }, timeout: const Timeout(Duration(hours: 3)));
+}
