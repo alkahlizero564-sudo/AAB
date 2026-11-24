@@ -64,6 +64,8 @@ class AppState extends ChangeNotifier {
   // (اختبار لم يره، 1R: SM 56.7% → 60.5% ، AAB 56.0% → 62.4%)
   static const smAi = 30, aabAi = 30;
   AllResult? smView; // SM بعد فلتر الذكاء (للعرض)
+  AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
+  IndHealth? get akHealth => _aiH(15, 2);
   Forecast? _fcRaw;
   List<IndHealth?> aiHealth = const []; // [SM 30، SM 15، AAB 30، AAB 15]
   IndHealth? _aiH(int top, int base) => top == 0 ? null : (base + (top == 15 ? 1 : 0) < aiHealth.length ? aiHealth[base + (top == 15 ? 1 : 0)] : null);
@@ -283,6 +285,7 @@ class AppState extends ChangeNotifier {
     forecast = null;
     _fcRaw = null;
     smView = null;
+    akR = null;
     algo = null;
     alka = null;
     allR = null;
@@ -529,6 +532,12 @@ class AppState extends ChangeNotifier {
     final e = kingR?.eval;
     smView = smR == null ? null : kingFilter(smR!, e, smAi, keep: _keep('SM'));
     forecast = _fcRaw == null ? null : kingFilterForecast(_fcRaw!, e, aabAi, keep: _keep('AAB'));
+    final f0 = _fcRaw;
+    akR = f0 == null || e == null
+        ? null
+        : kingFilter(AllResult(f0.signals, List.filled(f0.signals.length, 'AAB'), f0.pending, List.filled(f0.pending.length, 'AAB'), 'AK'), e, 15,
+            keep: _keep('AK'));
+    _remember('AK', akR?.signals);
     _remember('SM', smView?.signals);
     _remember('AAB', forecast?.signals);
   }
@@ -543,6 +552,7 @@ class AppState extends ChangeNotifier {
     if (pqR != null) pqR = _mem.hold('PQ', c, pqR!);
     if (dmR != null) dmR = _mem.hold('DM', c, dmR!);
     if (smView != null) smView = _mem.hold('SM', c, smView!);
+    if (akR != null) akR = _mem.hold('AK', c, akR!);
     final sr = starR;
     if (sr != null) starR = StarResult(_mem.hold('نجوم|$starMin', c, sr.res), sr.stars, sr.hot, sr.held, sr.near);
     final tr = stR;

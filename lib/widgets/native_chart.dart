@@ -34,6 +34,7 @@ class ChartLayers {
   bool lt = false; // مؤشر LT بعيد المدى (يُرسم على الفريم اليومي)
   bool pq = false; // مؤشر PQ: النجوم + SM + Alka
   bool king = false; // مؤشر King: ذكاء اصطناعي
+  bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -64,6 +65,7 @@ class ChartLayers {
     ..lt = lt
     ..pq = pq
     ..king = king
+    ..aiak = aiak
     ..type = type
     ..sub = sub;
 }
@@ -103,6 +105,7 @@ class NativeChart extends StatefulWidget {
   final StarResult? starR;
   final AllResult? ltR;
   final AllResult? pqR;
+  final AllResult? akR;
   final KingResult? kingR;
   final MarketSymbol sym;
   final String tf;
@@ -126,6 +129,7 @@ class NativeChart extends StatefulWidget {
     this.starR,
     this.ltR,
     this.pqR,
+    this.akR,
     this.kingR,
     this.onSelect,
     this.repaint,
@@ -339,7 +343,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
                   DateTime.now().toUtc(), widget.algo,
-                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR),
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR),
             ),
           ),
         ),
@@ -413,9 +417,10 @@ class _Painter extends CustomPainter {
   final AllResult? ltr;
   final _Smooth? sm;
   final AllResult? pqr;
+  final AllResult? akr;
   final KingResult? kingr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -1214,6 +1219,12 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final _ in r.pending) 'PQ'],
           starsPer: starr == null ? null : [for (final sg in r.signals) inStars(sg) ? starr!.of(sg.i, sg.dir) : -1]);
     }
+    // ── AK: علامات شراء (أخضر) وبيع (أحمر) — توصيات AAB في أعلى 15% حسب King
+    if (L.aiak && akr != null) {
+      final r = akr!;
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'AK', null,
+          tagPer: [for (final _ in r.signals) 'AK'], pendTagPer: [for (final _ in r.pending) 'AK']);
+    }
     // ── LT بعيد المدى: يُرسم على الفريم اليومي فقط
     if (L.lt && ltr != null && tf == '1d') {
       final r = ltr!;
@@ -1883,6 +1894,10 @@ class _Painter extends CustomPainter {
     if (L.king && kingr != null && kingr!.res.closed > 0) {
       final a = kingr!.res;
       part('King ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})', a.winRate >= 0.5 ? AppColors.gold : _down);
+    }
+    if (L.aiak && akr != null && akr!.closed > 0) {
+      final a = akr!;
+      part('AK ${(a.winRate * 100).toStringAsFixed(0)}% (${a.wins}/${a.closed})', a.winRate >= 0.5 ? _up : _down);
     }
     if (L.pq && pqr != null && pqr!.closed > 0) {
       final a = pqr!;
