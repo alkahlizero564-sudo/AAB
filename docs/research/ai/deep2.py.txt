@@ -1,0 +1,94 @@
+import pandas as pd, numpy as np, torch, torch.nn as nn, warnings, time, sys
+warnings.filterwarnings('ignore'); torch.set_num_threads(4)
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+@njit(cache=True)
+def label(o,h,l,c,a,d,w):
+    n=len(c)
+    for i in range(3,n-1):
+        if a[i]<=0: w[i]=-1; continue
+        e=o[i+1]; ext=l[i] if d>0 else h[i]
+        for j in range(i-2,i+1):
+            ext=min(ext,l[j]) if d>0 else max(ext,h[j])
+        risk=min(max((e-ext)*d+0.1*a[i],0.7*a[i]),2.5*a[i])
+        t1=e+d*risk; st=e-d*risk; res=-1
+        for j in range(i+1,min(n,i+80)):
+            if (d>0 and l[j]<=st) or (d<0 and h[j]>=st): res=0; break
+            if (d>0 and h[j]>=t1) or (d<0 and l[j]<=t1): res=1; break
+        w[i]=res if res>=0 else 0
+def load(p):
+    d=pd.read_csv(p); d.columns=[x.lower() for x in d.columns]; d=d.rename(columns={d.columns[0]:'time'})
+    d['time']=pd.to_datetime(d.time,utc=True,errors='coerce'); d=d.dropna(subset=['time']).reset_index(drop=True)
+    if 'volume' not in d: d['volume']=0
+    return d
+sets=[('gold','15m','gold20/xau20_15m'),('gold','1h','gold20/xau20_1h'),('gold','4h','gold20/xau20_4h'),('btc','15m','gold10/btc10_15m'),('btc','1h','gold10/btc10_1h'),('btc','4h','gold10/btc10_4h'),('eth','1h','data/eth_1h_1819'),('eth','1h','data/eth_1h_2526'),('eur','1h','data/EUR_USD_1h')]
+D=[]
+for mk,tf,f in sets:
+    d=load(f'{S}/{f}.csv'); o,h,l,c=[d[x].values.astype(np.float64) for x in ['open','high','low','close']]
+    v=d.volume.fillna(0).values.astype(np.float64)+1e-9
+    pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc))); a=pd.Series(tr).ewm(alpha=1/14,adjust=False).mean().values
+    vr=np.log(v/pd.Series(v).rolling(50).mean().bfill().values)
+    wb=np.zeros(len(c),np.int64); ws=np.zeros(len(c),np.int64)
+    label(o,h,l,c,a,1,wb); label(o,h,l,c,a,-1,ws)
+    yr=d.time.dt.year.values
+    tr_=((mk=='gold')&(yr>=2010)&(yr<=2018))|((mk=='btc')&(yr<=2020)); te_=~tr_&~((mk=='gold')&(yr<2010))
+    D.append(dict(mk=mk,tf=tf,o=o,h=h,l=l,c=c,a=a,vr=np.nan_to_num(vr),wb=wb,ws=ws,tr=tr_,te=te_))
+    print('loaded',mk,tf,len(c),file=sys.stderr)
+def windows(k,idx,dirs):
+    x=D[k]; off=np.arange(-63,1)
+    J=idx[:,None]+off[None,:]
+    c0=x['c'][idx][:,None]; a0=x['a'][idx][:,None]; dd=dirs[:,None]
+    O=(x['o'][J]-c0)/a0; H=(x['h'][J]-c0)/a0; L=(x['l'][J]-c0)/a0; C=(x['c'][J]-c0)/a0; V=x['vr'][J]
+    Hn=np.where(dd>0,H,-L); Ln=np.where(dd>0,L,-H)
+    return np.clip(np.stack([O*dd,Hn,Ln,C*dd,V],axis=2),-15,15).astype(np.float32)
+# عينات التدريب: كل شمعة (اتجاهان)، الاختبار: كل شمعة في الاختبار
+def samples(mask_key,step):
+    out=[]
+    for k,x in enumerate(D):
+        ii=np.where(x[mask_key])[0]; ii=ii[(ii>=250)&(ii<len(x['c'])-81)][::step]
+        for dr in (1,-1): out.append((k,ii,np.full(len(ii),dr)))
+    return out
+trS=samples('tr',2); teS=samples('te',1)
+def build(S_):
+    Xs=[];ys=[];meta=[]
+    for k,ii,dr in S_:
+        Xs.append(windows(k,ii,dr)); ys.append(np.where(dr>0,D[k]['wb'][ii],D[k]['ws'][ii]))
+        meta.append(np.stack([np.full(len(ii),k),ii,dr],1))
+    return np.concatenate(Xs),np.concatenate(ys).astype(np.float32),np.concatenate(meta)
+Xtr,ytr,mtr=build(trS); Xte,yte,mte=build(teS)
+print('train',len(ytr),'test',len(yte),'base win train',ytr.mean().round(3),'test',yte.mean().round(3),flush=True)
+class CNN(nn.Module):
+    def __init__(s):
+        super().__init__()
+        s.f=nn.Sequential(nn.Conv1d(5,48,5,padding=2),nn.ReLU(),nn.Conv1d(48,48,5,padding=2),nn.ReLU(),nn.MaxPool1d(2),
+                          nn.Conv1d(48,96,3,padding=1),nn.ReLU(),nn.MaxPool1d(2),nn.Conv1d(96,96,3,padding=1),nn.ReLU(),nn.AdaptiveAvgPool1d(1))
+        s.h=nn.Sequential(nn.Dropout(0.3),nn.Linear(96,1))
+    def forward(s,x): return s.h(s.f(x.transpose(1,2)).squeeze(-1)).squeeze(-1)
+torch.manual_seed(1); np.random.seed(1)
+idx=np.random.permutation(len(ytr)); nv=len(idx)//10; va,tr=idx[:nv],idx[nv:]
+m=CNN(); opt=torch.optim.AdamW(m.parameters(),1e-3,weight_decay=1e-3); lf=nn.BCEWithLogitsLoss()
+Xt=torch.tensor(Xtr); yt=torch.tensor(ytr); best=(1e9,None); bad=0; t0=time.time()
+for ep in range(40):
+    m.train(); np.random.shuffle(tr)
+    for b in range(0,len(tr),512):
+        j=tr[b:b+512]; opt.zero_grad(); loss=lf(m(Xt[j]),yt[j]); loss.backward(); opt.step()
+    m.eval()
+    with torch.no_grad(): vl=np.mean([lf(m(Xt[va[b:b+8192]]),yt[va[b:b+8192]]).item() for b in range(0,len(va),8192)])
+    pass
+    if vl<best[0]-1e-5: best=(vl,{k:v.clone() for k,v in m.state_dict().items()}); bad=0
+    else:
+        bad+=1
+        if bad>=4: break
+m.load_state_dict(best[1]); m.eval()
+def pred(X):
+    with torch.no_grad(): return torch.sigmoid(torch.cat([m(torch.tensor(X[b:b+8192])) for b in range(0,len(X),8192)])).numpy()
+ptr=pred(Xtr[va]); pte=pred(Xte)
+mk=np.array([D[int(k)]['mk'] for k in mte[:,0]]); tf=np.array([D[int(k)]['tf'] for k in mte[:,0]])
+print('=== المؤشر العميق المستقل (كل الشموع، هدف 1R عادل) — الأساس عشوائي ~',yte.mean().round(3))
+for top in [10,5,2,1,0.5]:
+    thr=np.quantile(ptr,1-top/100); k=pte>=thr
+    s=f"أعلى {top}%: {yte[k].mean()*100:.1f}% n={k.sum()}"
+    for g in ['gold','btc','eth','eur']: s+=f" | {g} {yte[k&(mk==g)].mean()*100:.1f}% ({(k&(mk==g)).sum()})"
+    print(s,flush=True)
+np.save(S+'/ai/deep2_pte.npy',pte); np.save(S+'/ai/deep2_mte.npy',mte)
+torch.save(m.state_dict(),S+'/ai/deep2_cnn.pt')
