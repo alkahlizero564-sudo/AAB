@@ -16,6 +16,7 @@ import '../analysis/star_indicator.dart';
 import '../analysis/lt_indicator.dart';
 import '../analysis/pq_indicator.dart';
 import '../analysis/king_indicator.dart';
+import '../analysis/signal_memory.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -72,6 +73,7 @@ class AppState extends ChangeNotifier {
   /// ثبات الإشارات: صفقة ظهرت مرة (على شمعة مغلقة) تبقى ولا تختفي عند تحديث الشموع،
   /// حتى لو تحرّكت درجة الذكاء قليلاً حول الحد. المفتاح: وقت الشمعة + الاتجاه.
   final Map<String, Set<String>> _sticky = {};
+  final _mem = SignalMemory();
   bool Function(int, int) _keep(String name) {
     final set = _sticky.putIfAbsent(name, () => <String>{});
     final c = candles;
@@ -273,6 +275,7 @@ class AppState extends ChangeNotifier {
   void _resetData() {
     _gen++;
     _sticky.clear();
+    _mem.clear();
     candles = [];
     htf = null;
     _htfAt = null;
@@ -378,6 +381,7 @@ class AppState extends ChangeNotifier {
     allR = all;
     _fcRaw = fc;
     _applyAi();
+    _holdAll();
     signal = _unify(base, fc);
     algo = al;
     if (prev != null && prev.direction == signal!.direction) {
@@ -470,6 +474,7 @@ class AppState extends ChangeNotifier {
             dmR = buildDm(candles, symbol, aab: _fAll!, alka: alka!, zero: zero!, daily: c);
             _rebuildStar();
             _rebuildKing();
+            _holdAll();
           }
           _healthCache.remove('${symbol.code}|$tf'); // نعيد حساب صحة DM باليومي الصحيح
           _loadHealth(force: true);
@@ -499,12 +504,14 @@ class AppState extends ChangeNotifier {
   void setKingTop(int v) {
     kingTop = v;
     _rebuildKing();
+    _holdAll();
     notifyListeners();
   }
 
   void setKingNearOnly(bool v) {
     kingNearOnly = v;
     _rebuildKing();
+    _holdAll();
     notifyListeners();
   }
 
@@ -524,6 +531,35 @@ class AppState extends ChangeNotifier {
     forecast = _fcRaw == null ? null : kingFilterForecast(_fcRaw!, e, aabAi, keep: _keep('AAB'));
     _remember('SM', smView?.signals);
     _remember('AAB', forecast?.signals);
+  }
+
+  /// كل إشارة ظهرت على شمعة مغلقة تبقى ظاهرة (لا تظهر ثم تختفي).
+  void _holdAll() {
+    final c = candles;
+    if (c.length < 3) return;
+    if (mpR != null) mpR = _mem.hold('Mp', c, mpR!);
+    if (allR != null) allR = _mem.hold('ALL', c, allR!);
+    if (kmR != null) kmR = _mem.hold('KM', c, kmR!);
+    if (pqR != null) pqR = _mem.hold('PQ', c, pqR!);
+    if (dmR != null) dmR = _mem.hold('DM', c, dmR!);
+    if (smView != null) smView = _mem.hold('SM', c, smView!);
+    final sr = starR;
+    if (sr != null) starR = StarResult(_mem.hold('نجوم|$starMin', c, sr.res), sr.stars, sr.hot, sr.held, sr.near);
+    final tr = stR;
+    if (tr != null) stR = StResult(_mem.hold('ST', c, tr.res), tr.conf);
+    final kr = kingR;
+    if (kr != null) kingR = KingResult(_mem.hold('King|$kingTop|$kingNearOnly', c, kr.res), kr.conf, kr.eval);
+    if (forecast != null) forecast = _mem.holdForecast('AAB', c, forecast!);
+    final ak = alka;
+    if (ak != null) {
+      final (s, p) = _mem.holdList('Alka', c, ak.signals, ak.pending);
+      if (!identical(s, ak.signals)) alka = AlkaResult(s, p);
+    }
+    final zr = zero;
+    if (zr != null) {
+      final (s, p) = _mem.holdList('0.1', c, zr.signals, zr.pending);
+      if (!identical(s, zr.signals)) zero = ZeroResult(s, p);
+    }
   }
 
 
