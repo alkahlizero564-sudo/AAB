@@ -1,0 +1,28 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/obf.csv')
+trm=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~trm & ~((df.market=='gold20')&(df.year<2010))
+gold=df.market=='gold20'
+def show(lab,m):
+    print(f"{lab:40s} تدريب 2:1 {df.vwin[m&trm].mean()*100:5.1f}% | اختبار 1R {df.win[m&test].mean()*100:5.1f}% 2:1 {df.vwin[m&test].mean()*100:5.1f}% avgR {df.vr[m&test].mean():+.3f} n={(m&test).sum():6d} | ذهب {df.vwin[m&test&gold].mean()*100:5.1f}%")
+gz=(df.fib>=0.5)&(df.fib<0.618); ote=(df.fib>=0.5)&(df.fib<=0.786)
+poc=df.poc_d<0.5; va=df.in_va==1; hvn=df.node>=0.7; lvn=df.node<0.3
+for k in ['OB','FVG']:
+    for md in ['touch','react']:
+        print(f'===== {k} {md}')
+        sel=(df.kind==k)&(df['mode']==md)
+        for lab,z in [('الكل',True),('على POC (<0.5 ATR)',poc),('داخل منطقة القيمة',va),('خارج منطقة القيمة',~va),('عقدة حجم قوية HVN',hvn),('عقدة ضعيفة LVN',lvn),
+                      ('فيبو 0.5-0.786 + POC',ote&poc),('فيبو 0.5-0.786 + HVN',ote&hvn),('ذهبية + POC',gz&poc),('ذهبية + HVN',gz&hvn)]:
+            show('  '+lab,sel&z)
+# AI: OB + FVG + فيبو + فوليوم
+meta=['market','tf','year','dir','win','r','vwin','vr','kind','mode']
+feat=[c for c in df.columns if c not in meta]
+tr,te=df[trm],df[test]; sub=np.random.RandomState(0).rand(len(tr))<0.5
+m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=1).fit(tr[feat].values[sub].astype(np.float32),tr.vwin.values[sub])
+ptr=m.predict_proba(tr[feat].values.astype(np.float32))[:,1]; p=m.predict_proba(te[feat].values.astype(np.float32))[:,1]
+for top in [30,15,7]:
+    k=p>=np.quantile(ptr,1-top/100)
+    print(f"AI (OB+FVG+فيبو+فوليوم) 2:1 أعلى {top}%: {te.vwin[k].mean()*100:.1f}% avgR {te.vr[k].mean():+.3f} n={k.sum()} | 1R {te.win[k].mean()*100:.1f}% | ذهب {te.vwin[k&(te.market=='gold20').values].mean()*100:.1f}%")

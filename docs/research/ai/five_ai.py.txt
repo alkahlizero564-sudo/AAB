@@ -1,0 +1,28 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/five.csv')
+trm=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~trm & ~((df.market=='gold20')&(df.year<2010))
+gold=df.market=='gold20'; gtest=gold&(df.year>=2019); gall=gold&(df.year>=2010)
+def show(lab,m):
+    print(f"{lab:34s} تدريب 1R {df.win[m&trm].mean()*100:5.1f}% | اختبار 1R {df.win[m&test].mean()*100:5.1f}% 2:1 {df.vwin[m&test].mean()*100:5.1f}% R {df.vr[m&test].mean():+.3f} n={(m&test).sum():6d} | ذهب 2010-25: 1R {df.win[m&gall].mean()*100:5.1f}% 2:1 {df.vwin[m&gall].mean()*100:5.1f}% n={(m&gall).sum()}")
+f=df[['f_fib','f_avwap','f_vp','f_flow']].sum(axis=1)
+show('سحب السيولة وحده',df.win>-1)
+show(' + فيبو (>0.618)',df.f_fib==1)
+show(' + VWAP مثبّت',df.f_avwap==1)
+show(' + فوليوم بروفايل',df.f_vp==1)
+show(' + تدفق (امتصاص)',df.f_flow==1)
+for k in range(5): show(f'عدد الشروط = {k}',f==k)
+show('الخمسة كلها',f==4)
+show('3 شروط أو أكثر',f>=3)
+for tf in ['15m','1h','4h','1d']: show(f'  الخمسة 3+ على {tf}',(f>=3)&(df.tf==tf))
+meta=['market','tf','year','dir','win','r','vwin','vr']
+feat=[c for c in df.columns if c not in meta]
+tr,te=df[trm],df[test]
+m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=1).fit(tr[feat].values.astype(np.float32),tr.win)
+ptr=m.predict_proba(tr[feat].values.astype(np.float32))[:,1]; p=m.predict_proba(te[feat].values.astype(np.float32))[:,1]
+for top in [30,15,7]:
+    k=p>=np.quantile(ptr,1-top/100)
+    print(f"AI (الخمسة) 1R أعلى {top}%: {te.win[k].mean()*100:.1f}% R {te.r[k].mean():+.3f} n={k.sum()} | 2:1 {te.vwin[k].mean()*100:.1f}% | ذهب 2019-25 {te.win[k&(te.market=='gold20').values].mean()*100:.1f}%")

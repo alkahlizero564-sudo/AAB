@@ -1,0 +1,30 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/signals2.csv'); ta=pd.read_csv(S+'/ai/ta.csv')
+assert len(df)==len(ta) and (df.win.values==ta.win.values).all() and (np.abs(df.entry_dist.values-ta.entry_dist.values)<1e-3).all()
+tcols=[c for c in ta.columns if c.startswith('t_')]
+for c in tcols: df[c]=ta[c].values
+base=[c for c in df.columns if c not in ['market','tf','year','dir','win','r','src'] and not c.startswith('i_') and not c.startswith('t_')]
+safe=['i_st','i_stars','i_near','i_hot','i_held','i_sm','i_smstrong','i_km','i_daily200','i_sr_behind','i_sr_ahead','i_ribage','i_lt']
+trm=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~trm & ~((df.market=='gold20')&(df.year<2010))
+tr,te=df[trm],df[test]
+print('=== أثر كل نمط وحده على كل إشارات Mp (اختبار)')
+for c in ['t_ms','t_bos','t_ms_htf','t_div','t_engulf','t_pin','t_inside','t_doji','t_three','t_dbl','t_brk20']:
+    for v in sorted(te[c].unique())[:9]:
+        m=te[c]==v
+        if m.sum()>300: print(f"  {c}={v:+.0f}: {te.win[m].mean()*100:5.1f}% n={m.sum()}")
+def run(lab,fs,seeds=range(1,6)):
+    s=f"{lab:30s}"; res=[]
+    for sd in seeds:
+        m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=sd).fit(tr[fs].values.astype(np.float32),tr.win)
+        res.append((m.predict_proba(tr[fs].values.astype(np.float32))[:,1],m.predict_proba(te[fs].values.astype(np.float32))[:,1]))
+    for top in [30,15,7]:
+        a=[te.win.values[p>=np.quantile(q,1-top/100)].mean() for q,p in res]
+        g=[te.win.values[(p>=np.quantile(q,1-top/100))&(te.market=='gold20').values].mean() for q,p in res]
+        s+=f" | {top}%: {np.mean(a)*100:.1f}±{np.std(a)*100:.1f} (ذهب {np.mean(g)*100:.1f})"
+    print(s)
+run('King الحالي (54)',base+safe)
+run('King + التحليل الفني (74)',base+safe+tcols)

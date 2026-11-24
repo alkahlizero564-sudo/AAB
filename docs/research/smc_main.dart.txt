@@ -1,0 +1,113 @@
+class Pv { final int j; final double p; Pv(this.j, this.p); }
+
+void main() {
+  test('smc export', () {
+    final g = '$sp/gdf';
+    final sets = <(String, String, String, String, List<Candle> Function())>[
+      ('gold20', '15m', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_15m.csv')),
+      ('gold20', '1h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_1h.csv')),
+      ('gold20', '4h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_4h.csv')),
+      ('gold20', '1d', 'metal', 'XAU/USD', () => aggr(loadAny('$sp/gold20/xau20_1h.csv'), 1440)),
+      ('btc', '15m', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_15m.csv')),
+      ('btc', '1h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_1h.csv')),
+      ('btc', '4h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_4h.csv')),
+      ('btc', '1d', 'crypto', 'BTC', () => aggr(loadAny('$sp/gold10/btc10_1h.csv'), 1440)),
+      ('eth', '15m', 'crypto', 'ETH', () => loadAny('$sp/data/eth_15m_1819.csv') + loadAny('$sp/data/eth_15m_2526.csv')),
+      ('eth', '1h', 'crypto', 'ETH', () => loadAny('$sp/data/eth_1h_1819.csv') + loadAny('$sp/data/eth_1h_2526.csv')),
+      ('eurusd19', '1h', 'forex', 'EUR/USD', () => loadAny('$sp/data/EUR_USD_1h.csv')),
+      ('gbpusd19', '1h', 'forex', 'GBP/USD', () => loadAny('$sp/data/GBP_USD_1h.csv')),
+      ('audusd19', '1h', 'forex', 'AUD/USD', () => loadAny('$sp/data/AUD_USD_1h.csv')),
+      ('usdcad19', '1h', 'forex', 'USD/CAD', () => loadAny('$sp/data/USD_CAD_1h.csv')),
+      ('nas19', '1h', 'index', 'NAS100', () => loadAny('$sp/data/NAS100_USD_1h.csv')),
+      ('oil19', '1h', 'commodity', 'WTI', () => loadAny('$sp/data/WTICO_USD_1h.csv')),
+      ('eurusd26', '1h', 'forex', 'EUR/USD', () => loadAny('$g/eurusd-1h-ohlcv-forex/EURUSD_1h.csv')),
+      ('gbpusd26', '1h', 'forex', 'GBP/USD', () => loadAny('$g/gbpusd-1h-ohlcv-forex/GBPUSD_1h.csv')),
+      ('usdjpy26', '1h', 'forex', 'USD/JPY', () => loadAny('$g/usdjpy-1h-ohlcv-forex/USDJPY_1h.csv')),
+      ('nas26', '1h', 'index', 'NAS100', () => loadAny('$g/nas100-1h-ohlcv-index/NAS100_1h.csv')),
+      ('us30_26', '1h', 'index', 'US30', () => loadAny('$g/us30-1h-ohlcv-index/US30_1h.csv')),
+      ('oil26', '1h', 'commodity', 'WTI', () => loadAny('$g/usoil-1h-ohlcv-commodities/USOIL_1h.csv')),
+      ('silver26', '15m', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s15m/XAGUSD_15m.csv')),
+      ('silver26', '1h', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s1h/XAGUSD_1h.csv')),
+    ];
+    const sf = ['risk', 'disc', 'sweep', 'sw_age', 'choch_len', 'fvg', 'disp', 'h_dist', 'sw_close'];
+    final out = StringBuffer()..writeln(['market', 'tf', 'year', 'dir', 'win', 'r', 'vwin', 'vr', ...kingFeatures.take(37), ...sf].join(','));
+    for (final (mk, tf, cat, code, ld) in sets) {
+      final c = ld()..sort((a, b) => a.time.compareTo(b.time));
+      final n = c.length;
+      if (n < 400) continue;
+      final at = atr(c, 14);
+      final ks = KingScorer(c);
+      final hi = <Pv>[], lo = <Pv>[];
+      final used = <String>{};
+      var cnt = 0;
+      for (var i = 7; i < n - 2; i++) {
+        final j0 = i - 3;
+        var isH = true, isL = true;
+        for (var q = j0 - 3; q <= j0 + 3; q++) {
+          if (q == j0) continue;
+          if (c[q].high >= c[j0].high) isH = false;
+          if (c[q].low <= c[j0].low) isL = false;
+        }
+        if (isH) hi.add(Pv(j0, c[j0].high));
+        if (isL) lo.add(Pv(j0, c[j0].low));
+        if (i < 210 || at[i].isNaN) continue;
+        final a = at[i];
+        for (final d in const [1, -1]) {
+          // تغيير الهيكل: إغلاق يكسر آخر قمة مؤكدة (للشراء)
+          final hs = d > 0 ? hi : lo, ls = d > 0 ? lo : hi;
+          if (hs.isEmpty || ls.isEmpty) continue;
+          final h = hs.last;
+          if (!((c[i].close - h.p) * d > 0 && (c[i - 1].close - h.p) * d <= 0)) continue;
+          if (i - h.j > 60 || !used.add('$d-${h.j}')) continue;
+          // سحب السيولة: أدنى قاع بعد القمة كسر قاعاً مؤكداً سابقاً
+          var s0 = h.j;
+          for (var t = h.j; t <= i; t++) {
+            if ((d > 0 ? c[t].low < c[s0].low : c[t].high > c[s0].high)) s0 = t;
+          }
+          final ext = d > 0 ? c[s0].low : c[s0].high;
+          Pv? L;
+          for (var k = ls.length - 1; k >= 0; k--) {
+            if (ls[k].j + 3 > s0) continue;
+            L = ls[k];
+            break;
+          }
+          if (L == null || s0 - L.j > 100 || (ext - L.p) * d >= 0) continue;
+          // FVG بين السحب والكسر (آخر فجوة)
+          var ft = -1;
+          for (var t = i - 1; t >= s0 + 1; t--) {
+            if (d > 0 ? c[t + 1].low > c[t - 1].high : c[t + 1].high < c[t - 1].low) { ft = t; break; }
+          }
+          if (ft < 0) continue;
+          final entry = d > 0 ? c[ft + 1].low : c[ft + 1].high;
+          final gap = (d > 0 ? c[ft + 1].low - c[ft - 1].high : c[ft - 1].low - c[ft + 1].high) / a;
+          final stop = ext - d * 0.1 * a;
+          final risk = (entry - stop) * d;
+          if (risk < 0.2 * a) continue;
+          // انتظار الرجوع للـ FVG (أمر معلّق حتى 40 شمعة؛ يُلغى إن وصل الهدف قبل التفعيل)
+          var f = -1;
+          for (var t = i + 1; t < math.min(n, i + 41); t++) {
+            if (d > 0 ? c[t].low <= entry : c[t].high >= entry) { f = t; break; }
+            if (d > 0 ? c[t].high >= entry + 2 * risk : c[t].low <= entry - 2 * risk) break;
+          }
+          if (f < 0) continue;
+          var top = d > 0 ? -1e18 : 1e18;
+          for (var t = s0; t <= i; t++) { top = d > 0 ? math.max(top, c[t].high) : math.min(top, c[t].low); }
+          final x = ks.features(i, d, entry, stop, 'SMC');
+          if (x == null) continue;
+          final t0 = simLimit(c, f, d, entry, stop);
+          final v = simFixed(c, f, d, entry, stop, 2);
+          if (t0 == null || v == null) continue;
+          final sv = <double>[
+            risk / a, (entry - ext) * d / math.max(1e-9, (top - ext) * d), (L.p - ext) * d / a, (s0 - L.j).toDouble(), (i - s0).toDouble(),
+            gap, (c[i].close - ext) * d / a, (c[i].close - h.p) * d / a, ((d > 0 ? c[s0].close - L.p : L.p - c[s0].close)) / a,
+          ];
+          cnt++;
+          out.writeln([mk, tf, c[i].time.year, d, t0.win ? 1 : 0, t0.r, v.win ? 1 : 0, v.r.toStringAsFixed(3),
+            for (final q in x.take(37)) q.toStringAsFixed(4), for (final q in sv) q.toStringAsFixed(4)].join(','));
+        }
+      }
+      print('done $mk $tf n=$cnt');
+    }
+    File('$sp/ai/smc.csv').writeAsStringSync(out.toString());
+  }, timeout: const Timeout(Duration(hours: 2)));
+}

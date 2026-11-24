@@ -1,0 +1,146 @@
+void main() {
+  test('TA features for Mp rows', () {
+    final g = '$sp/gdf';
+    final sets = <(String, String, String, String, List<Candle> Function())>[
+      ('gold20', '15m', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_15m.csv')),
+      ('gold20', '1h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_1h.csv')),
+      ('gold20', '4h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_4h.csv')),
+      ('btc', '15m', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_15m.csv')),
+      ('btc', '1h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_1h.csv')),
+      ('btc', '4h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_4h.csv')),
+      ('eth', '15m', 'crypto', 'ETH', () => loadAny('$sp/data/eth_15m_1819.csv') + loadAny('$sp/data/eth_15m_2526.csv')),
+      ('eth', '1h', 'crypto', 'ETH', () => loadAny('$sp/data/eth_1h_1819.csv') + loadAny('$sp/data/eth_1h_2526.csv')),
+      ('eurusd19', '1h', 'forex', 'EUR/USD', () => loadAny('$sp/data/EUR_USD_1h.csv')),
+      ('gbpusd19', '1h', 'forex', 'GBP/USD', () => loadAny('$sp/data/GBP_USD_1h.csv')),
+      ('audusd19', '1h', 'forex', 'AUD/USD', () => loadAny('$sp/data/AUD_USD_1h.csv')),
+      ('usdcad19', '1h', 'forex', 'USD/CAD', () => loadAny('$sp/data/USD_CAD_1h.csv')),
+      ('nas19', '1h', 'index', 'NAS100', () => loadAny('$sp/data/NAS100_USD_1h.csv')),
+      ('oil19', '1h', 'commodity', 'WTI', () => loadAny('$sp/data/WTICO_USD_1h.csv')),
+      ('eurusd26', '1h', 'forex', 'EUR/USD', () => loadAny('$g/eurusd-1h-ohlcv-forex/EURUSD_1h.csv')),
+      ('gbpusd26', '1h', 'forex', 'GBP/USD', () => loadAny('$g/gbpusd-1h-ohlcv-forex/GBPUSD_1h.csv')),
+      ('usdjpy26', '1h', 'forex', 'USD/JPY', () => loadAny('$g/usdjpy-1h-ohlcv-forex/USDJPY_1h.csv')),
+      ('nas26', '1h', 'index', 'NAS100', () => loadAny('$g/nas100-1h-ohlcv-index/NAS100_1h.csv')),
+      ('us30_26', '1h', 'index', 'US30', () => loadAny('$g/us30-1h-ohlcv-index/US30_1h.csv')),
+      ('oil26', '1h', 'commodity', 'WTI', () => loadAny('$g/usoil-1h-ohlcv-commodities/USOIL_1h.csv')),
+      ('silver26', '15m', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s15m/XAGUSD_15m.csv')),
+      ('silver26', '1h', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s1h/XAGUSD_1h.csv')),
+    ];
+    const tf = ['t_ms', 't_bos', 't_bos_age', 't_slope50', 't_r2_50', 't_slope100', 't_r2_100', 't_er20', 't_chop', 't_div', 't_engulf', 't_pin', 't_inside', 't_doji', 't_three', 't_dbl', 't_brk20', 't_hi100', 't_lo100', 't_ms_htf'];
+    final out = StringBuffer()..writeln(['market', 'tf', 'win', 'entry_dist', ...tf].join(','));
+    for (final (mk, tfn, cat, code, ld) in sets) {
+      final c = ld()..sort((a, b) => a.time.compareTo(b.time));
+      final n = c.length;
+      if (n < 400) continue;
+      final sym = code == 'XAU/USD' ? symbolByCode('XAU/USD') : MarketSymbol(code, code, cat, 'X', 2, false);
+      final f = buildForecast(c, history: n, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
+      final k = buildAlka(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+      final z = buildZeroOne(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+      final mp = combineAll(c, f.signals, const [], k.signals, const [], zero: z.signals, tag: 'Mp');
+      final ks = KingScorer(c);
+      final at = atr(c, 14);
+      final cl = [for (final x in c) x.close];
+      final r14 = rsi(cl, 14);
+      // قمم وقيعان مؤكدة (3 كل جانب) مع شمعة تأكيدها، وأيضاً هيكل أكبر (8 كل جانب)
+      List<(int, double)> piv(int kk, bool high) {
+        final o = <(int, double)>[];
+        for (var j = kk; j < n - kk; j++) {
+          var ok = true;
+          for (var q = j - kk; q <= j + kk && ok; q++) {
+            if (q == j) continue;
+            if (high ? c[q].high >= c[j].high : c[q].low <= c[j].low) ok = false;
+          }
+          if (ok) o.add((j, high ? c[j].high : c[j].low));
+        }
+        return o;
+      }
+      final ph = piv(3, true), pl = piv(3, false), ph8 = piv(8, true), pl8 = piv(8, false);
+      List<(int, double)> known(List<(int, double)> l, int i, int kk, int m) {
+        final o = <(int, double)>[];
+        for (var q = l.length - 1; q >= 0 && o.length < m; q--) {
+          if (l[q].$1 + kk <= i) o.add(l[q]);
+        }
+        return o; // الأحدث أولاً
+      }
+      // آخر كسر هيكل (BOS) قبل كل شمعة: إغلاق فوق آخر قمة مؤكدة (+1) أو تحت آخر قاع (-1)
+      final bos = List<int>.filled(n, 0), bosAt = List<int>.filled(n, -1);
+      {
+        var pi = 0, li = 0;
+        double? lh, ll;
+        var lastB = 0, lastAt = -1;
+        var usedH = -1, usedL = -1;
+        for (var i = 0; i < n; i++) {
+          while (pi < ph.length && ph[pi].$1 + 3 <= i) { lh = ph[pi].$2; pi++; }
+          while (li < pl.length && pl[li].$1 + 3 <= i) { ll = pl[li].$2; li++; }
+          if (lh != null && c[i].close > lh && usedH != pi) { lastB = 1; lastAt = i; usedH = pi; }
+          if (ll != null && c[i].close < ll && usedL != li) { lastB = -1; lastAt = i; usedL = li; }
+          bos[i] = lastB;
+          bosAt[i] = lastAt;
+        }
+      }
+      (double, double) reg(int i, int len) {
+        var sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0, syy = 0.0;
+        for (var q = 0; q < len; q++) {
+          final x = q.toDouble(), y = c[i - len + 1 + q].close;
+          sx += x; sy += y; sxx += x * x; sxy += x * y; syy += y * y;
+        }
+        final nn = len.toDouble();
+        final b = (nn * sxy - sx * sy) / math.max(1e-12, nn * sxx - sx * sx);
+        final r = (nn * sxy - sx * sy) / math.sqrt(math.max(1e-12, (nn * sxx - sx * sx) * (nn * syy - sy * sy)));
+        return (b, r * r);
+      }
+      for (final (q, s) in mp.signals.indexed) {
+        if (s.exitI < 0 || s.result == 0 || s.i < 210) continue;
+        final x = ks.features(s.i, s.dir, s.entry, s.sl, mp.sources[q]);
+        if (x == null) continue;
+        final i = s.i, d = s.dir, a = at[i].isNaN ? 1.0 : at[i], dd = d.toDouble();
+        // هيكل السوق: قمم أعلى وقيعان أعلى (آخر 3 قمم و3 قيعان)
+        final hs = known(ph, i, 3, 3), ls = known(pl, i, 3, 3);
+        var ms = 0.0;
+        for (var t = 0; t + 1 < hs.length; t++) { ms += hs[t].$2 > hs[t + 1].$2 ? 1 : -1; }
+        for (var t = 0; t + 1 < ls.length; t++) { ms += ls[t].$2 > ls[t + 1].$2 ? 1 : -1; }
+        final hs8 = known(ph8, i, 8, 2), ls8 = known(pl8, i, 8, 2);
+        var ms8 = 0.0;
+        if (hs8.length == 2) ms8 += hs8[0].$2 > hs8[1].$2 ? 1 : -1;
+        if (ls8.length == 2) ms8 += ls8[0].$2 > ls8[1].$2 ? 1 : -1;
+        final (s50, r50) = reg(i, 50);
+        final (s100, r100) = reg(i, 100);
+        var path = 0.0;
+        for (var t = i - 19; t <= i; t++) { path += (c[t].close - c[t - 1].close).abs(); }
+        final er = (c[i].close - c[i - 20].close) / math.max(1e-12, path);
+        var sAtr = 0.0, h14 = -1e18, l14 = 1e18;
+        for (var t = i - 13; t <= i; t++) { sAtr += math.max(c[t].high, c[t - 1].close) - math.min(c[t].low, c[t - 1].close); h14 = math.max(h14, c[t].high); l14 = math.min(l14, c[t].low); }
+        final chop = math.log(sAtr / math.max(1e-12, h14 - l14)) / math.ln10 / (math.log(14) / math.ln10);
+        // انحراف RSI: قاع سعر أدنى مع RSI أعلى (للشراء) بين آخر قاعين
+        var div = 0.0;
+        final lw = d > 0 ? ls : hs;
+        if (lw.length >= 2) {
+          final (j1, p1) = lw[0];
+          final (j2, p2) = lw[1];
+          if (d > 0 && p1 < p2 && r14[j1] > r14[j2]) div = 1;
+          if (d < 0 && p1 > p2 && r14[j1] < r14[j2]) div = 1;
+        }
+        final k0 = c[i], k1 = c[i - 1], k2 = c[i - 2];
+        final body = (k0.close - k0.open) * dd, rg = math.max(1e-12, k0.high - k0.low);
+        final engulf = body > 0 && (k1.close - k1.open) * dd < 0 && (k0.close - k1.open) * dd >= 0 && (k0.open - k1.close) * dd <= 0 ? 1.0 : 0.0;
+        final tail = d > 0 ? math.min(k0.open, k0.close) - k0.low : k0.high - math.max(k0.open, k0.close);
+        final pin = tail / rg >= 0.6 ? 1.0 : 0.0;
+        final inside = k1.high <= k2.high && k1.low >= k2.low ? 1.0 : 0.0;
+        final doji = (k0.close - k0.open).abs() / rg < 0.1 ? 1.0 : 0.0;
+        final three = (k0.close - k0.open) * dd > 0 && (k1.close - k1.open) * dd > 0 && (k2.close - k2.open) * dd > 0 && (k0.close - k1.close) * dd > 0 && (k1.close - k2.close) * dd > 0 ? 1.0 : 0.0;
+        final dbl = lw.length >= 2 && (lw[0].$2 - lw[1].$2).abs() < 0.5 * a ? 1.0 : 0.0;
+        var h20 = -1e18, l20 = 1e18, h100 = -1e18, l100 = 1e18;
+        for (var t = i - 20; t < i; t++) { h20 = math.max(h20, c[t].high); l20 = math.min(l20, c[t].low); }
+        for (var t = i - 100; t <= i; t++) { h100 = math.max(h100, c[t].high); l100 = math.min(l100, c[t].low); }
+        final brk = d > 0 ? (k0.close > h20 ? 1.0 : 0.0) : (k0.close < l20 ? 1.0 : 0.0);
+        final v = <double>[
+          ms * dd, bos[i] * dd, bosAt[i] < 0 ? 300 : math.min(300, i - bosAt[i]).toDouble(),
+          s50 * dd / a, r50, s100 * dd / a, r100, er * dd, chop, div, engulf, pin, inside, doji, three, dbl, brk,
+          (d > 0 ? h100 - k0.close : k0.close - l100) / a, (d > 0 ? k0.close - l100 : h100 - k0.close) / a, ms8 * dd,
+        ];
+        out.writeln([mk, tfn, s.result > 0 ? 1 : 0, x[25].toStringAsFixed(4), for (final q in v) (q.isNaN ? 0.0 : q).toStringAsFixed(4)].join(','));
+      }
+      print('done $mk $tfn');
+    }
+    File('$sp/ai/ta.csv').writeAsStringSync(out.toString());
+  }, timeout: const Timeout(Duration(hours: 2)));
+}

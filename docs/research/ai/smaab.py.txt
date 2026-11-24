@@ -1,0 +1,44 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/signals2.csv')
+base=[c for c in df.columns if c not in ['market','tf','year','dir','win','r','src'] and not c.startswith('i_')]
+safe=['i_st','i_stars','i_near','i_hot','i_held','i_sm','i_smstrong','i_km','i_daily200','i_sr_behind','i_sr_ahead','i_ribage','i_lt']
+trm=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~trm & ~((df.market=='gold20')&(df.year<2010))
+m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=1).fit(df[trm][base+safe].values.astype(np.float32),df.win[trm])
+ptr=m.predict_proba(df[trm][base+safe].values.astype(np.float32))[:,1]
+df['king']=m.predict_proba(df[base+safe].values.astype(np.float32))[:,1]
+q={k:np.quantile(ptr,1-k/100) for k in [70,50,30]}
+gold=df.market=='gold20'
+def rep(name,sel):
+    filt={
+     'الكل':np.ones(len(df),bool),
+     'دخول قريب <0.75':df.entry_dist<0.75,
+     'دخول ليس متأخراً <1.25':df.entry_dist<1.25,
+     'سوق هادئ atr<0.9':df.atr_ratio<0.9,
+     'ضغط squeeze<0.8':df['squeeze']<0.8,
+     'ADX>20 (ليس عرضي)':df.adx>0.4,
+     'ADX<25':df.adx<0.5,
+     'الشريط الكامل مرتب':df.rib_all>0,
+     'شريط عريض ≥1':df.rib_width>=1,
+     'شريط عمره <30':df.i_ribage<30,
+     'شريط عمره ≥30':df.i_ribage>=30,
+     'مساحة أمامه ≥1.5 ATR':df.i_sr_ahead>=1.5,
+     'مع اليومي 200':df.i_daily200>0,
+     'مع الفريم الأكبر':df.htf>0,
+     'مع اليومي':df.daily>0,
+     'نجمتان+':df.i_stars>=2,
+     'RSI14 ليس متطرف':df.rsi14.abs()<0.4,
+     'King أعلى 70%':df.king>=q[70],
+     'King أعلى 50%':df.king>=q[50],
+     'King أعلى 30%':df.king>=q[30],
+    }
+    print(f'===== {name}')
+    b_tr=df.win[sel&trm].mean(); b_te=df.win[sel&test].mean()
+    for k,f in filt.items():
+        a=sel&f
+        print(f"{k:24s} تدريب {df.win[a&trm].mean()*100:5.1f}% ({(a&trm).sum()/max(1,(sel&trm).sum())*100:3.0f}%) | اختبار {df.win[a&test].mean()*100:5.1f}% n={(a&test).sum():5d} ({(a&test).sum()/max(1,(sel&test).sum())*100:3.0f}%) R {df.r[a&test].mean():+.3f} | ذهب {df.win[a&test&gold].mean()*100:5.1f}%")
+rep('SM', df.i_sm==1)
+rep('AAB', df.src=='AAB')

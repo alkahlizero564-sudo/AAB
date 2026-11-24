@@ -59,6 +59,15 @@ class AppState extends ChangeNotifier {
   StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
   int starMin = 0; // أقل عدد نجوم يظهر
   int kingTop = 30; // King يعرض أعلى كم % ثقة (15 / 30 / 50 / 70)
+  // فلتر الذكاء ثابت على SM و AAB: أعلى 30% حسب King
+  // (اختبار لم يره، 1R: SM 56.7% → 60.5% ، AAB 56.0% → 62.4%)
+  static const smAi = 30, aabAi = 30;
+  AllResult? smView; // SM بعد فلتر الذكاء (للعرض)
+  Forecast? _fcRaw;
+  List<IndHealth?> aiHealth = const []; // [SM 30، SM 15، AAB 30، AAB 15]
+  IndHealth? _aiH(int top, int base) => top == 0 ? null : (base + (top == 15 ? 1 : 0) < aiHealth.length ? aiHealth[base + (top == 15 ? 1 : 0)] : null);
+  IndHealth? get smHealthNow => smAi == 0 ? smHealth : _aiH(smAi, 0);
+  IndHealth? get aabHealthNow => aabAi == 0 ? aabHealth : _aiH(aabAi, 2);
   bool kingNearOnly = false; // King: دخول قريب فقط (< 0.75 ATR من قاع/قمة آخر 5 شموع)
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
   AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp مع الترند اليومي في السوق الهادئ)
@@ -253,6 +262,8 @@ class AppState extends ChangeNotifier {
     _htfAt = null;
     signal = null;
     forecast = null;
+    _fcRaw = null;
+    smView = null;
     algo = null;
     alka = null;
     allR = null;
@@ -349,7 +360,8 @@ class AppState extends ChangeNotifier {
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     _rebuildLt();
     allR = all;
-    forecast = fc;
+    _fcRaw = fc;
+    _applyAi();
     signal = _unify(base, fc);
     algo = al;
     if (prev != null && prev.direction == signal!.direction) {
@@ -484,7 +496,16 @@ class AppState extends ChangeNotifier {
     final mp = mpR;
     if (mp == null) return;
     kingR = buildKing(candles, mp, top: kingTop, stars: starR, sm: smR, km: kmR, daily: daily, nearOnly: kingNearOnly);
+    _applyAi();
   }
+
+  /// فلتر الذكاء (King) على SM و AAB حسب اختيار المستخدم.
+  void _applyAi() {
+    final e = kingR?.eval;
+    smView = smR == null ? null : kingFilter(smR!, e, smAi);
+    forecast = _fcRaw == null ? null : kingFilterForecast(_fcRaw!, e, aabAi);
+  }
+
 
   void setStarMin(int v) {
     starMin = v;
@@ -512,6 +533,7 @@ class AppState extends ChangeNotifier {
     dmHealth = at(7);
     stHealth = at(8);
     kingHealth = [for (var q = 0; q < 8; q++) at(9 + q)];
+    aiHealth = [for (var q = 0; q < 4; q++) at(17 + q)];
   }
 
   /// صحة AAB و Alka على هذا السوق (تُحسب في الخلفية وتُحفظ ساعتين).
@@ -646,11 +668,13 @@ class AppState extends ChangeNotifier {
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final hist = c.length; // الإشارات على كل الشموع المحمّلة (300 أو 600)
-  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist);
+  // توصيات AAB المعروضة: التأكيد خلال شمعة واحدة فقط (بدل 3) — نفس الدقة بلا دخول متأخر
+  // (ذهب وبيتكوين وإيثيريوم ويورو 15m-4h، 1R: 54.8-55.1% مقابل 54.6-54.7%؛ الدخول الفوري بلا تأكيد 50.4-51.1%)
+  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist, cfg: const ForecastCfg(confirm: 1));
   final al = aabAlgo(c, sens: 2.0, withPanel: false);
   final ak = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
-  // ALL: AAB بنفس هدف Alka، ثم الدمج مع فلتر الشمعة الصغيرة
-  final fAll = alkaTp1 == rr1 ? fc : buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist);
+  // ALL و Mp (وما بُني عليها: النجوم، ST، SM، King): AAB بالإعداد الأصلي الذي تدرّبت عليه النماذج
+  final fAll = buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist);
   final all = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending);
   final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)

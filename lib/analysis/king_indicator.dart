@@ -19,7 +19,8 @@ import 'star_indicator.dart';
 class KingResult {
   final AllResult res;
   final Map<(int, int), double> conf; // (شمعة الإشارة، الاتجاه) → احتمال النجاح المقدّر
-  const KingResult(this.res, this.conf);
+  final KingEval? eval; // لتقييم إشارات أي مؤشر آخر (SM و AAB)
+  const KingResult(this.res, this.conf, [this.eval]);
   static const empty = KingResult(AllResult([], [], [], [], 'King'), {});
   double of(int i, int d) => conf[(i, d)] ?? double.nan;
   bool isStrong(int i, int d) => (conf[(i, d)] ?? 0) >= kingQ85;
@@ -226,6 +227,62 @@ class KingCtx {
   }
 }
 
+/// يقيّم أي إشارة بنموذج King (نفس المعلومات الـ 54).
+class KingEval {
+  final KingScorer sc;
+  final KingCtx ctx;
+  const KingEval(this.sc, this.ctx);
+  double score(int i, int dir, double entry, double sl, String src) => sc.score(i, dir, entry, sl, src, ctx);
+}
+
+/// فلتر الذكاء على مؤشر آخر: يُبقي الإشارات التي يضعها King في أعلى [top]% (0 = بدون فلتر).
+/// اختبار على إشارات لم يرها (1R): SM 56.7% → 60.5% (30%) → 63.9% (15%)،
+/// و AAB 56.0% → 62.4% (30%) → 66.0% (15%).
+AllResult kingFilter(AllResult r, KingEval? e, int top) {
+  if (top == 0 || e == null) return r;
+  final thr = kingThreshold(top);
+  final sigs = <PastSignal>[], src = <String>[];
+  for (final (q, s) in r.signals.indexed) {
+    if (e.score(s.i, s.dir, s.entry, s.sl, r.sources[q]) >= thr) {
+      sigs.add(s);
+      src.add(r.sources[q]);
+    }
+  }
+  final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
+  final pend = <PendingSetup>[], pSrc = <String>[];
+  for (final (q, p) in r.pending.indexed) {
+    if (!openDirs.contains(p.dir) && e.score(p.i, p.dir, p.trigger, p.sl, r.pendingSrc[q]) >= thr) {
+      pend.add(p);
+      pSrc.add(r.pendingSrc[q]);
+    }
+  }
+  return AllResult(sigs, src, pend, pSrc, r.tag, r.extra);
+}
+
+/// نفس فلتر الذكاء على توصيات AAB.
+Forecast kingFilterForecast(Forecast f, KingEval? e, int top) {
+  if (top == 0 || e == null) return f;
+  final thr = kingThreshold(top);
+  final sigs = [for (final s in f.signals) if (e.score(s.i, s.dir, s.entry, s.sl, 'AAB') >= thr) s];
+  final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
+  final pend = [for (final p in f.pending) if (!openDirs.contains(p.dir) && e.score(p.i, p.dir, p.trigger, p.sl, 'AAB') >= thr) p];
+  return Forecast(
+    patterns: f.patterns,
+    signals: sigs,
+    predHits: f.predHits,
+    predN: f.predN,
+    predOk: f.predOk,
+    next: f.next,
+    pending: pend,
+    ema20: f.ema20,
+    ema50: f.ema50,
+    ema200: f.ema200,
+    liveSignal: f.liveSignal,
+    indicators: f.indicators,
+    liveDir: f.liveDir,
+  );
+}
+
 /// حد الثقة لكل خيار عرض: أعلى 15% / 30% / 50% / 70% من إشارات التدريب.
 /// بهدف 1R على بيانات لم يرها (كل الأسواق): 62.4% / 59.5% / 57.8% / 56.5% تقريباً (كل الإشارات 55.4%).
 double kingThreshold(int top) => switch (top) {
@@ -279,5 +336,5 @@ KingResult buildKing(List<Candle> c, AllResult mp,
   }
   final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
   final keep = [for (var q = 0; q < pend.length; q++) if (!openDirs.contains(pend[q].dir)) q];
-  return KingResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'King'), conf);
+  return KingResult(AllResult(sigs, src, [for (final q in keep) pend[q]], [for (final q in keep) pSrc[q]], 'King'), conf, KingEval(sc, ctx));
 }

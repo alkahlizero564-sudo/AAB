@@ -1,5 +1,6 @@
 import 'dart:isolate';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../analysis/all_indicator.dart';
 import 'package:provider/provider.dart';
 import '../analysis/benchmark.dart';
@@ -329,24 +330,22 @@ class _ChartScreenState extends State<ChartScreen> {
         ]),
       );
 
-  Widget _iconTool(IconData i, String tip, VoidCallback onTap, {bool primary = false}) => Padding(
-        padding: const EdgeInsetsDirectional.only(start: 5),
-        child: Tooltip(
-          message: tip,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: onTap,
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                gradient: primary ? AppColors.goldGrad : null,
-                color: primary ? null : AppColors.card,
-                borderRadius: BorderRadius.circular(10),
-                border: primary ? null : Border.all(color: AppColors.border, width: 0.8),
-              ),
-              child: Icon(i, size: 18, color: primary ? AppColors.onAccent : AppColors.gold),
+  Widget _iconTool(IconData i, String tip, VoidCallback onTap, {bool primary = false, bool on = false}) => Tooltip(
+        message: tip,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: 32,
+            height: 28,
+            margin: const EdgeInsets.symmetric(horizontal: 1),
+            decoration: BoxDecoration(
+              gradient: primary ? AppColors.goldGrad : null,
+              color: primary ? null : (on ? AppColors.gold.withOpacity(0.18) : Colors.transparent),
+              borderRadius: BorderRadius.circular(8),
             ),
+            child: Icon(i, size: 17, color: primary ? AppColors.onAccent : (on ? AppColors.gold : AppColors.text.withOpacity(0.85))),
           ),
         ),
       );
@@ -356,22 +355,26 @@ class _ChartScreenState extends State<ChartScreen> {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () => st.setTf(t),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
         alignment: Alignment.center,
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        margin: const EdgeInsets.all(2),
         decoration: BoxDecoration(
-          color: on ? AppColors.accent.withOpacity(0.15) : Colors.transparent,
+          gradient: on ? AppColors.goldGrad : null,
           borderRadius: BorderRadius.circular(8),
-          border: on ? Border.all(color: AppColors.accent.withOpacity(0.7), width: 0.8) : null,
+          boxShadow: on ? [BoxShadow(color: AppColors.gold.withOpacity(0.35), blurRadius: 8)] : null,
         ),
         child: Text(t.toUpperCase(),
             style: TextStyle(
-                fontSize: 12,
-                fontWeight: on ? FontWeight.w800 : FontWeight.w500,
-                color: on ? AppColors.gold : AppColors.muted)),
+                fontSize: 11.5,
+                letterSpacing: 0.3,
+                fontWeight: on ? FontWeight.w900 : FontWeight.w600,
+                color: on ? AppColors.onAccent : AppColors.muted)),
       ),
     );
   }
+
 
   /// كل مؤشراتنا بترتيب واحد (من الأدق للأعم) — للشريط وللوحة المؤشرات.
   List<({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle})> _indicators(
@@ -437,8 +440,8 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'SM',
           emoji: '〰️',
-          desc: 'Mp مع شريط المتوسطات بدون الإشارات الضعيفة — «قوي» ≈ 61%، و«بداية صعود/هبوط» عند تغيّر لون الشريط',
-          health: st.smHealth,
+          desc: 'Mp مع شريط المتوسطات + فلتر الذكاء (King أعلى 30%) — «بداية صعود/هبوط» عند تغيّر لون الشريط',
+          health: st.smHealthNow,
           on: layers.sm,
           toggle: () => layers.sm = !layers.sm
         ),
@@ -477,8 +480,8 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'AAB',
           emoji: '📈',
-          desc: 'توصيات AAB الأساسية',
-          health: st.aabHealth,
+          desc: 'توصيات AAB + فلتر الذكاء (King أعلى 30%)',
+          health: st.aabHealthNow,
           on: layers.sigs,
           toggle: () => layers.sigs = !layers.sigs
         ),
@@ -629,6 +632,14 @@ class _ChartScreenState extends State<ChartScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
+                  if (x.name == 'SM' || x.name == 'AAB')
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(x.name == 'SM' ? 'اختبار لم يره: 60.5% (ذهب 57%)' : 'اختبار لم يره: 62.4% (ذهب 58%)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
                     ),
                   if (x.name == 'نجوم')
                     const Padding(
@@ -900,6 +911,82 @@ class _ChartScreenState extends State<ChartScreen> {
                   ),
                 ),
               ),
+              // أوضاع جاهزة بلمسة واحدة
+              const SizedBox(height: 12),
+              Row(children: [
+                for (final (name, icon, apply) in <(String, IconData, VoidCallback)>[
+                  ('نظيف', Icons.cleaning_services_outlined, () {
+                    layers
+                      ..ema = false
+                      ..sr = false
+                      ..zones = false
+                      ..levels = false
+                      ..vp = false
+                      ..vwap = false
+                      ..fib = false
+                      ..ce = false
+                      ..pats = false
+                      ..algo = false;
+                  }),
+                  ('ترند', Icons.trending_up_rounded, () {
+                    layers
+                      ..ema = true
+                      ..sr = true
+                      ..zones = false
+                      ..levels = false
+                      ..vp = false
+                      ..vwap = false
+                      ..fib = false
+                      ..ce = true;
+                  }),
+                  ('مناطق', Icons.crop_square_rounded, () {
+                    layers
+                      ..ema = false
+                      ..sr = true
+                      ..zones = true
+                      ..levels = true
+                      ..vp = false
+                      ..vwap = false
+                      ..fib = true
+                      ..ce = false;
+                  }),
+                  ('حجم', Icons.stacked_bar_chart_rounded, () {
+                    layers
+                      ..ema = false
+                      ..sr = false
+                      ..zones = false
+                      ..levels = false
+                      ..vp = true
+                      ..vwap = true
+                      ..vol = true
+                      ..fib = false
+                      ..ce = false;
+                  }),
+                ])
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Material(
+                        color: AppColors.card,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(11), side: const BorderSide(color: AppColors.border, width: 0.8)),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(11),
+                          onTap: () => upd(apply),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(icon, size: 19, color: AppColors.gold),
+                              const SizedBox(height: 3),
+                              Text(name,
+                                  style: const TextStyle(color: AppColors.text, fontSize: 11.5, fontWeight: FontWeight.w700)),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ]),
               head('شكل الشارت', Icons.candlestick_chart_rounded),
               Wrap(spacing: 6, runSpacing: 6, children: [
                 _seg(const [('candle', 'شموع'), ('ha', 'Heikin Ashi'), ('line', 'خطي')], layers.type,
@@ -948,12 +1035,12 @@ class _ChartScreenState extends State<ChartScreen> {
     final s = st.signal;
     final mk = '${st.symbol.code}|${st.tf}';
     final auto = st.settings.autoHideWeak;
-    final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
+    final hideAab = auto && st.aabHealthNow?.light == 'red' && !forceShow.contains('AAB|$mk');
     final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
     final hideDm = auto && st.dmHealth?.light == 'red' && !forceShow.contains('DM|$mk');
     final hideSt = auto && st.stHealth?.light == 'red' && !forceShow.contains('ST|$mk');
     final hideKm = auto && st.kmHealth?.light == 'red' && !forceShow.contains('KM|$mk');
-    final hideSm = auto && st.smHealth?.light == 'red' && !forceShow.contains('SM|$mk');
+    final hideSm = auto && st.smHealthNow?.light == 'red' && !forceShow.contains('SM|$mk');
     final hideMp = auto && st.mpHealth?.light == 'red' && !forceShow.contains('Mp|$mk');
     final hideZero = auto && st.zeroHealth?.light == 'red' && !forceShow.contains('0.1|$mk');
     final hideAll = auto && st.allHealth?.light == 'red' && !forceShow.contains('ALL|$mk');
@@ -967,6 +1054,7 @@ class _ChartScreenState extends State<ChartScreen> {
         km: layers.km && !hideKm,
         dm: layers.dm && !hideDm,
         st: layers.st && !hideSt);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAlerts(st, eff));
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
       Container(
@@ -990,26 +1078,46 @@ class _ChartScreenState extends State<ChartScreen> {
             ),
           ),
           const Spacer(),
-          _iconTool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(st), primary: true),
-          _iconTool(Icons.leaderboard_outlined, 'مقارنة المؤشرات', () => _showBench(st)),
-          _iconTool(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', () => setState(() => layers.sr = !layers.sr),
-              primary: layers.sr),
-          _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
-          _iconTool(
-              full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded, full ? 'إظهار الأدوات' : 'شاشة كاملة',
-              () {
-            setState(() => full = !full);
-            st.setChartFull(full);
-          }),
+          // مجموعة الأدوات في شريط واحد (مثل TradingView)
+          Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: AppColors.border, width: 0.8),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              _iconTool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(st), primary: true),
+              _iconTool(Icons.leaderboard_outlined, 'مقارنة المؤشرات', () => _showBench(st)),
+              _iconTool(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', () => setState(() => layers.sr = !layers.sr),
+                  on: layers.sr),
+              _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
+              _iconTool(
+                  full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded, full ? 'إظهار الأدوات' : 'شاشة كاملة',
+                  () {
+                setState(() => full = !full);
+                st.setChartFull(full);
+              }),
+            ]),
+          ),
         ]),
       ),
       if (!full)
         // صف 2: الأُطر الزمنية | المؤشرات (مع لون حالتها)
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: SizedBox(
+          padding: const EdgeInsets.fromLTRB(8, 5, 8, 3),
+          child: Container(
             height: 32,
-            child: Row(children: [for (final t in AppState.timeframes) Expanded(child: _tfItem(st, t))]),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.border, width: 0.7),
+            ),
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Row(children: [for (final t in AppState.timeframes.reversed) Expanded(child: _tfItem(st, t))]),
+            ),
           ),
         ),
       Expanded(
@@ -1023,7 +1131,7 @@ class _ChartScreenState extends State<ChartScreen> {
               alka: st.alka,
               zero: st.zero,
               mpR: st.mpR,
-              smR: st.smR,
+              smR: st.smView,
               kmR: st.kmR,
               dmR: st.dmR,
               stR: st.stR,
@@ -1058,11 +1166,11 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
         if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
-        if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
+        if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealthNow!, 'SM|$mk'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
         if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
-        if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk'),
+        if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealthNow!, 'AAB|$mk'),
         ..._bars(st, eff, showAab: !(hideAab && layers.sigs)),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
@@ -1089,7 +1197,7 @@ class _ChartScreenState extends State<ChartScreen> {
       if (eff.km && st.kmR != null) ('KM', st.kmR!),
       if (eff.dm && st.dmR != null) ('DM', st.dmR!),
       if (eff.st && st.stR != null) ('ST', st.stR!.res),
-      if (eff.sm && st.smR != null) ('SM', st.smR!),
+      if (eff.sm && st.smView != null) ('SM', st.smView!),
       if (eff.mp && st.mpR != null) ('Mp', st.mpR!),
     ];
     for (final (t, r) in fam) {
@@ -1175,7 +1283,7 @@ class _ChartScreenState extends State<ChartScreen> {
       if (eff.km) ('KM', st.kmR?.signals),
       if (eff.dm) ('DM', st.dmR?.signals),
       if (eff.st) ('ST', st.stR?.res.signals),
-      if (eff.sm) ('SM', st.smR?.signals),
+      if (eff.sm) ('SM', st.smView?.signals),
       if (eff.mp) ('Mp', st.mpR?.signals),
       if (eff.all) ('ALL', st.allR?.signals),
       if (eff.zero) ('0.1', st.zero?.signals),
@@ -1186,6 +1294,64 @@ class _ChartScreenState extends State<ChartScreen> {
       if (open.isNotEmpty) return open;
     }
     return const [];
+  }
+
+  /// تنبيه فوري: أول ما تظهر إشارة جديدة (عند إغلاق الشمعة) في أي مؤشر مشغّل — اهتزاز + شريط تنبيه.
+  final Set<String> _seenSig = {};
+  String _seenMk = '';
+  DateTime _seenAt = DateTime(2000);
+  void _checkAlerts(AppState st, ChartLayers eff) {
+    final n = st.candles.length;
+    if (n < 3) return;
+    final mk = '${st.symbol.code}|${st.tf}';
+    if (mk != _seenMk) _seenAt = DateTime.now();
+    _seenMk = mk;
+    // أول ثوانٍ بعد تغيير الرمز/الفريم: نسجّل الإشارات الموجودة بدون تنبيه (حتى تكتمل البيانات)
+    final first = st.loading || DateTime.now().difference(_seenAt).inSeconds < 8;
+    final l = <(String, List<PastSignal>?, List<PendingSetup>?)>[
+      if (eff.king) ('King', st.kingR?.res.signals, st.kingR?.res.pending),
+      if (eff.star) ('نجوم', st.starR?.res.signals, st.starR?.res.pending),
+      if (eff.pq) ('PQ', st.pqR?.signals, st.pqR?.pending),
+      if (eff.sm) ('SM', st.smView?.signals, st.smView?.pending),
+      if (eff.st) ('ST', st.stR?.res.signals, st.stR?.res.pending),
+      if (eff.km) ('KM', st.kmR?.signals, st.kmR?.pending),
+      if (eff.mp) ('Mp', st.mpR?.signals, st.mpR?.pending),
+      if (eff.sigs) ('AAB', st.forecast?.signals, st.forecast?.pending),
+    ];
+    final fresh = <String>[];
+    for (final (name, sg, pd) in l) {
+      for (final x in sg ?? const <PastSignal>[]) {
+        if (x.exitI >= 0 || x.i < n - 3) continue;
+        if (_seenSig.add('$mk|$name|s|${x.i}|${x.dir}') && !first) {
+          fresh.add('$name: ${x.dir > 0 ? 'شراء' : 'بيع'} الآن عند ${st.symbol.fmt(x.entry)}');
+        }
+      }
+      for (final p in pd ?? const <PendingSetup>[]) {
+        if (p.i < n - 3) continue;
+        if (_seenSig.add('$mk|$name|p|${p.i}|${p.dir}') && !first) {
+          fresh.add('$name: ${p.dir > 0 ? 'شراء' : 'بيع'} عند ${p.dir > 0 ? 'اختراق' : 'كسر'} ${st.symbol.fmt(p.trigger)}');
+        }
+      }
+    }
+    if (fresh.isEmpty || !mounted) return;
+    HapticFeedback.heavyImpact();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 90),
+        backgroundColor: AppColors.card,
+        duration: const Duration(seconds: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.gold)),
+        content: Row(children: [
+          const Icon(Icons.notifications_active_rounded, color: AppColors.gold, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('إشارة جديدة — ${st.symbol.code} ${st.tf.toUpperCase()}\n${fresh.take(3).join('\n')}',
+                style: const TextStyle(color: AppColors.text, fontSize: 12.5, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+      ));
   }
 
   void _showTradeCheck(AppState st, String tag, PastSignal sg) {
@@ -1598,17 +1764,58 @@ class _CompactSymbol extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
+    final c = st.candles;
+    double? px, chg;
+    if (c.isNotEmpty) {
+      px = c.last.close;
+      // التغيّر اليومي: من إغلاق اليوم السابق (اليومي) أو من افتتاح أول شمعة اليوم
+      final d = st.daily;
+      double? ref;
+      if (d != null && d.length >= 2) {
+        final today = c.last.time.toUtc();
+        final lastD = d.last.time.toUtc();
+        ref = (lastD.year == today.year && lastD.month == today.month && lastD.day == today.day) ? d[d.length - 2].close : d.last.close;
+      } else {
+        final day = c.last.time.toUtc().day;
+        for (var q = c.length - 1; q >= 0 && c[q].time.toUtc().day == day; q--) {
+          ref = c[q].open;
+        }
+      }
+      if (ref != null && ref > 0) chg = (px - ref) / ref * 100;
+    }
+    final col = (chg ?? 0) >= 0 ? AppColors.up : AppColors.down;
     return InkWell(
       borderRadius: BorderRadius.circular(10),
       onTap: () => showSymbolSheet(context),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          SymbolBadge(st.symbol.code, size: 28),
+          SymbolBadge(st.symbol.code, size: 30),
           const SizedBox(width: 8),
-          Text(st.symbol.code,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)),
-          const Icon(Icons.expand_more, size: 18, color: AppColors.muted),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(st.symbol.code,
+                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: AppColors.text, height: 1.1)),
+              const Icon(Icons.expand_more, size: 16, color: AppColors.muted),
+            ]),
+            if (px != null)
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(st.symbol.fmt(px),
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: col, height: 1.2)),
+                  if (chg != null) ...[
+                    const SizedBox(width: 5),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                      decoration: BoxDecoration(color: col.withOpacity(0.16), borderRadius: BorderRadius.circular(4)),
+                      child: Text('${chg >= 0 ? '+' : ''}${chg.toStringAsFixed(2)}%',
+                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: col)),
+                    ),
+                  ],
+                ]),
+              ),
+          ]),
         ]),
       ),
     );

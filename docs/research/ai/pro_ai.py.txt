@@ -1,0 +1,41 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/pro.csv')
+for c in df.columns[7:]: df[c]=df[c].astype(np.float32)
+strat=['turtle20','turtle55','holygrail','rsi2','soup','nr7','squeeze','volbrk','r8020','emax']
+names={'turtle20':'السلاحف 20','turtle55':'السلاحف 55','holygrail':'الكأس المقدسة (راشكي)','rsi2':'RSI2 (كونرز)','soup':'حساء السلاحف','nr7':'NR7 (كرابيل)','squeeze':'انضغاط بولينجر','volbrk':'كسر التذبذب (ويليامز)','r8020':'راشكي 80-20','emax':'تقاطع المتوسطات (سيكوتا)'}
+trm=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~trm & ~((df.market=='gold20')&(df.year<2010))
+gold=df.market=='gold20'
+print('=== كل استراتيجية وحدها (1R، اختبار) | تدريب | ذهب اختبار')
+for s in strat:
+    m=df.src==s
+    print(f"{names[s]:28s} {df.win[m&test].mean()*100:5.1f}% avgR {df.r[m&test].mean():+.3f} n={(m&test).sum():6d} | تدريب {df.win[m&trm].mean()*100:5.1f}% | ذهب {df.win[m&test&gold].mean()*100:5.1f}%")
+mp=~df.src.isin(strat)
+print(f"{'Mp (للمقارنة)':28s} {df.win[mp&test].mean()*100:5.1f}% n={(mp&test).sum()}")
+base=list(df.columns[7:7+41]); ctx=list(df.columns[7+41:])
+def rf(seed): return RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=seed)
+def evalm(lab,trmask,temask,fs,seeds=(1,2)):
+    tr,te=df[trmask],df[temask]
+    out=[]
+    for sd in seeds:
+        m=rf(sd).fit(tr[fs].values,tr.win)
+        ptr=m.predict_proba(tr[fs].values)[:,1]; p=m.predict_proba(te[fs].values)[:,1]
+        out.append((ptr,p))
+    s=f"{lab:40s}"
+    for top in [30,15,7]:
+        a=[te.win.values[p>=np.quantile(ptr,1-top/100)].mean() for ptr,p in out]
+        g=[te.win.values[(p>=np.quantile(ptr,1-top/100))&(te.market=='gold20').values].mean() for ptr,p in out]
+        nn=[(p>=np.quantile(ptr,1-top/100)).sum() for ptr,p in out]
+        s+=f" | {top}%: {np.mean(a)*100:.1f}% (ذهب {np.mean(g)*100:.1f}) n={int(np.mean(nn))}"
+    print(s); return out
+print('=== ذكاء اصطناعي')
+# أ) على إشارات الاستراتيجيات المشهورة فقط (عينة للتدريب لسرعة)
+rs=np.random.RandomState(0); samp=pd.Series(rs.rand(len(df))<0.35,index=df.index)
+st=df.src.isin(strat)
+evalm('AI على استراتيجيات المشاهير',trm&st&samp,test&st,base+ctx+[])
+# ب) King (على Mp) مع وبدون معلومات المشاهير
+evalm('King (41 معلومة، Mp)',trm&mp,test&mp,base)
+evalm('King + معلومات المشاهير (Mp)',trm&mp,test&mp,base+ctx)

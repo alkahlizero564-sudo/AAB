@@ -1,0 +1,124 @@
+class Pv { final int j; final double p; Pv(this.j, this.p); }
+
+void main() {
+  test('trendline export', () {
+    final g = '$sp/gdf';
+    final sets = <(String, String, String, String, List<Candle> Function())>[
+      ('gold20', '15m', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_15m.csv')),
+      ('gold20', '1h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_1h.csv')),
+      ('gold20', '4h', 'metal', 'XAU/USD', () => loadAny('$sp/gold20/xau20_4h.csv')),
+      ('gold20', '1d', 'metal', 'XAU/USD', () => aggr(loadAny('$sp/gold20/xau20_1h.csv'), 1440)),
+      ('btc', '15m', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_15m.csv')),
+      ('btc', '1h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_1h.csv')),
+      ('btc', '4h', 'crypto', 'BTC', () => loadAny('$sp/gold10/btc10_4h.csv')),
+      ('btc', '1d', 'crypto', 'BTC', () => aggr(loadAny('$sp/gold10/btc10_1h.csv'), 1440)),
+      ('eth', '15m', 'crypto', 'ETH', () => loadAny('$sp/data/eth_15m_1819.csv') + loadAny('$sp/data/eth_15m_2526.csv')),
+      ('eth', '1h', 'crypto', 'ETH', () => loadAny('$sp/data/eth_1h_1819.csv') + loadAny('$sp/data/eth_1h_2526.csv')),
+      ('eurusd19', '1h', 'forex', 'EUR/USD', () => loadAny('$sp/data/EUR_USD_1h.csv')),
+      ('gbpusd19', '1h', 'forex', 'GBP/USD', () => loadAny('$sp/data/GBP_USD_1h.csv')),
+      ('audusd19', '1h', 'forex', 'AUD/USD', () => loadAny('$sp/data/AUD_USD_1h.csv')),
+      ('usdcad19', '1h', 'forex', 'USD/CAD', () => loadAny('$sp/data/USD_CAD_1h.csv')),
+      ('nas19', '1h', 'index', 'NAS100', () => loadAny('$sp/data/NAS100_USD_1h.csv')),
+      ('oil19', '1h', 'commodity', 'WTI', () => loadAny('$sp/data/WTICO_USD_1h.csv')),
+      ('eurusd26', '1h', 'forex', 'EUR/USD', () => loadAny('$g/eurusd-1h-ohlcv-forex/EURUSD_1h.csv')),
+      ('gbpusd26', '1h', 'forex', 'GBP/USD', () => loadAny('$g/gbpusd-1h-ohlcv-forex/GBPUSD_1h.csv')),
+      ('usdjpy26', '1h', 'forex', 'USD/JPY', () => loadAny('$g/usdjpy-1h-ohlcv-forex/USDJPY_1h.csv')),
+      ('nas26', '1h', 'index', 'NAS100', () => loadAny('$g/nas100-1h-ohlcv-index/NAS100_1h.csv')),
+      ('us30_26', '1h', 'index', 'US30', () => loadAny('$g/us30-1h-ohlcv-index/US30_1h.csv')),
+      ('oil26', '1h', 'commodity', 'WTI', () => loadAny('$g/usoil-1h-ohlcv-commodities/USOIL_1h.csv')),
+      ('silver26', '15m', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s15m/XAGUSD_15m.csv')),
+      ('silver26', '1h', 'metal', 'XAG/USD', () => loadAny('$sp/silver/s1h/XAGUSD_1h.csv')),
+    ];
+    const tlf = ['m_slope', 'm_age', 'm_touch', 'c_len', 'c_depth', 'c_drop', 'c_slope', 'low_to_main', 'px_to_main', 'brk_body', 'brk_over', 'm_span'];
+    final out = StringBuffer()..writeln(['market', 'tf', 'year', 'dir', 'win', 'r', 'vwin', 'vr', 'vrisk', ...kingFeatures.take(37), ...tlf].join(','));
+    for (final (mk, tf, cat, code, ld) in sets) {
+      final c = ld()..sort((a, b) => a.time.compareTo(b.time));
+      final n = c.length;
+      if (n < 400) continue;
+      final at = atr(c, 14);
+      final ks = KingScorer(c);
+      // قمم وقيعان مؤكدة (3 شموع كل جانب) — تُعرف عند الشمعة j+3
+      final hi = <Pv>[], lo = <Pv>[];
+      var cnt = 0;
+      for (var i = 7; i < n - 1; i++) {
+        final j = i - 3;
+        var isH = true, isL = true;
+        for (var q = j - 3; q <= j + 3; q++) {
+          if (q == j) continue;
+          if (c[q].high >= c[j].high) isH = false;
+          if (c[q].low <= c[j].low) isL = false;
+        }
+        if (isH) hi.add(Pv(j, c[j].high));
+        if (isL) lo.add(Pv(j, c[j].low));
+        if (i < 210 || at[i].isNaN) continue;
+        final a = at[i];
+        for (final d in const [1, -1]) {
+          final mains = d > 0 ? lo : hi, corrs = d > 0 ? hi : lo;
+          if (mains.length < 2 || corrs.length < 2) continue;
+          // التصحيح: آخر قمتين هابطتين (للشراء) / قاعين صاعدين (للبيع)
+          final h1 = corrs[corrs.length - 2], h2 = corrs[corrs.length - 1];
+          if ((h1.p - h2.p) * d <= 0 || i - h2.j > 30 || h2.j - h1.j < 3) continue;
+          final cs = (h2.p - h1.p) / (h2.j - h1.j);
+          double cline(int t) => h2.p + cs * (t - h2.j);
+          // كسر خط التصحيح بإغلاق الشمعة
+          if (!((c[i].close - cline(i)) * d > 0 && (c[i - 1].close - cline(i - 1)) * d <= 0)) continue;
+          var ext = d > 0 ? 1e18 : -1e18;
+          for (var t = h1.j; t <= i; t++) {
+            ext = d > 0 ? math.min(ext, c[t].low) : math.max(ext, c[t].high);
+          }
+          // الخط الرئيسي: قاعان صاعدان قبل التصحيح، لا قاع بينهما تحت الخط، ولا إغلاق تحته حتى الآن
+          Pv? p1, p2;
+          var k2 = mains.length - 1, tries2 = 0;
+          while (k2 >= 1 && mains[k2].j >= h1.j) { k2--; }
+          for (; k2 >= 1 && tries2 < 6 && p1 == null; k2--, tries2++) {
+            final b = mains[k2];
+            if (b.j < i - 300) break;
+            var tries1 = 0;
+            for (var k1 = k2 - 1; k1 >= 0 && tries1 < 10; k1--, tries1++) {
+              final q1 = mains[k1];
+              if (q1.j < i - 400) break;
+              if ((b.p - q1.p) * d <= 0 || b.j - q1.j < 8) continue;
+              final sl0 = (b.p - q1.p) / (b.j - q1.j);
+              double l0(int t) => b.p + sl0 * (t - b.j);
+              var good = true;
+              for (var t = q1.j; t <= i && good; t++) {
+                if (t <= b.j && ((d > 0 ? c[t].low : c[t].high) - l0(t)) * d < -0.3 * a) good = false;
+                if (t > b.j && (c[t].close - l0(t)) * d < -0.3 * a) good = false;
+              }
+              if (good) { p1 = q1; p2 = b; break; }
+            }
+          }
+          if (p1 == null || p2 == null) continue;
+          final ms = (p2.p - p1.p) / (p2.j - p1.j);
+          final pp2 = p2;
+          double ml(int t) => pp2.p + ms * (t - pp2.j);
+          // لمسات الخط الرئيسي (قيعان قريبة منه)
+          var touch = 0;
+          for (final pv in mains) {
+            if (pv.j < p1.j || pv.j > i) continue;
+            if ((pv.p - ml(pv.j)).abs() < 0.5 * a) touch++;
+          }
+          final x = ks.features(i, d, c[i].close, ext, 'TL');
+          if (x == null) continue;
+          final t0 = sim(c, at, i, d, null);
+          // طريقة الفيديو: دخول افتتاح التالية، الوقف خلف الخط الرئيسي/قاع التصحيح، الهدف 2R
+          final stop = (d > 0 ? math.min(ext, ml(i)) : math.max(ext, ml(i))) - d * 0.2 * a;
+          final entry = c[i + 1].open;
+          final vrisk = (entry - stop) * d / a;
+          final v = vrisk > 0.2 ? simFixed(c, i + 1, d, entry, stop, 2) : null;
+          if (t0 == null || v == null) continue;
+          final tl = <double>[
+            ms * d / a, (i - p1.j).toDouble(), touch.toDouble(), (i - h1.j).toDouble(),
+            (h1.p - ext) * d / a, (h1.p - h2.p) * d / a, -cs * d / a, (ext - ml(i)) * d / a, (c[i].close - ml(i)) * d / a,
+            (c[i].close - c[i].open) * d / a, (c[i].close - cline(i)) * d / a, (p2.j - p1.j).toDouble(),
+          ];
+          cnt++;
+          out.writeln([mk, tf, c[i].time.year, d, t0.win ? 1 : 0, t0.r, v.win ? 1 : 0, v.r.toStringAsFixed(3), vrisk.toStringAsFixed(3),
+            for (final q in x.take(37)) q.toStringAsFixed(4), for (final q in tl) q.toStringAsFixed(4)].join(','));
+        }
+      }
+      print('done $mk $tf n=$cnt');
+    }
+    File('$sp/ai/tl.csv').writeAsStringSync(out.toString());
+  }, timeout: const Timeout(Duration(hours: 2)));
+}

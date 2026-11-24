@@ -48,9 +48,7 @@ const longTermAcc = <String, (double, double, int)>{
   'DM': (59.2, 82.0, 868),
   'ST': (58.6, 82.1, 3572),
   'ALL': (56.6, 81.3, 11097),
-  'SM': (57.4, 81.2, 2994),
   'Mp': (55.7, 80.8, 12662),
-  'AAB': (55.1, 78.3, 6462),
   'Alka': (53.6, 78.9, 24345),
   '0.1': (51.2, 76.7, 2884),
 };
@@ -88,7 +86,17 @@ List<IndHealth> computeHealth(List<Candle> c,
       kingH.add(h(l, closed.where((s) => s.result > 0).length, closed.length));
     }
   }
+  // فلتر الذكاء على SM و AAB: [SM 30%، SM 15%، AAB 30%، AAB 15%]
+  final ev = kg.eval;
+  IndHealth hk(List<PastSignal> l, List<String> src, int top) {
+    final thr = kingThreshold(top);
+    final kept = [for (final (q, s) in l.indexed) if (ev != null && ev.score(s.i, s.dir, s.entry, s.sl, src[q]) >= thr) s];
+    final closed = kept.where((s) => s.result != 0).toList();
+    return h(kept, closed.where((s) => s.result > 0).length, closed.length);
+  }
+  final aabSrc = List.filled(f.signals.length, 'AAB');
+  final aiH = [hk(sm.signals, sm.sources, 30), hk(sm.signals, sm.sources, 15), hk(f.signals, aabSrc, 30), hk(f.signals, aabSrc, 15)];
   return [h(f.signals, f.wins, f.closed), h(k.signals, k.wins, k.closed), h(all.signals, all.wins, all.closed),
       h(z.signals, z.wins, z.closed), h(mp.signals, mp.wins, mp.closed), h(sm.signals, sm.wins, sm.closed), h(km.signals, km.wins, km.closed), h(dm.signals, dm.wins, dm.closed),
-      h(st.signals, st.wins, st.closed), ...kingH];
+      h(st.signals, st.wins, st.closed), ...kingH, ...aiH];
 }
