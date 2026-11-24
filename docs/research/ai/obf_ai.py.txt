@@ -1,0 +1,28 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/obf.csv')
+meta=['market','tf','year','dir','win','r','vwin','vr','kind','mode']
+feat=[c for c in df.columns if c not in meta]
+df['tfm']=df.tf.map({'15m':15,'1h':60,'4h':240,'1d':1440}); feat.append('tfm')
+trm=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~trm & ~((df.market=='gold20')&(df.year<2010))
+gold=df.market=='gold20'
+def show(lab,m):
+    print(f"{lab:30s} 1R: {df.win[m].mean()*100:5.1f}% avgR {df.r[m].mean():+.3f} | 2:1: {df.vwin[m].mean()*100:5.1f}% avgR {df.vr[m].mean():+.3f} | n={m.sum()}")
+print('=== القاعدة وحدها (اختبار)')
+for k in ['OB','FVG']:
+    for md in ['touch','react']:
+        sel=(df.kind==k)&(df['mode']==md)
+        show(f'{k} {md} تدريب',sel&trm); show(f'{k} {md} اختبار',sel&test); show(f'{k} {md} ذهب اختبار',sel&test&gold)
+        for tf in ['15m','1h','4h','1d']: show(f'   {tf}',sel&test&(df.tf==tf))
+tr,te=df[trm],df[test]
+rs=np.random.RandomState(0); sub=rs.rand(len(tr))<0.5
+for tgt,rr,lab in [('win','r','1R'),('vwin','vr','2:1')]:
+    m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=1).fit(tr[feat].values[sub].astype(np.float32),tr[tgt].values[sub])
+    ptr=m.predict_proba(tr[feat].values.astype(np.float32))[:,1]; p=m.predict_proba(te[feat].values.astype(np.float32))[:,1]
+    for top in [30,15,7]:
+        k=p>=np.quantile(ptr,1-top/100)
+        print(f"AI {lab} أعلى {top}%: {te[tgt][k].mean()*100:.1f}% avgR {te[rr][k].mean():+.3f} n={k.sum()} | ذهب {te[tgt][k&(te.market=='gold20').values].mean()*100:.1f}% | بيتكوين {te[tgt][k&(te.market=='btc').values].mean()*100:.1f}%")
+    print('  أهم:', [f for _,f in sorted(zip(m.feature_importances_,feat),reverse=True)[:8]])

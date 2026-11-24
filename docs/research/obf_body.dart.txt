@@ -1,0 +1,84 @@
+    const zf = ['is_ob', 'mode_react', 'zw', 'age', 'away', 'zfresh', 'risk'];
+    final out = StringBuffer()..writeln(['market', 'tf', 'year', 'dir', 'win', 'r', 'vwin', 'vr', 'kind', 'mode', ...kingFeatures.take(37), ...zf].join(','));
+    for (final (mk, tf, cat, code, ld) in sets) {
+      final c = ld()..sort((a, b) => a.time.compareTo(b.time));
+      final n = c.length;
+      if (n < 400) continue;
+      final at = atr(c, 14);
+      final ks = KingScorer(c);
+      // المناطق مع شمعة معرفتها (بلا نظر للمستقبل): (معروفة عند, اتجاه, أعلى, أسفل, نوع)
+      final zones = <(int, int, double, double, String)>[];
+      // OB (نفس تعريف الطبقة: كسر قمة/قاع محوري len=5، آخر شمعة عكسية قبل أدنى نقطة)
+      const len = 5;
+      final phAt = {for (final p in pivotHighs(c, len, len)) p.i + len: p};
+      final plAt = {for (final p in pivotLows(c, len, len)) p.i + len: p};
+      double? hi, lo;
+      var hiI = 0, loI = 0;
+      var hiB = false, loB = false;
+      for (var i = 0; i < n; i++) {
+        final a = phAt[i];
+        if (a != null) { hi = a.p; hiI = a.i; hiB = false; }
+        final b = plAt[i];
+        if (b != null) { lo = b.p; loI = b.i; loB = false; }
+        if (hi != null && !hiB && c[i].close > hi) {
+          hiB = true;
+          var li = hiI; var mn = double.infinity;
+          for (var j = hiI; j <= i; j++) { if (c[j].low < mn) { mn = c[j].low; li = j; } }
+          for (var j = li; j >= math.max(0, li - 6); j--) { if (c[j].close < c[j].open) { zones.add((i, 1, c[j].high, c[j].low, 'OB')); break; } }
+        }
+        if (lo != null && !loB && c[i].close < lo) {
+          loB = true;
+          var hI = loI; var mx = -double.infinity;
+          for (var j = loI; j <= i; j++) { if (c[j].high > mx) { mx = c[j].high; hI = j; } }
+          for (var j = hI; j >= math.max(0, hI - 6); j--) { if (c[j].close > c[j].open) { zones.add((i, -1, c[j].high, c[j].low, 'OB')); break; } }
+        }
+        // FVG (فجوة ≥ 0.15 ATR)
+        if (i >= 2 && !at[i].isNaN) {
+          final mg = 0.15 * at[i];
+          if (c[i].low > c[i - 2].high && c[i].low - c[i - 2].high >= mg) zones.add((i, 1, c[i].low, c[i - 2].high, 'FVG'));
+          if (c[i].high < c[i - 2].low && c[i - 2].low - c[i].high >= mg) zones.add((i, -1, c[i - 2].low, c[i].high, 'FVG'));
+        }
+      }
+      var cnt = 0;
+      for (final (k0, d, top, bot, kind) in zones) {
+        if (k0 < 210 || k0 >= n - 2 || at[k0].isNaN) continue;
+        final edge = d > 0 ? top : bot, far = d > 0 ? bot : top;
+        // أول رجوع للمنطقة (حتى 100 شمعة)؛ تُلغى إن أغلق السعر خلفها قبل ذلك
+        var t = -1; var away = 0.0;
+        for (var j = k0 + 1; j < math.min(n - 1, k0 + 100); j++) {
+          if (d > 0 ? c[j].low <= edge : c[j].high >= edge) { t = j; break; }
+          away = math.max(away, (d > 0 ? c[j].high - edge : edge - c[j].low));
+        }
+        if (t < 0) continue;
+        final a = at[t].isNaN ? at[k0] : at[t];
+        final stop = far - d * 0.1 * a;
+        final zw = (top - bot) / a;
+        void emit(int i, String mode, T? t0, T? v, double entry, double sl) {
+          if (t0 == null || v == null) return;
+          final x = ks.features(i, d, entry, sl, kind);
+          if (x == null) return;
+          final zv = <double>[kind == 'OB' ? 1 : 0, mode == 'react' ? 1 : 0, zw, (t - k0).toDouble(), away / a, 0, (entry - sl).abs() / a];
+          cnt++;
+          out.writeln([mk, tf, c[i].time.year, d, t0.win ? 1 : 0, t0.r, v.win ? 1 : 0, v.r.toStringAsFixed(3), kind, mode,
+            for (final q in x.take(37)) q.toStringAsFixed(4), for (final q in zv) q.toStringAsFixed(4)].join(','));
+        }
+        // أ) لمس المنطقة: أمر معلّق عند حافتها، الوقف خلفها، 1R ثم 2R / وهدف 2:1
+        if ((edge - stop) * d > 0.2 * a) {
+          emit(t - 1, 'touch', simLimit(c, t, d, edge, stop), simFixed(c, t, d, edge, stop, 2), edge, stop);
+        }
+        // ب) ارتداد: شمعة تلمس المنطقة وتغلق خارجها في اتجاه الصفقة (حتى 3 شموع من أول لمس، بدون إغلاق خلفها)
+        for (var j = t; j < math.min(n - 2, t + 3); j++) {
+          if ((c[j].close - far) * d < 0) break;
+          final touched = d > 0 ? c[j].low <= edge : c[j].high >= edge;
+          if (touched && (c[j].close - edge) * d > 0 && (c[j].close - c[j].open) * d > 0) {
+            final e1 = c[j + 1].open;
+            if ((e1 - stop) * d > 0.2 * a) emit(j, 'react', sim(c, at, j, d, null), simFixed(c, j + 1, d, e1, stop, 2), e1, stop);
+            break;
+          }
+        }
+      }
+      print('done $mk $tf n=$cnt');
+    }
+    File('$sp/ai/obf.csv').writeAsStringSync(out.toString());
+  }, timeout: const Timeout(Duration(hours: 3)));
+}
