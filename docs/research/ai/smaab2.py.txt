@@ -1,0 +1,9 @@
+exec(open('/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad/ai/smaab.py').read().split("rep('SM'")[0])
+def show(name,sel):
+    for lab,f in [('الكل',True),('ضغط',df['squeeze']<0.8),('King30',df.king>=q[30]),('ضغط أو King30',(df['squeeze']<0.8)|(df.king>=q[30])),('ضغط و King50',(df['squeeze']<0.8)&(df.king>=q[50])),('King50 أو ضغط أو قريب',(df.king>=q[50])|(df['squeeze']<0.8)|(df.entry_dist<0.75)),('King15',df.king>=q[30]*0+np.quantile(ptr,.85))]:
+        a=sel&f
+        yrs=[]
+        for lo,hi_ in [(2019,2021),(2022,2023),(2024,2026)]:
+            mm=a&test&(df.year>=lo)&(df.year<=hi_); yrs.append(f"{df.win[mm].mean()*100:4.1f}")
+        print(f"{name} {lab:22s} اختبار {df.win[a&test].mean()*100:5.1f}% n={(a&test).sum():5d} ({(a&test).sum()/(sel&test).sum()*100:3.0f}%) R {df.r[a&test].mean():+.3f} | ذهب {df.win[a&test&gold].mean()*100:5.1f}% | سنين {' / '.join(yrs)}")
+show('SM ',df.i_sm==1); show('AAB',df.src=='AAB')

@@ -438,7 +438,7 @@ class _ChartScreenState extends State<ChartScreen> {
           name: 'SM',
           emoji: '〰️',
           desc: 'Mp مع شريط المتوسطات بدون الإشارات الضعيفة — «قوي» ≈ 61%، و«بداية صعود/هبوط» عند تغيّر لون الشريط',
-          health: st.smHealth,
+          health: st.smHealthNow,
           on: layers.sm,
           toggle: () => layers.sm = !layers.sm
         ),
@@ -478,7 +478,7 @@ class _ChartScreenState extends State<ChartScreen> {
           name: 'AAB',
           emoji: '📈',
           desc: 'توصيات AAB الأساسية',
-          health: st.aabHealth,
+          health: st.aabHealthNow,
           on: layers.sigs,
           toggle: () => layers.sigs = !layers.sigs
         ),
@@ -530,6 +530,27 @@ class _ChartScreenState extends State<ChartScreen> {
       ),
     );
   }
+
+  /// صف «فلتر الذكاء» لمؤشر (بدون / 30% / الأقوى 15%) مع وصف الدقة.
+  List<Widget> _aiRows(String name, int v, void Function(int) set, List<String> desc) => [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(children: [
+            Text('$name + ذكاء:', style: const TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
+            const SizedBox(width: 8),
+            Flexible(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: _seg(const [('0', 'بدون'), ('30', '30%'), ('15', 'الأقوى 15%')], '$v', (x) => set(int.parse(x))),
+              ),
+            ),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(desc[v == 0 ? 0 : v == 30 ? 1 : 2], style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+        ),
+      ];
 
   /// لوحة المؤشرات: بطاقة لكل مؤشر (لمسة = تشغيل/إيقاف) مع حالته ودقته على هذا السوق.
   void _showIndicators() {
@@ -728,6 +749,14 @@ class _ChartScreenState extends State<ChartScreen> {
                     ),
                   ]),
                 ),
+              if (layers.sm) ..._aiRows('SM', st.smAi, (v) {
+                st.setSmAi(v);
+                setSheet(() {});
+              }, const ['كل إشارات SM: ~56.7% بهدف 1R (ذهب ~55%)', 'SM + ذكاء 30%: ~60.5% بهدف 1R (ذهب ~57%) — 42% من الصفقات', 'SM + ذكاء الأقوى 15%: ~64% بهدف 1R (ذهب ~63%) — 22% من الصفقات']),
+              if (layers.sigs) ..._aiRows('AAB', st.aabAi, (v) {
+                st.setAabAi(v);
+                setSheet(() {});
+              }, const ['كل توصيات AAB: ~56% بهدف 1R (ذهب ~55%)', 'AAB + ذكاء 30%: ~62.4% بهدف 1R (ذهب ~58%) — ثلث الصفقات', 'AAB + ذكاء الأقوى 15%: ~66% بهدف 1R (ذهب ~65%) — 18% من الصفقات']),
               if (layers.star)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -1023,7 +1052,7 @@ class _ChartScreenState extends State<ChartScreen> {
               alka: st.alka,
               zero: st.zero,
               mpR: st.mpR,
-              smR: st.smR,
+              smR: st.smView,
               kmR: st.kmR,
               dmR: st.dmR,
               stR: st.stR,
@@ -1089,7 +1118,7 @@ class _ChartScreenState extends State<ChartScreen> {
       if (eff.km && st.kmR != null) ('KM', st.kmR!),
       if (eff.dm && st.dmR != null) ('DM', st.dmR!),
       if (eff.st && st.stR != null) ('ST', st.stR!.res),
-      if (eff.sm && st.smR != null) ('SM', st.smR!),
+      if (eff.sm && st.smView != null) ('SM', st.smView!),
       if (eff.mp && st.mpR != null) ('Mp', st.mpR!),
     ];
     for (final (t, r) in fam) {
@@ -1175,7 +1204,7 @@ class _ChartScreenState extends State<ChartScreen> {
       if (eff.km) ('KM', st.kmR?.signals),
       if (eff.dm) ('DM', st.dmR?.signals),
       if (eff.st) ('ST', st.stR?.res.signals),
-      if (eff.sm) ('SM', st.smR?.signals),
+      if (eff.sm) ('SM', st.smView?.signals),
       if (eff.mp) ('Mp', st.mpR?.signals),
       if (eff.all) ('ALL', st.allR?.signals),
       if (eff.zero) ('0.1', st.zero?.signals),
