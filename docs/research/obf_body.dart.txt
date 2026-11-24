@@ -1,4 +1,4 @@
-    const zf = ['is_ob', 'mode_react', 'zw', 'age', 'away', 'zfresh', 'risk'];
+    const zf = ['is_ob', 'mode_react', 'zw', 'age', 'away', 'zfresh', 'zrisk', 'fib'];
     final out = StringBuffer()..writeln(['market', 'tf', 'year', 'dir', 'win', 'r', 'vwin', 'vr', 'kind', 'mode', ...kingFeatures.take(37), ...zf].join(','));
     for (final (mk, tf, cat, code, ld) in sets) {
       final c = ld()..sort((a, b) => a.time.compareTo(b.time));
@@ -53,11 +53,16 @@
         final a = at[t].isNaN ? at[k0] : at[t];
         final stop = far - d * 0.1 * a;
         final zw = (top - bot) / a;
+        // فيبوناتشي على الموجة الدافعة: من أدنى قاع (30 شمعة قبل المنطقة) إلى أعلى قمة قبل الرجوع (للشراء)
+        var lgLo = d > 0 ? 1e18 : -1e18, lgHi = d > 0 ? -1e18 : 1e18;
+        for (var j = math.max(0, k0 - 30); j <= k0; j++) { lgLo = d > 0 ? math.min(lgLo, c[j].low) : math.max(lgLo, c[j].high); }
+        for (var j = math.max(0, k0 - 30); j < t; j++) { lgHi = d > 0 ? math.max(lgHi, c[j].high) : math.min(lgHi, c[j].low); }
+        final fib = ((lgHi - edge) * d) / math.max(1e-9, (lgHi - lgLo) * d);
         void emit(int i, String mode, T? t0, T? v, double entry, double sl) {
           if (t0 == null || v == null) return;
           final x = ks.features(i, d, entry, sl, kind);
           if (x == null) return;
-          final zv = <double>[kind == 'OB' ? 1 : 0, mode == 'react' ? 1 : 0, zw, (t - k0).toDouble(), away / a, 0, (entry - sl).abs() / a];
+          final zv = <double>[kind == 'OB' ? 1 : 0, mode == 'react' ? 1 : 0, zw, (t - k0).toDouble(), away / a, 0, (entry - sl).abs() / a, fib];
           cnt++;
           out.writeln([mk, tf, c[i].time.year, d, t0.win ? 1 : 0, t0.r, v.win ? 1 : 0, v.r.toStringAsFixed(3), kind, mode,
             for (final q in x.take(37)) q.toStringAsFixed(4), for (final q in zv) q.toStringAsFixed(4)].join(','));

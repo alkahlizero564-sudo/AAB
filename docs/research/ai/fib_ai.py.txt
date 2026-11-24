@@ -1,0 +1,15 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/obf.csv')
+trm=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018)) | ((df.market=='btc')&(df.year<=2020))
+test=~trm & ~((df.market=='gold20')&(df.year<2010))
+gold=df.market=='gold20'
+def show(lab,m):
+    print(f"{lab:34s} تدريب 1R {df.win[m&trm].mean()*100:5.1f}% | اختبار 1R {df.win[m&test].mean()*100:5.1f}% 2:1 {df.vwin[m&test].mean()*100:5.1f}% avgR(2:1) {df.vr[m&test].mean():+.3f} n={(m&test).sum():6d} | ذهب 2:1 {df.vwin[m&test&gold].mean()*100:5.1f}%")
+zones=[('كل المستويات',(df.fib>-9)),('0.382-0.5',(df.fib>=0.382)&(df.fib<0.5)),('ذهبية 0.5-0.618',(df.fib>=0.5)&(df.fib<0.618)),('OTE 0.618-0.786',(df.fib>=0.618)&(df.fib<=0.786)),('0.5-0.786',(df.fib>=0.5)&(df.fib<=0.786)),('عميق >0.786',(df.fib>0.786)&(df.fib<1)),('ضحل <0.382',df.fib<0.382)]
+for k in ['OB','FVG']:
+    for md in ['touch','react']:
+        print(f'===== {k} {md}')
+        sel=(df.kind==k)&(df['mode']==md)
+        for lab,z in zones: show('  '+lab,sel&z)
