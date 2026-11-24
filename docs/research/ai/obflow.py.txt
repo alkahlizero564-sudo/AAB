@@ -1,0 +1,113 @@
+import pandas as pd, numpy as np, sys, warnings
+warnings.filterwarnings('ignore')
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+@njit(cache=True)
+def simall(o,h,l,c,a,sig,stp,w,r,w2,r2):
+    n=len(c)
+    for i in range(3,n-1):
+        d=sig[i]
+        if d==0 or a[i]<=0: continue
+        e=o[i+1]
+        ext=l[i] if d>0 else h[i]
+        for j in range(i-2,i+1):
+            ext=min(ext,l[j]) if d>0 else max(ext,h[j])
+        risk=min(max((e-ext)*d+0.1*a[i],0.7*a[i]),2.5*a[i])
+        t1=e+d*risk; t2=e+2*d*risk; st=e-d*risk; got=False; done=False
+        for j in range(i+1,min(n,i+80)):
+            if (d>0 and l[j]<=st) or (d<0 and h[j]>=st):
+                w[i]=1 if got else 0; r[i]=0.5 if got else -1.0; done=True; break
+            if (not got) and ((d>0 and h[j]>=t1) or (d<0 and l[j]<=t1)): got=True; st=e
+            if got and ((d>0 and h[j]>=t2) or (d<0 and l[j]<=t2)): w[i]=1; r[i]=1.5; done=True; break
+        if not done: w[i]=1 if got else 0; r[i]=0.5 if got else -1.0
+        # 2:1 بوقف الاستراتيجية (إن وُجد) وإلا خلف 3 شموع
+        sp=stp[i] if not np.isnan(stp[i]) else ext-d*0.1*a[i]
+        rk=(e-sp)*d
+        if rk<0.2*a[i]: continue
+        tp=e+2*d*rk; w2[i]=0; r2[i]=-1.0
+        for j in range(i+1,min(n,i+300)):
+            if (d>0 and l[j]<=sp) or (d<0 and h[j]>=sp): break
+            if j>i+1 and ((d>0 and h[j]>=tp) or (d<0 and l[j]<=tp)): w2[i]=1; r2[i]=2.0; break
+def load(p):
+    d=pd.read_csv(p); d.columns=[x.lower() for x in d.columns]; d=d.rename(columns={d.columns[0]:'time'})
+    d['time']=pd.to_datetime(d.time,utc=True,errors='coerce'); return d.dropna(subset=['time']).reset_index(drop=True)
+sets=[('eth (حقيقي)',f'data/eth_{t}_{y}','real') for t in ['15m','1h','4h'] for y in ['1819','2526']]
+sets+=[('ذهب (تقريب)',f'gold20/xau20_{t}','proxy') for t in ['15m','1h','4h']]
+sets+=[('بيتكوين (تقريب)',f'gold10/btc10_{t}','proxy') for t in ['15m','1h','4h']]
+res={}
+for grp,f,mode in sets:
+    d=load(f'{S}/{f}.csv'); o,h,l,c,v=[d[k].values.astype(np.float64) for k in ['open','high','low','close','volume']]
+    n=len(c); rg=np.maximum(h-l,1e-12)
+    pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc))); a=pd.Series(tr).ewm(alpha=1/14,adjust=False).mean().values
+    delta=(2*d.takerbuy.values-v) if mode=='real' else v*(c-o)/rg
+    dS=pd.Series(delta); dab=dS.abs().rolling(50).mean().values; vma=pd.Series(v).rolling(50).mean().values
+    cvd=dS.rolling(20).sum().values
+    yr=d.time.dt.year.values
+    KEYS=['OB لمس فقط','OB + دلتا مع الاتجاه','OB + امتصاص','OB + (دلتا أو امتصاص)','OB + دلتا + حجم عالٍ','OB+FVG + دلتا أو امتصاص']
+    sig={k:np.zeros(n,np.int64) for k in KEYS}
+    stp={k:np.full(n,np.nan) for k in sig}
+    # قمم/قيعان مؤكدة 3/3
+    piv_l=[];piv_h=[]
+    hi20=pd.Series(h).shift(1).rolling(20).max().values; lo20=pd.Series(l).shift(1).rolling(20).min().values
+    obs=[]  # (known_i, dir, top, bot, used, broken)
+    lastH=None; lastL=None; hB=False; lB=False
+    for i in range(60,n-1):
+        j=i-3
+        if all(h[j]>h[q] for q in range(j-3,j+4) if q!=j): piv_h.append(j); lastH=j; hB=False
+        if all(l[j]<l[q] for q in range(j-3,j+4) if q!=j): piv_l.append(j); lastL=j; lB=False
+        if np.isnan(dab[i]) or np.isnan(cvd[i]): continue
+        # FVG
+        if l[i]>h[i-2] and l[i]-h[i-2]>=0.15*a[i]: obs.append([i,1,l[i],h[i-2],False,False,True,'F'])
+        if h[i]<l[i-2] and l[i-2]-h[i]>=0.15*a[i]: obs.append([i,-1,l[i-2],h[i],False,False,True,'F'])
+        # 4+5) أوردر بلوك: كسر قمة محورية → آخر شمعة هابطة قبل القاع؛ نحفظ حجمها
+        if lastH is not None and not hB and c[i]>h[lastH]:
+            hB=True; li=lastH+int(np.argmin(l[lastH:i+1]))
+            for q in range(li,max(0,li-6),-1):
+                if c[q]<o[q]: obs.append([i,1,h[q],l[q],False,False,True,'O']); break
+        if lastL is not None and not lB and c[i]<l[lastL]:
+            lB=True; hi_=lastL+int(np.argmax(h[lastL:i+1]))
+            for q in range(hi_,max(0,hi_-6),-1):
+                if c[q]>o[q]: obs.append([i,-1,h[q],l[q],False,False,True,'O']); break
+        keep=[]
+        for z in obs:
+            k0,dd,top,bot,used,brk,hv,kind=z
+            if i-k0>150 or used: continue
+            if i<=k0: keep.append(z); continue
+            edge=top if dd>0 else bot; far=bot if dd>0 else top
+            if (c[i]-far)*dd<0: continue  # أُغلق خلف المنطقة → انتهت
+            touched=(l[i]<=edge) if dd>0 else (h[i]>=edge)
+            if touched:
+                z[4]=True
+                cp=(c[i]-l[i])/rg[i] if dd>0 else (h[i]-c[i])/rg[i]
+                withd=delta[i]*dd>dab[i]
+                absorb=(delta[i]*dd<-1.0*dab[i]) and cp>=0.5
+                volhi=v[i]>=1.5*vma[i] if not np.isnan(vma[i]) else False
+                held=(c[i]-edge)*dd>-0.0 or cp>=0.5
+                sp=far-dd*0.1*a[i]
+                def put(k):
+                    sig[k][i]=dd; stp[k][i]=sp
+                if kind=='O':
+                    put('OB لمس فقط')
+                    if withd and held: put('OB + دلتا مع الاتجاه')
+                    if absorb: put('OB + امتصاص')
+                    if (withd and held) or absorb: put('OB + (دلتا أو امتصاص)')
+                    if withd and held and volhi: put('OB + دلتا + حجم عالٍ')
+                if (withd and held) or absorb: put('OB+FVG + دلتا أو امتصاص')
+            keep.append(z)
+        obs=keep
+    tr_=((('ذهب' in grp)&(yr>=2010)&(yr<=2018))|(('بيتكوين' in grp)&(yr<=2020)))
+    for k in sig:
+        s=sig[k].copy(); s[:210]=0
+        w=np.full(n,-1,np.int64); r=np.zeros(n); w2=np.full(n,-1,np.int64); r2=np.zeros(n)
+        simall(o,h,l,c,a,s,stp[k],w,r,w2,r2)
+        for ph,mm in [('train',tr_),('test',~tr_&~(('ذهب' in grp)&(yr<2010)))]:
+            m1=(w>=0)&mm; m2=(w2>=0)&mm
+            x=res.setdefault((k,grp,ph),[0,0,0.0,0,0,0.0]); x[0]+=w[m1].sum(); x[1]+=m1.sum(); x[2]+=r[m1].sum(); x[3]+=w2[m2].sum(); x[4]+=m2.sum(); x[5]+=r2[m2].sum()
+    print('done',f,file=sys.stderr)
+for k in KEYS:
+    print('=====',k)
+    for grp in ['eth (حقيقي)','ذهب (تقريب)','بيتكوين (تقريب)']:
+        for ph in ['train','test']:
+            x=res.get((k,grp,ph))
+            if not x or x[1]==0: continue
+            print(f"  {grp:16s} {ph:5s}: 1R {x[0]/x[1]*100:5.1f}% R {x[2]/x[1]:+.3f} n={x[1]:6d} | 2:1 {x[3]/max(1,x[4])*100:5.1f}% R {x[5]/max(1,x[4]):+.3f} n={x[4]}")
