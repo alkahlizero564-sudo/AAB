@@ -1,0 +1,116 @@
+    const strat = ['turtle20', 'turtle55', 'holygrail', 'rsi2', 'soup', 'nr7', 'squeeze', 'volbrk', 'r8020', 'emax'];
+    const ctxf = ['c_turtle20', 'c_turtle55', 'c_holygrail', 'c_rsi2', 'c_soup', 'c_nr7', 'c_squeeze', 'c_volbrk', 'c_r8020', 'c_emax', 'don20', 'don55', 'sqz', 'nr', 'ema_side'];
+    final out = StringBuffer()..writeln(['market', 'tf', 'year', 'dir', 'win', 'r', 'src', ...kingFeatures, ...ctxf].join(','));
+    for (final (mk, tf, cat, code, ld) in sets) {
+      final c = ld()..sort((a, b) => a.time.compareTo(b.time));
+      final n = c.length;
+      if (n < 400) continue;
+      final cl = [for (final x in c) x.close];
+      final at = atr(c, 14);
+      final e20 = ema(cl, 20), e50 = ema(cl, 50);
+      final s200 = sma(cl, 200), s5 = sma(cl, 5);
+      final r2 = rsi(cl, 2);
+      final ax = adxCalc(c, 14);
+      final bb = bollinger(cl, 20, 2);
+      final ks = KingScorer(c);
+      double hiN(int i, int p) { var m = -1e18; for (var q = i - p; q < i; q++) { m = math.max(m, c[q].high); } return m; }
+      double loN(int i, int p) { var m = 1e18; for (var q = i - p; q < i; q++) { m = math.min(m, c[q].low); } return m; }
+      double rng(int i) => c[i].high - c[i].low;
+      // إشارة كل استراتيجية عند الشمعة i في الاتجاه d (بإغلاق الشمعة، بلا نظر للمستقبل)
+      final fire = List.generate(strat.length, (_) => List<int>.filled(n, 0));
+      for (var i = 60; i < n; i++) {
+        if (at[i].isNaN) continue;
+        final k = c[i];
+        // 1-2 السلاحف: كسر أعلى/أدنى 20 و55 شمعة (أول كسر)
+        for (final (s, p) in [(0, 20), (1, 55)]) {
+          final h = hiN(i, p), l = loN(i, p), h1 = hiN(i - 1, p), l1 = loN(i - 1, p);
+          if (k.close > h && c[i - 1].close <= h1) fire[s][i] = 1;
+          if (k.close < l && c[i - 1].close >= l1) fire[s][i] = -1;
+        }
+        // 3 الكأس المقدسة (راشكي): ADX>30، رجوع لـ EMA20، ثم كسر قمة الشمعة السابقة
+        if (!ax.adx[i - 1].isNaN && ax.adx[i - 1] > 30) {
+          final d = ax.plus[i - 1] > ax.minus[i - 1] ? 1 : -1;
+          final touched = d > 0 ? c[i - 1].low <= e20[i - 1] : c[i - 1].high >= e20[i - 1];
+          if (touched && (d > 0 ? k.close > c[i - 1].high : k.close < c[i - 1].low)) fire[2][i] = d;
+        }
+        // 4 RSI2 (كونرز): مع متوسط 200، RSI2 < 10 شراء / > 90 بيع
+        if (!s200[i].isNaN && !r2[i].isNaN) {
+          if (k.close > s200[i] && r2[i] < 10) fire[3][i] = 1;
+          if (k.close < s200[i] && r2[i] > 90) fire[3][i] = -1;
+        }
+        // 5 حساء السلاحف (راشكي/كونرز): قاع 20 جديد ثم إغلاق فوق القاع السابق
+        {
+          final l = loN(i, 20), h = hiN(i, 20);
+          if (k.low < l && k.close > l) fire[4][i] = 1;
+          if (k.high > h && k.close < h) fire[4][i] = -1;
+        }
+        // 6 NR7 (كرابيل): أضيق شمعة في 7، ثم إغلاق خارجها
+        {
+          var nr = true;
+          for (var q = i - 7; q < i - 1; q++) { if (rng(q) <= rng(i - 1)) nr = false; }
+          if (nr && k.close > c[i - 1].high) fire[5][i] = 1;
+          if (nr && k.close < c[i - 1].low) fire[5][i] = -1;
+        }
+        // 7 انضغاط بولينجر (بولينجر/كارتر): بولينجر داخل كيلتنر ثم الخروج
+        bool sq(int t) => !bb.upper[t].isNaN && bb.upper[t] < e20[t] + 1.5 * at[t] && bb.lower[t] > e20[t] - 1.5 * at[t];
+        if (sq(i - 1) && !sq(i)) {
+          if (k.close > bb.upper[i]) fire[6][i] = 1;
+          if (k.close < bb.lower[i]) fire[6][i] = -1;
+        }
+        // 8 كسر التذبذب (لاري ويليامز): الإغلاق أبعد من الافتتاح بـ 60% من مدى الشمعة السابقة
+        if (k.close > k.open + 0.6 * rng(i - 1)) fire[7][i] = 1;
+        if (k.close < k.open - 0.6 * rng(i - 1)) fire[7][i] = -1;
+        // 9 راشكي 80-20: شمعة افتتحت في أعلى 20% وأغلقت في أدنى 20%، ثم كسر قاعها والعودة فوقه
+        {
+          final p = c[i - 1], r = math.max(1e-9, rng(i - 1));
+          if ((p.open - p.low) / r > 0.8 && (p.close - p.low) / r < 0.2 && k.low < p.low && k.close > p.low) fire[8][i] = 1;
+          if ((p.high - p.open) / r > 0.8 && (p.high - p.close) / r < 0.2 && k.high > p.high && k.close < p.high) fire[8][i] = -1;
+        }
+        // 10 تقاطع المتوسطات (سيكوتا): EMA20 مع EMA50
+        if (e20[i] > e50[i] && e20[i - 1] <= e50[i - 1]) fire[9][i] = 1;
+        if (e20[i] < e50[i] && e20[i - 1] >= e50[i - 1]) fire[9][i] = -1;
+      }
+      List<double>? ctx(int i, int d) {
+        if (i < 60) return null;
+        bool rec(int s) { for (var q = math.max(0, i - 3); q <= i; q++) { if (fire[s][q] == d) return true; } return false; }
+        final h20 = hiN(i + 1, 20), l20 = loN(i + 1, 20), h55 = hiN(i + 1, 55), l55 = loN(i + 1, 55);
+        double pos(double h, double l) { final p = (c[i].close - l) / math.max(1e-9, h - l); return d > 0 ? p : 1 - p; }
+        var nrk = 0; for (var q = i - 1; q >= i - 20 && rng(q) > rng(i); q--) { nrk++; }
+        final sqz = !bb.upper[i].isNaN && at[i] > 0 ? (bb.upper[i] - bb.lower[i]) / (3 * at[i]) : 1.0;
+        return [for (var s = 0; s < strat.length; s++) rec(s) ? 1.0 : 0.0, pos(h20, l20), pos(h55, l55), sqz, nrk.toDouble(), e20[i] > e50[i] ? d.toDouble() : -d.toDouble()];
+      }
+      void row(int i, int d, String src, double entry, double sl, bool win, double r) {
+        final x = ks.features(i, d, entry, sl, src);
+        final cx = ctx(i, d);
+        if (x == null || cx == null) return;
+        out.writeln([mk, tf, c[i].time.year, d, win ? 1 : 0, r, src, for (final q in x) q.toStringAsFixed(4), for (final q in cx) q.toStringAsFixed(4)].join(','));
+      }
+      // إشارات الاستراتيجيات (دخول افتتاح التالية، وقف خلف 3 شموع، 1R ثم 2R)
+      var cnt = 0;
+      for (var s = 0; s < strat.length; s++) {
+        for (var i = 210; i < n - 1; i++) {
+          final d = fire[s][i];
+          if (d == 0 || fire[s][i - 1] == d) continue;
+          final t = sim(c, at, i, d, null);
+          if (t == null) continue;
+          var ext = d > 0 ? c[i].low : c[i].high;
+          for (var j = i - 2; j <= i; j++) { ext = d > 0 ? math.min(ext, c[j].low) : math.max(ext, c[j].high); }
+          row(i, d, strat[s], c[i + 1].open, ext, t.win, t.r);
+          cnt++;
+        }
+      }
+      // إشارات Mp (للمقارنة مع King)
+      final sym = code == 'XAU/USD' ? symbolByCode('XAU/USD') : MarketSymbol(code, code, cat, 'X', 2, false);
+      final f = buildForecast(c, history: n, rr1: 1, rr2: 2, cfg: const ForecastCfg(trail: false));
+      final kk = buildAlka(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+      final z = buildZeroOne(c, history: n, rr1: 1, rr2: 2, trail: false, sym: sym);
+      final mp = combineAll(c, f.signals, const [], kk.signals, const [], zero: z.signals, tag: 'Mp');
+      for (final (q, s) in mp.signals.indexed) {
+        if (s.exitI < 0 || s.result == 0 || s.i < 210) continue;
+        row(s.i, s.dir, mp.sources[q], s.entry, s.sl, s.result > 0, s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1);
+      }
+      print('done $mk $tf strat=$cnt mp=${mp.signals.length}');
+    }
+    File('$sp/ai/pro.csv').writeAsStringSync(out.toString());
+  }, timeout: const Timeout(Duration(hours: 3)));
+}

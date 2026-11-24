@@ -1,0 +1,28 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+strat=['turtle20','turtle55','holygrail','rsi2','soup','nr7','squeeze','volbrk','r8020','emax']
+it=pd.read_csv(S+'/ai/pro.csv',chunksize=200000)
+pm=pd.concat([ch[~ch.src.isin(strat)] for ch in it]); pm=pm[pm.tf!='1d'].reset_index(drop=True)
+s2=pd.read_csv(S+'/ai/signals2.csv')
+print(len(pm),len(s2), (pm.groupby(['market','tf'],sort=False).size().values==s2.groupby(['market','tf'],sort=False).size().values).all())
+assert (pm.win.values==s2.win.values).all() and (np.abs(pm.entry_dist.values-s2.entry_dist.values)<1e-3).all()
+safe=['i_st','i_stars','i_near','i_hot','i_held','i_sm','i_smstrong','i_km','i_daily200','i_sr_behind','i_sr_ahead','i_ribage','i_lt']
+for c in safe: pm[c]=s2[c].values
+base=list(pm.columns[7:7+41]); ctx=list(pm.columns[7+41:7+41+15])
+trm=((pm.market=='gold20')&(pm.year>=2010)&(pm.year<=2018)) | ((pm.market=='btc')&(pm.year<=2020))
+test=~trm & ~((pm.market=='gold20')&(pm.year<2010))
+tr,te=pm[trm],pm[test]
+def run(lab,fs):
+    s=f"{lab:34s}"; res=[]
+    for sd in range(1,6):
+        m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=sd).fit(tr[fs].values.astype(np.float32),tr.win)
+        res.append((m.predict_proba(tr[fs].values.astype(np.float32))[:,1],m.predict_proba(te[fs].values.astype(np.float32))[:,1]))
+    for top in [30,15,7]:
+        a=[te.win.values[p>=np.quantile(q,1-top/100)].mean() for q,p in res]
+        g=[te.win.values[(p>=np.quantile(q,1-top/100))&(te.market=='gold20').values].mean() for q,p in res]
+        s+=f" | {top}%: {np.mean(a)*100:.1f}±{np.std(a)*100:.1f} (ذهب {np.mean(g)*100:.1f})"
+    print(s)
+run('King الحالي (54)',base+safe)
+run('King + المشاهير (69)',base+safe+ctx)
