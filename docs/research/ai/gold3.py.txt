@@ -1,0 +1,89 @@
+import pandas as pd, numpy as np
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+@njit(cache=True)
+def trade(o,h,l,c,i,d,e,stop,rr,maxb):
+    # دخول عند e بعد إغلاق الشمعة i (افتتاح التالية)، الوقف stop، هدف rr؛ وأيضاً 1R ثم 2R
+    risk=(e-stop)*d
+    if risk<=0: return -9.0,-9.0
+    tp=e+d*rr*risk; r_fix=-9.0
+    for j in range(i+1,min(len(c),i+maxb)):
+        if (d>0 and l[j]<=stop) or (d<0 and h[j]>=stop): r_fix=-1.0; break
+        if (d>0 and h[j]>=tp) or (d<0 and l[j]<=tp): r_fix=rr; break
+    if r_fix==-9.0: r_fix=(c[min(len(c)-1,i+maxb-1)]-e)*d/risk
+    t1=e+d*risk; t2=e+2*d*risk; st=stop; got=False; r12=-9.0
+    for j in range(i+1,min(len(c),i+maxb)):
+        if (d>0 and l[j]<=st) or (d<0 and h[j]>=st): r12=0.5 if got else -1.0; break
+        if (not got) and ((d>0 and h[j]>=t1) or (d<0 and l[j]<=t1)): got=True; st=e
+        if got and ((d>0 and h[j]>=t2) or (d<0 and l[j]<=t2)): r12=1.5; break
+    if r12==-9.0: r12=0.5 if got else (c[min(len(c)-1,i+maxb-1)]-e)*d/risk
+    return r12,r_fix
+d=pd.read_csv(S+'/gold20/xau20_15m.csv'); d.columns=['time','o','h','l','c','v']; d['time']=pd.to_datetime(d.time)
+d=d[d.time.dt.year>=2010].reset_index(drop=True)
+o,h,l,c=[d[k].values.astype(np.float64) for k in 'ohlc']
+pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc))); a=pd.Series(tr).ewm(alpha=1/14,adjust=False).mean().values
+day=d.time.dt.date.values; hr=d.time.dt.hour.values; yr=d.time.dt.year.values
+def rep(name,rows):
+    r=pd.DataFrame(rows,columns=['yr','r12','rfix','x'])
+    for lab,m in [('تدريب 2010-18',r.yr<=2018),('اختبار 2019-25',r.yr>=2019)]:
+        q=r[m]
+        if len(q)==0: continue
+        print(f"  {lab}: 1R/2R {(q.r12>0).mean()*100:5.1f}% R {q.r12.mean():+.3f} | 2:1 {(q.rfix>0).mean()*100:5.1f}% R {q.rfix.mean():+.3f} | n={len(q)}")
+# ── 1) كسر نطاق آسيا (01:00-08:45 بتوقيت الوسيط) خلال لندن (09:00-13:45)
+print('===== 1) كسر نطاق آسيا')
+ad=d.assign(day=day,hr=hr)
+asia=ad[(ad.hr>=1)&(ad.hr<=8)].groupby('day').agg(ah=('h','max'),al=('l','min'))
+dayidx=pd.Series(np.arange(len(d))).groupby(day).apply(list)
+for stopmode in ['منتصف النطاق','الطرف الآخر']:
+  for narrow in [False,True]:
+    rows=[]
+    for dy,idxs in dayidx.items():
+        if dy not in asia.index: continue
+        ah,al=asia.loc[dy]; w=ah-al
+        for i in idxs:
+            if hr[i]<9 or hr[i]>13: continue
+            if narrow and w>2.5*a[i]*2: break  # نطاق ضيق فقط (أقل من 5 ATR15)
+            dd=1 if c[i]>ah else (-1 if c[i]<al else 0)
+            if dd==0: continue
+            if i+1>=len(c): break
+            e=o[i+1]; stop=(ah+al)/2 if stopmode=='منتصف النطاق' else (al if dd>0 else ah)
+            r12,rf=trade(o,h,l,c,i,dd,e,stop,2.0,96)
+            if r12>-9: rows.append((yr[i],r12,rf,0))
+            break
+    print(f' وقف عند {stopmode}{" — نطاق ضيق فقط" if narrow else ""}:'); rep('',rows)
+# ── 5) سحب قمة/قاع أمس
+print('===== 5) سحب قمة أو قاع أمس')
+dd_=ad.groupby('day').agg(H=('h','max'),L=('l','min'))
+prevH=dd_.H.shift(); prevL=dd_.L.shift()
+for mode in ['أول سحب في اليوم','كل سحب']:
+  rows=[]
+  for dy,idxs in dayidx.items():
+    if dy not in prevH.index or np.isnan(prevH.loc[dy]): continue
+    PH,PL=prevH.loc[dy],prevL.loc[dy]; doneS=doneB=False
+    for i in idxs:
+        if i+1>=len(c) or hr[i]<1: continue
+        if not doneS and h[i]>PH and c[i]<PH:
+            r12,rf=trade(o,h,l,c,i,-1,o[i+1],h[i]+0.1*a[i],2.0,96)
+            if r12>-9: rows.append((yr[i],r12,rf,0))
+            doneS=True
+        if not doneB and l[i]<PL and c[i]>PL:
+            r12,rf=trade(o,h,l,c,i,1,o[i+1],l[i]-0.1*a[i],2.0,96)
+            if r12>-9: rows.append((yr[i],r12,rf,0))
+            doneB=True
+        if mode=='كل سحب': doneS=doneB=False if False else (doneS,doneB)[0] and False
+  print(f' {mode}:'); rep('',rows)
+# ── 3) ميل الساعات: متوسط عائد كل ساعة (1h) على التدريب، ثم التداول في الاختبار
+print('===== 3) ميل الساعات (ساعة واحدة: دخول افتتاحها وخروج إغلاقها)')
+d1=pd.read_csv(S+'/gold20/xau20_1h.csv'); d1.columns=['time','o','h','l','c','v']; d1['time']=pd.to_datetime(d1.time)
+d1=d1[d1.time.dt.year>=2010].reset_index(drop=True)
+pc=d1.c.shift(); trr=pd.concat([d1.h-d1.l,(d1.h-pc).abs(),(d1.l-pc).abs()],axis=1).max(axis=1); a1=trr.ewm(alpha=1/14,adjust=False).mean().shift()
+d1['ret']=(d1.c-d1.o)/a1; d1['hr']=d1.time.dt.hour; d1['yr']=d1.time.dt.year; d1['dow']=d1.time.dt.dayofweek
+trn=d1[d1.yr<=2018]; tst=d1[d1.yr>=2019]
+st=trn.groupby('hr').ret.agg(['mean','count','std']); st['t']=st['mean']/(st['std']/np.sqrt(st['count']))
+print(st[['mean','t']].round(3).T.to_string())
+sig=st[st.t.abs()>=2.5]
+print('ساعات ذات ميل واضح في التدريب (|t|≥2.5):',{int(k):('صعود' if v>0 else 'هبوط') for k,v in sig['mean'].items()})
+for hh,row in sig.iterrows():
+    dd=1 if row['mean']>0 else -1
+    q=tst[tst.hr==hh]; q2=trn[trn.hr==hh]
+    print(f"  الساعة {hh:02d} ({'شراء' if dd>0 else 'بيع'}): تدريب ناجحة {(q2.ret*dd>0).mean()*100:.1f}% متوسط {q2.ret.mean()*dd:+.3f} ATR | اختبار ناجحة {(q.ret*dd>0).mean()*100:.1f}% متوسط {q.ret.mean()*dd:+.3f} ATR (n={len(q)})")
