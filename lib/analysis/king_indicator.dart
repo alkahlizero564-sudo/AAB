@@ -238,12 +238,12 @@ class KingEval {
 /// فلتر الذكاء على مؤشر آخر: يُبقي الإشارات التي يضعها King في أعلى [top]% (0 = بدون فلتر).
 /// اختبار على إشارات لم يرها (1R): SM 56.7% → 60.5% (30%) → 63.9% (15%)،
 /// و AAB 56.0% → 62.4% (30%) → 66.0% (15%).
-AllResult kingFilter(AllResult r, KingEval? e, int top) {
+AllResult kingFilter(AllResult r, KingEval? e, int top, {bool Function(int i, int dir)? keep}) {
   if (top == 0 || e == null) return r;
   final thr = kingThreshold(top);
   final sigs = <PastSignal>[], src = <String>[];
   for (final (q, s) in r.signals.indexed) {
-    if (e.score(s.i, s.dir, s.entry, s.sl, r.sources[q]) >= thr) {
+    if ((keep?.call(s.i, s.dir) ?? false) || e.score(s.i, s.dir, s.entry, s.sl, r.sources[q]) >= thr) {
       sigs.add(s);
       src.add(r.sources[q]);
     }
@@ -260,10 +260,10 @@ AllResult kingFilter(AllResult r, KingEval? e, int top) {
 }
 
 /// نفس فلتر الذكاء على توصيات AAB.
-Forecast kingFilterForecast(Forecast f, KingEval? e, int top) {
+Forecast kingFilterForecast(Forecast f, KingEval? e, int top, {bool Function(int i, int dir)? keep}) {
   if (top == 0 || e == null) return f;
   final thr = kingThreshold(top);
-  final sigs = [for (final s in f.signals) if (e.score(s.i, s.dir, s.entry, s.sl, 'AAB') >= thr) s];
+  final sigs = [for (final s in f.signals) if ((keep?.call(s.i, s.dir) ?? false) || e.score(s.i, s.dir, s.entry, s.sl, 'AAB') >= thr) s];
   final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
   final pend = [for (final p in f.pending) if (!openDirs.contains(p.dir) && e.score(p.i, p.dir, p.trigger, p.sl, 'AAB') >= thr) p];
   return Forecast(
@@ -305,7 +305,7 @@ double kingEntryDist(List<Candle> c, List<double> at, int i, int d, double entry
 /// King: إشارات Mp التي يضعها الذكاء الاصطناعي في أعلى [top]% ثقة (الافتراضي 30%).
 /// [nearOnly]: يعرض فقط الإشارات التي دخولها قريب (< 0.75 ATR من قاع/قمة آخر 5 شموع).
 KingResult buildKing(List<Candle> c, AllResult mp,
-    {int top = 30, StarResult? stars, AllResult? sm, AllResult? km, List<Candle>? daily, bool nearOnly = false}) {
+    {int top = 30, StarResult? stars, AllResult? sm, AllResult? km, List<Candle>? daily, bool nearOnly = false, bool Function(int i, int dir)? stick}) {
   final thr = kingThreshold(top);
   if (c.length < 260) return KingResult.empty;
   final sc = KingScorer(c);
@@ -319,7 +319,7 @@ KingResult buildKing(List<Candle> c, AllResult mp,
     final p = sc.score(s.i, s.dir, s.entry, s.sl, mp.sources[q], ctx);
     if (p.isNaN) continue;
     conf[(s.i, s.dir)] = p;
-    if (p >= thr && !far(s.i, s.dir, s.entry)) {
+    if ((stick?.call(s.i, s.dir) ?? false) || (p >= thr && !far(s.i, s.dir, s.entry))) {
       sigs.add(s);
       src.add(mp.sources[q]);
     }

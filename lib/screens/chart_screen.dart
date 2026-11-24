@@ -389,6 +389,14 @@ class _ChartScreenState extends State<ChartScreen> {
           toggle: () => layers.king = !layers.king
         ),
         (
+          name: 'AK',
+          emoji: '🎯',
+          desc: 'الأدق: توصيات AAB التي يضعها King في أعلى 15% — علامات شراء وبيع، صفقات قليلة',
+          health: st.akHealth,
+          on: layers.aiak,
+          toggle: () => layers.aiak = !layers.aiak
+        ),
+        (
           name: 'PQ',
           emoji: '🔷',
           desc: 'نفس إشارات النجوم + SM + Alka مجتمعة في مؤشر واحد — أخضر للشراء وأحمر للبيع',
@@ -629,6 +637,14 @@ class _ChartScreenState extends State<ChartScreen> {
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
                       child: Text('المدى الطويل (ذهب): ترند 67% • ارتداد 70%',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
+                  if (x.name == 'AK')
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Text('اختبار لم يره: 66% (ذهب 65%)',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
@@ -1138,6 +1154,7 @@ class _ChartScreenState extends State<ChartScreen> {
               starR: st.starR,
               ltR: st.ltR,
               pqR: st.pqR,
+              akR: st.akR,
               kingR: st.kingR,
               allR: st.allR,
               repaint: st.liveTick,
@@ -1191,6 +1208,7 @@ class _ChartScreenState extends State<ChartScreen> {
       e.add((d.state == 0 ? 'نجوم' : 'نجوم $n/3', d, null));
     }
     if (eff.king && st.kingR != null) e.add(('King', st.kingR!.res.decision, null));
+    if (eff.aiak && st.akR != null) e.add(('AK', st.akR!.decision, null));
     if (eff.pq && st.pqR != null) e.add(('PQ', st.pqR!.decision, null));
     if (eff.lt) e.add(_ltEntry(st));
     final fam = <(String, AllResult)>[
@@ -1206,7 +1224,7 @@ class _ChartScreenState extends State<ChartScreen> {
     if (eff.all && st.allR != null) e.add(('ALL', st.allR!.decision, null));
     if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
     if (eff.alka && st.alka != null) e.add(('Alka', st.alka!.decision, null));
-    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king;
+    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak;
     if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
 
     // تجميع الصفقات المتطابقة
@@ -1278,6 +1296,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final l = <(String, List<PastSignal>?)>[
       if (eff.star) ('نجوم', st.starR?.res.signals),
       if (eff.king) ('King', st.kingR?.res.signals),
+      if (eff.aiak) ('AK', st.akR?.signals),
       if (eff.pq) ('PQ', st.pqR?.signals),
       if (eff.lt && st.tf == '1d') ('LT', st.ltR?.signals),
       if (eff.km) ('KM', st.kmR?.signals),
@@ -1311,6 +1330,7 @@ class _ChartScreenState extends State<ChartScreen> {
     final l = <(String, List<PastSignal>?, List<PendingSetup>?)>[
       if (eff.king) ('King', st.kingR?.res.signals, st.kingR?.res.pending),
       if (eff.star) ('نجوم', st.starR?.res.signals, st.starR?.res.pending),
+      if (eff.aiak) ('AK', st.akR?.signals, st.akR?.pending),
       if (eff.pq) ('PQ', st.pqR?.signals, st.pqR?.pending),
       if (eff.sm) ('SM', st.smView?.signals, st.smView?.pending),
       if (eff.st) ('ST', st.stR?.res.signals, st.stR?.res.pending),

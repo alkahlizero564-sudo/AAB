@@ -1,0 +1,70 @@
+import pandas as pd, numpy as np, sys
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+def load(p):
+    d=pd.read_csv(p); d.columns=[c.lower() for c in d.columns]
+    d=d.rename(columns={d.columns[0]:'time'}); return d
+def atr(h,l,c,n=14):
+    pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc)))
+    return pd.Series(tr).ewm(alpha=1/n,adjust=False).mean().values
+def sim(o,h,l,c,a,i,d,stop=None,rr=None):
+    n=len(c)
+    if i>=n-1: return None
+    e=o[i+1]; ext=(l[i-2:i+1].min() if d>0 else h[i-2:i+1].max()) if stop is None else stop
+    risk=np.clip((e-ext)*d+0.1*a[i],0.7*a[i],2.5*a[i]) if stop is None else (e-ext)*d
+    if risk<=0.2*a[i]: return None
+    if rr:  # هدف ثابت
+        tp=e+d*rr*risk; st=e-d*risk
+        for j in range(i+1,min(n,i+300)):
+            if (l[j]<=st if d>0 else h[j]>=st): return (0,-1.0)
+            if j>i+1 and (h[j]>=tp if d>0 else l[j]<=tp): return (1,float(rr))
+        return None
+    t1=e+d*risk; t2=e+2*d*risk; st=e-d*risk; got=False
+    for j in range(i+1,min(n,i+80)):
+        if (l[j]<=st if d>0 else h[j]>=st): return (1 if got else 0, 0.5 if got else -1.0)
+        if not got and (h[j]>=t1 if d>0 else l[j]<=t1): got=True; st=e
+        if got and (h[j]>=t2 if d>0 else l[j]<=t2): return (1,1.5)
+    return (1,0.5) if got else (0,-1.0)
+sets=[('eth (حجم حقيقي)',f,'real') for f in ['eth_15m_1819','eth_15m_2526','eth_1h_1819','eth_1h_2526','eth_4h_1819','eth_4h_2526']]
+sets+=[('ذهب 2010-25 (تقريب)',f,'proxy') for f in ['../gold20/xau20_15m','../gold20/xau20_1h','../gold20/xau20_4h']]
+sets+=[('بيتكوين 2017-26 (تقريب)',f,'proxy') for f in ['../gold10/btc10_15m','../gold10/btc10_1h','../gold10/btc10_4h']]
+res={}
+for grp,f,mode in sets:
+    d=load(f'{S}/data/{f}.csv'); o,h,l,c,v=[d[k].values.astype(float) for k in ['open','high','low','close','volume']]
+    n=len(c); a=atr(h,l,c); rg=np.maximum(h-l,1e-12)
+    if mode=='real' and 'takerbuy' in d: delta=2*d.takerbuy.values-v
+    else: delta=v*(c-o)/rg
+    vma=pd.Series(v).rolling(50).mean().values; dabs=pd.Series(np.abs(delta)).rolling(50).mean().values
+    lo20=pd.Series(l).shift(1).rolling(20).min().values; hi20=pd.Series(h).shift(1).rolling(20).max().values
+    osc=pd.Series(delta).ewm(span=14,adjust=False).mean().values
+    e50=pd.Series(c).ewm(span=50,adjust=False).mean().values
+    tf=f.split('_')[1] if 'eth' in f else f.split('_')[-1]
+    for i in range(60,n-2):
+        if np.isnan(vma[i]) or np.isnan(dabs[i]) or a[i]<=0: continue
+        cp=(c[i]-l[i])/rg[i]
+        # 2) امتصاص: قاع 20 جديد + بيع قوي (دلتا سالبة كبيرة + حجم عالٍ) لكن الإغلاق في النصف الأعلى
+        for dd in (1,-1):
+            newx = l[i]<lo20[i] if dd>0 else h[i]>hi20[i]
+            strong = (delta[i]*dd < -1.5*dabs[i]) and v[i]>=1.5*vma[i]
+            held = (cp>=0.5) if dd>0 else (cp<=0.5)
+            if newx and strong and held:
+                for key,kw in [('1R',{}),('2:1',{'stop':(l[i]-0.1*a[i]) if dd>0 else (h[i]+0.1*a[i]),'rr':2})]:
+                    r=sim(o,h,l,c,a,i,dd,**kw)
+                    if r: res.setdefault(('امتصاص',grp,tf,key),[]).append(r)
+        # 3) مذبذب الدلتا: انقلاب EMA14 للدلتا (وبديل: مع EMA50)
+        for dd in (1,-1):
+            if osc[i]*dd>0 and osc[i-1]*dd<=0:
+                for nm,ok in [('مذبذب الدلتا',True),('مذبذب الدلتا + EMA50',(c[i]-e50[i])*dd>0)]:
+                    if not ok: continue
+                    for key,kw in [('1R',{}),('2:1',{'rr':2})]:
+                        r=sim(o,h,l,c,a,i,dd,**kw)
+                        if r: res.setdefault((nm,grp,tf,key),[]).append(r)
+    print('done',f,file=sys.stderr)
+agg={}
+for (nm,grp,tf,key),v in res.items():
+    agg.setdefault((nm,grp,key),[]).extend(v)
+for (nm,grp,key),v in sorted(agg.items()):
+    w=np.mean([x[0] for x in v]); r=np.mean([x[1] for x in v])
+    print(f"{nm:22s} {grp:24s} {key:4s}: {w*100:5.1f}% avgR {r:+.3f} n={len(v)}")
+print('--- حسب الفريم (امتصاص، 1R)')
+for (nm,grp,tf,key),v in sorted(res.items()):
+    if nm=='امتصاص' and key=='1R': print(f"  {grp:24s} {tf:4s}: {np.mean([x[0] for x in v])*100:5.1f}% n={len(v)}")

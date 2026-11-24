@@ -1,0 +1,164 @@
+import pandas as pd, numpy as np, sys, warnings
+warnings.filterwarnings('ignore')
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+@njit(cache=True)
+def simall(o,h,l,c,a,sig,w,r):
+    n=len(c)
+    for i in range(3,n-1):
+        d=sig[i]
+        if d==0 or a[i]<=0: continue
+        e=o[i+1]
+        ext=l[i]; 
+        for j in range(i-2,i+1):
+            if d>0: ext=min(ext,l[j])
+            else: ext=max(ext,h[j])
+        risk=(e-ext)*d+0.1*a[i]
+        risk=min(max(risk,0.7*a[i]),2.5*a[i])
+        t1=e+d*risk; t2=e+2*d*risk; st=e-d*risk; got=False; done=False
+        for j in range(i+1,min(n,i+80)):
+            if (d>0 and l[j]<=st) or (d<0 and h[j]>=st):
+                w[i]=1 if got else 0; r[i]=0.5 if got else -1.0; done=True; break
+            if (not got) and ((d>0 and h[j]>=t1) or (d<0 and l[j]<=t1)):
+                got=True; st=e
+            if got and ((d>0 and h[j]>=t2) or (d<0 and l[j]<=t2)):
+                w[i]=1; r[i]=1.5; done=True; break
+        if not done:
+            w[i]=1 if got else 0; r[i]=0.5 if got else -1.0
+def load(p):
+    d=pd.read_csv(p); d.columns=[x.lower() for x in d.columns]; d=d.rename(columns={d.columns[0]:'time'})
+    d['time']=pd.to_datetime(d.time,utc=True,errors='coerce'); return d.dropna(subset=['time']).reset_index(drop=True)
+E=lambda x,n: x.ewm(span=n,adjust=False).mean()
+def rsi(c,n):
+    dlt=c.diff(); up=dlt.clip(lower=0).ewm(alpha=1/n,adjust=False).mean(); dn=(-dlt.clip(upper=0)).ewm(alpha=1/n,adjust=False).mean()
+    return 100-100/(1+up/dn)
+def atr(d,n=14):
+    pc=d.close.shift(); tr=pd.concat([d.high-d.low,(d.high-pc).abs(),(d.low-pc).abs()],axis=1).max(axis=1)
+    return tr.ewm(alpha=1/n,adjust=False).mean()
+def cross(a,b): return ((a>b)&(a.shift()<=b.shift())).astype(int)-((a<b)&(a.shift()>=b.shift())).astype(int)
+def flip(state): # state +1/-1 → إشارة عند التغيّر
+    s=pd.Series(state); return ((s>0)&(s.shift()<=0)).astype(int)-((s<0)&(s.shift()>=0)).astype(int)
+def trail_flip(c,a,mult):  # UT Bot / ATR trailing stop
+    c=c.values; a=a.values; n=len(c); ts=np.zeros(n); st=np.zeros(n)
+    for i in range(1,n):
+        nl=a[i]*mult; p=ts[i-1]
+        if c[i]>p and c[i-1]>p: ts[i]=max(p,c[i]-nl)
+        elif c[i]<p and c[i-1]<p: ts[i]=min(p,c[i]+nl)
+        elif c[i]>p: ts[i]=c[i]-nl
+        else: ts[i]=c[i]+nl
+        st[i]=1 if c[i]>ts[i] else -1
+    return st
+def supertrend(d,a,m=3):
+    hl=(d.high+d.low)/2; up=(hl-m*a).values; dn=(hl+m*a).values; c=d.close.values; n=len(c)
+    fu=up.copy(); fd=dn.copy(); tr=np.ones(n)
+    for i in range(1,n):
+        fu[i]=max(up[i],fu[i-1]) if c[i-1]>fu[i-1] else up[i]
+        fd[i]=min(dn[i],fd[i-1]) if c[i-1]<fd[i-1] else dn[i]
+        tr[i]=1 if c[i]>fd[i-1] else (-1 if c[i]<fu[i-1] else tr[i-1])
+    return tr
+def psar(d,step=0.02,mx=0.2):
+    h=d.high.values; l=d.low.values; n=len(h); tr=np.ones(n); sar=l[0]; ep=h[0]; af=step; up=True
+    for i in range(1,n):
+        sar=sar+af*(ep-sar)
+        if up:
+            sar=min(sar,l[i-1],l[max(0,i-2)])
+            if l[i]<sar: up=False; sar=ep; ep=l[i]; af=step
+            elif h[i]>ep: ep=h[i]; af=min(af+step,mx)
+        else:
+            sar=max(sar,h[i-1],h[max(0,i-2)])
+            if h[i]>sar: up=True; sar=ep; ep=h[i]; af=step
+            elif l[i]<ep: ep=l[i]; af=min(af+step,mx)
+        tr[i]=1 if up else -1
+    return tr
+def strategies(d):
+    c,h,l,o,v=d.close,d.high,d.low,d.open,d.volume.fillna(0)
+    a=atr(d); out={}
+    e9,e21,e20,e50,e200=E(c,9),E(c,21),E(c,20),E(c,50),E(c,200)
+    m=E(c,12)-E(c,26); ms=E(m,9)
+    out['MACD تقاطع']=cross(m,ms)
+    x=cross(m,ms); out['MACD + EMA200']=x*((np.sign(c-e200)==x)&(x!=0))
+    out['MACD تحت/فوق الصفر']=x*(((x>0)&(m<0))|((x<0)&(m>0)))
+    r=rsi(c,14)
+    out['RSI 30/70 ارتداد']=cross(r,pd.Series(30,index=r.index)).clip(lower=0)-cross(pd.Series(70,index=r.index),r).clip(lower=0)
+    out['RSI 50 تقاطع']=cross(r,pd.Series(50,index=r.index))
+    lo=l.rolling(14).min(); hi=h.rolling(14).max(); k=100*(c-lo)/(hi-lo); kk=k.rolling(3).mean(); dd=kk.rolling(3).mean()
+    sx=cross(kk,dd); out['Stoch تقاطع في التشبع']=sx*(((sx>0)&(kk<20))|((sx<0)&(kk>80)))
+    mid=c.rolling(20).mean(); sd=c.rolling(20).std(); bu=mid+2*sd; bl=mid-2*sd
+    out['بولينجر ارتداد للداخل']=((c>bl)&(c.shift()<=bl.shift())).astype(int)-((c<bu)&(c.shift()>=bu.shift())).astype(int)
+    out['بولينجر اختراق']=((c>bu)&(c.shift()<=bu.shift())).astype(int)-((c<bl)&(c.shift()>=bl.shift())).astype(int)
+    out['Supertrend 10/3']=flip(supertrend(d,atr(d,10),3))
+    out['UT Bot (1, 10)']=flip(trail_flip(c,atr(d,10),1))
+    out['UT Bot (2, 10)']=flip(trail_flip(c,atr(d,10),2))
+    out['Parabolic SAR']=flip(psar(d))
+    out['EMA 9/21']=cross(e9,e21)
+    out['EMA 50/200 (ذهبي)']=cross(e50,e200)
+    out['EMA 9/21 + EMA200']=(lambda x: x*(np.sign(c-e200)==x))(cross(e9,e21))
+    def wma(s,n): w=np.arange(1,n+1); return s.rolling(n).apply(lambda z: np.dot(z,w)/w.sum(),raw=True)
+    hull=wma(2*wma(c,10)-wma(c,20),4); out['Hull MA انعطاف']=flip(np.sign(hull.diff()).fillna(0).values)
+    hac=(o+h+l+c)/4; hao=hac.copy()
+    hv=hao.values.copy(); hcv=hac.values; ov=o.values; cv=c.values
+    hv[0]=(ov[0]+cv[0])/2
+    for i in range(1,len(hv)): hv[i]=(hv[i-1]+hcv[i-1])/2
+    out['Heikin Ashi تغيّر اللون']=flip(np.sign(hcv-hv))
+    kmid=E(c,20); ku=kmid+2*atr(d,10); kl=kmid-2*atr(d,10)
+    out['Keltner اختراق']=((c>ku)&(c.shift()<=ku.shift())).astype(int)-((c<kl)&(c.shift()>=kl.shift())).astype(int)
+    up_=h.diff(); dn_=-l.diff(); pdm=up_.where((up_>dn_)&(up_>0),0); mdm=dn_.where((dn_>up_)&(dn_>0),0)
+    tr14=atr(d,14); pdi=100*pdm.ewm(alpha=1/14,adjust=False).mean()/tr14; mdi=100*mdm.ewm(alpha=1/14,adjust=False).mean()/tr14
+    adx=(100*(pdi-mdi).abs()/(pdi+mdi)).ewm(alpha=1/14,adjust=False).mean()
+    out['DMI تقاطع + ADX>25']=cross(pdi,mdi)*(adx>25)
+    tp=(h+l+c)/3; cci=(tp-tp.rolling(20).mean())/(0.015*tp.rolling(20).apply(lambda z: np.mean(np.abs(z-z.mean())),raw=True))
+    out['CCI ±100 خروج من التشبع']=cross(cci,pd.Series(-100,index=c.index)).clip(lower=0)-cross(pd.Series(100,index=c.index),cci).clip(lower=0)
+    wr=-100*(h.rolling(14).max()-c)/(h.rolling(14).max()-l.rolling(14).min())
+    out['Williams %R ارتداد']=cross(wr,pd.Series(-80,index=c.index)).clip(lower=0)-cross(pd.Series(-20,index=c.index),wr).clip(lower=0)
+    sqz=(bu<ku)&(bl>kl); mom=(c-((h.rolling(20).max()+l.rolling(20).min())/2+mid)/2).rolling(20).mean()
+    rel=(~sqz)&(sqz.shift().fillna(False)); out['Squeeze Momentum (LazyBear)']=(rel&(mom>0)).astype(int)-(rel&(mom<0)).astype(int)
+    day=d.time.dt.floor('D'); pv=(tp*v).groupby(day).cumsum(); vv=v.groupby(day).cumsum().replace(0,np.nan); vwap=(pv/vv).fillna(c)
+    out['VWAP تقاطع']=cross(c,vwap)
+    ib=(h.shift()<=h.shift(2))&(l.shift()>=l.shift(2))
+    out['Inside Bar اختراق']=(ib&(c>h.shift())).astype(int)-(ib&(c<l.shift())).astype(int)
+    eng_b=(c>o)&(c.shift()<o.shift())&(c>=o.shift())&(o<=c.shift()); eng_s=(c<o)&(c.shift()>o.shift())&(c<=o.shift())&(o>=c.shift())
+    out['ابتلاع عند بولينجر']=(eng_b&(l<=bl)).astype(int)-(eng_s&(h>=bu)).astype(int)
+    mf=tp*v; pmf=mf.where(tp>tp.shift(),0).rolling(14).sum(); nmf=mf.where(tp<tp.shift(),0).rolling(14).sum(); mfi=100-100/(1+pmf/nmf.replace(0,np.nan))
+    out['MFI 20/80 ارتداد']=cross(mfi,pd.Series(20,index=c.index)).clip(lower=0)-cross(pd.Series(80,index=c.index),mfi).clip(lower=0)
+    au=100*h.rolling(26).apply(lambda z: np.argmax(z),raw=True)/25; ad=100*l.rolling(26).apply(lambda z: np.argmin(z),raw=True)/25
+    out['Aroon تقاطع']=cross(au,ad)
+    ce_l=h.rolling(22).max()-3*atr(d,22); ce_s=l.rolling(22).min()+3*atr(d,22)
+    st=np.zeros(len(c)); cv=c.values; cl=ce_l.values; cs=ce_s.values.copy()
+    for i in range(1,len(c)): st[i]=1 if cv[i]>cs[i-1] else (-1 if cv[i]<cl[i-1] else st[i-1])
+    out['Chandelier Exit انقلاب']=flip(st)
+    sh=h.rolling(10).mean(); sl=l.rolling(10).mean(); hlv=np.where(c>sh,1,np.where(c<sl,-1,0)); hlv=pd.Series(hlv).replace(0,np.nan).ffill().fillna(0).values
+    out['SSL Channel']=flip(hlv)
+    ph=(h==h.rolling(9,center=True).max()).shift(4).fillna(False); pl=(l==l.rolling(9,center=True).min()).shift(4).fillna(False)
+    lph=h.shift(4).where(ph).ffill(); lpl=l.shift(4).where(pl).ffill()
+    out['Pivot Reversal (TV)']=((c>lph)&(c.shift()<=lph.shift())).astype(int)-((c<lpl)&(c.shift()>=lpl.shift())).astype(int)
+    upc=(c>c.shift()).astype(int); dnc=(c<c.shift()).astype(int)
+    out['Consecutive Up/Down (TV)']=((upc.rolling(3).sum()==3)&(upc.shift().rolling(3).sum()<3)).astype(int)-((dnc.rolling(3).sum()==3)&(dnc.shift().rolling(3).sum()<3)).astype(int)
+    mo=c-c.shift(12); out['Momentum (TV)']=flip(np.sign(mo.fillna(0)).values*(np.sign((mo-mo.shift()).fillna(0)).values==np.sign(mo.fillna(0)).values))
+    out['Price Channel (TV) 20']=((h>h.shift().rolling(20).max())&(h.shift()<=h.shift(2).rolling(20).max())).astype(int)-((l<l.shift().rolling(20).min())&(l.shift()>=l.shift(2).rolling(20).min())).astype(int)
+    ve=atr(d,5)*0.75; out['Volty Expan Close (TV)']=((c>c.shift()+ve.shift())).astype(int)-((c<c.shift()-ve.shift())).astype(int)
+    out['3 شموع + EMA50 سحب']=(((c>o)&(l<=e50)&(c>e50)&(e50>e50.shift(5)))).astype(int)-(((c<o)&(h>=e50)&(c<e50)&(e50<e50.shift(5)))).astype(int)
+    return {k:pd.Series(np.asarray(v)).fillna(0).astype(int).values for k,v in out.items()}
+sets=[('gold','15m','gold20/xau20_15m'),('gold','1h','gold20/xau20_1h'),('gold','4h','gold20/xau20_4h'),('btc','15m','gold10/btc10_15m'),('btc','1h','gold10/btc10_1h'),('btc','4h','gold10/btc10_4h'),('eth','1h','data/eth_1h_1819'),('eth','1h','data/eth_1h_2526'),('eurusd','1h','data/EUR_USD_1h'),('nas','1h','data/NAS100_USD_1h')]
+rows=[]
+for mk,tf,f in sets:
+    d=load(f'{S}/{f}.csv'); 
+    if 'volume' not in d: d['volume']=0
+    sg=strategies(d); a=atr(d).values
+    o,h,l,c=[d[x].values.astype(np.float64) for x in ['open','high','low','close']]
+    yr=d.time.dt.year.values
+    for name,s in sg.items():
+        s=s.copy(); s[:210]=0
+        w=np.full(len(c),-1,np.int64); r=np.zeros(len(c))
+        simall(o,h,l,c,a,s.astype(np.int64),w,r)
+        m=w>=0
+        train=((mk=='gold')&(yr>=2010)&(yr<=2018))|((mk=='btc')&(yr<=2020))
+        test=~train & ~((mk=='gold')&(yr<2010))
+        for ph,mm in [('train',m&train),('test',m&test)]:
+            rows.append((name,mk,tf,ph,w[mm].sum(),mm.sum(),r[mm].sum()))
+    print('done',mk,tf,f,file=sys.stderr)
+df=pd.DataFrame(rows,columns=['s','mk','tf','ph','w','n','r'])
+df.to_csv(S+'/ai/tv35.csv',index=False)
+g=df.groupby(['s','ph'])[['w','n','r']].sum().unstack()
+out=pd.DataFrame({'train':g['w']['train']/g['n']['train']*100,'test':g['w']['test']/g['n']['test']*100,'R':g['r']['test']/g['n']['test'],'n':g['n']['test']})
+gg=df[(df.mk=='gold')&(df.ph=='test')].groupby('s')[['w','n']].sum(); out['gold']=gg.w/gg.n*100
+print(out.sort_values('test',ascending=False).round(3).to_string())
