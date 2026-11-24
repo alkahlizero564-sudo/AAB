@@ -68,7 +68,22 @@ class AppState extends ChangeNotifier {
   IndHealth? _aiH(int top, int base) => top == 0 ? null : (base + (top == 15 ? 1 : 0) < aiHealth.length ? aiHealth[base + (top == 15 ? 1 : 0)] : null);
   IndHealth? get smHealthNow => smAi == 0 ? smHealth : _aiH(smAi, 0);
   IndHealth? get aabHealthNow => aabAi == 0 ? aabHealth : _aiH(aabAi, 2);
-  bool kingNearOnly = false; // King: دخول قريب فقط (< 0.75 ATR من قاع/قمة آخر 5 شموع)
+  bool kingNearOnly = false;
+  /// ثبات الإشارات: صفقة ظهرت مرة (على شمعة مغلقة) تبقى ولا تختفي عند تحديث الشموع،
+  /// حتى لو تحرّكت درجة الذكاء قليلاً حول الحد. المفتاح: وقت الشمعة + الاتجاه.
+  final Map<String, Set<String>> _sticky = {};
+  bool Function(int, int) _keep(String name) {
+    final set = _sticky.putIfAbsent(name, () => <String>{});
+    final c = candles;
+    return (i, d) => i >= 0 && i < c.length && set.contains('${c[i].time.millisecondsSinceEpoch}|$d');
+  }
+  void _remember(String name, List<PastSignal>? l) {
+    if (l == null) return;
+    final set = _sticky.putIfAbsent(name, () => <String>{});
+    for (final x in l) {
+      if (x.i >= 0 && x.i < candles.length - 1) set.add('${candles[x.i].time.millisecondsSinceEpoch}|${x.dir}');
+    }
+  } // King: دخول قريب فقط (< 0.75 ATR من قاع/قمة آخر 5 شموع)
   StResult? stR; // مؤشر ST (إشارات Mp عالية الثقة حسب النموذج المتعلّم)
   AllResult? dmR; // مؤشر DM (خاص بالذهب: Mp مع الترند اليومي في السوق الهادئ)
   List<Candle>? daily; // شموع يومية (للوحة الاتجاهات و DM)
@@ -257,6 +272,7 @@ class AppState extends ChangeNotifier {
 
   void _resetData() {
     _gen++;
+    _sticky.clear();
     candles = [];
     htf = null;
     _htfAt = null;
@@ -495,15 +511,19 @@ class AppState extends ChangeNotifier {
   void _rebuildKing() {
     final mp = mpR;
     if (mp == null) return;
-    kingR = buildKing(candles, mp, top: kingTop, stars: starR, sm: smR, km: kmR, daily: daily, nearOnly: kingNearOnly);
+    final kn = 'King|$kingTop|$kingNearOnly';
+    kingR = buildKing(candles, mp, top: kingTop, stars: starR, sm: smR, km: kmR, daily: daily, nearOnly: kingNearOnly, stick: _keep(kn));
+    _remember(kn, kingR?.res.signals);
     _applyAi();
   }
 
   /// فلتر الذكاء (King) على SM و AAB حسب اختيار المستخدم.
   void _applyAi() {
     final e = kingR?.eval;
-    smView = smR == null ? null : kingFilter(smR!, e, smAi);
-    forecast = _fcRaw == null ? null : kingFilterForecast(_fcRaw!, e, aabAi);
+    smView = smR == null ? null : kingFilter(smR!, e, smAi, keep: _keep('SM'));
+    forecast = _fcRaw == null ? null : kingFilterForecast(_fcRaw!, e, aabAi, keep: _keep('AAB'));
+    _remember('SM', smView?.signals);
+    _remember('AAB', forecast?.signals);
   }
 
 
@@ -668,9 +688,7 @@ class AppState extends ChangeNotifier {
     AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final hist = c.length; // الإشارات على كل الشموع المحمّلة (300 أو 600)
-  // توصيات AAB المعروضة: التأكيد خلال شمعة واحدة فقط (بدل 3) — نفس الدقة بلا دخول متأخر
-  // (ذهب وبيتكوين وإيثيريوم ويورو 15m-4h، 1R: 54.8-55.1% مقابل 54.6-54.7%؛ الدخول الفوري بلا تأكيد 50.4-51.1%)
-  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist, cfg: const ForecastCfg(confirm: 1));
+  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist);
   final al = aabAlgo(c, sens: 2.0, withPanel: false);
   final ak = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
   // ALL و Mp (وما بُني عليها: النجوم، ST، SM، King): AAB بالإعداد الأصلي الذي تدرّبت عليه النماذج
