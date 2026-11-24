@@ -59,8 +59,9 @@ class AppState extends ChangeNotifier {
   StarResult? starR; // مؤشر النجوم (كل إشارات Mp مع درجة الثقة)
   int starMin = 0; // أقل عدد نجوم يظهر
   int kingTop = 30; // King يعرض أعلى كم % ثقة (15 / 30 / 50 / 70)
-  int smAi = 0; // فلتر الذكاء على SM: 0 بدون، 30 أو 15 (أعلى % حسب King)
-  int aabAi = 0; // فلتر الذكاء على AAB
+  // فلتر الذكاء ثابت على SM و AAB: أعلى 30% حسب King
+  // (اختبار لم يره، 1R: SM 56.7% → 60.5% ، AAB 56.0% → 62.4%)
+  static const smAi = 30, aabAi = 30;
   AllResult? smView; // SM بعد فلتر الذكاء (للعرض)
   Forecast? _fcRaw;
   List<IndHealth?> aiHealth = const []; // [SM 30، SM 15، AAB 30، AAB 15]
@@ -505,17 +506,6 @@ class AppState extends ChangeNotifier {
     forecast = _fcRaw == null ? null : kingFilterForecast(_fcRaw!, e, aabAi);
   }
 
-  void setSmAi(int v) {
-    smAi = v;
-    _applyAi();
-    notifyListeners();
-  }
-
-  void setAabAi(int v) {
-    aabAi = v;
-    _applyAi();
-    notifyListeners();
-  }
 
   void setStarMin(int v) {
     starMin = v;

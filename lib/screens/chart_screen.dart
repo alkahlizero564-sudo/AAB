@@ -437,7 +437,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'SM',
           emoji: '〰️',
-          desc: 'Mp مع شريط المتوسطات بدون الإشارات الضعيفة — «قوي» ≈ 61%، و«بداية صعود/هبوط» عند تغيّر لون الشريط',
+          desc: 'Mp مع شريط المتوسطات + فلتر الذكاء (King أعلى 30%) — «بداية صعود/هبوط» عند تغيّر لون الشريط',
           health: st.smHealthNow,
           on: layers.sm,
           toggle: () => layers.sm = !layers.sm
@@ -477,7 +477,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'AAB',
           emoji: '📈',
-          desc: 'توصيات AAB الأساسية',
+          desc: 'توصيات AAB + فلتر الذكاء (King أعلى 30%)',
           health: st.aabHealthNow,
           on: layers.sigs,
           toggle: () => layers.sigs = !layers.sigs
@@ -530,27 +530,6 @@ class _ChartScreenState extends State<ChartScreen> {
       ),
     );
   }
-
-  /// صف «فلتر الذكاء» لمؤشر (بدون / 30% / الأقوى 15%) مع وصف الدقة.
-  List<Widget> _aiRows(String name, int v, void Function(int) set, List<String> desc) => [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: Row(children: [
-            Text('$name + ذكاء:', style: const TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
-            const SizedBox(width: 8),
-            Flexible(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: _seg(const [('0', 'بدون'), ('30', '30%'), ('15', 'الأقوى 15%')], '$v', (x) => set(int.parse(x))),
-              ),
-            ),
-          ]),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(desc[v == 0 ? 0 : v == 30 ? 1 : 2], style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-        ),
-      ];
 
   /// لوحة المؤشرات: بطاقة لكل مؤشر (لمسة = تشغيل/إيقاف) مع حالته ودقته على هذا السوق.
   void _showIndicators() {
@@ -651,6 +630,14 @@ class _ChartScreenState extends State<ChartScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
                     ),
+                  if (x.name == 'SM' || x.name == 'AAB')
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(x.name == 'SM' ? 'اختبار لم يره: 60.5% (ذهب 57%)' : 'اختبار لم يره: 62.4% (ذهب 58%)',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
+                    ),
                   if (x.name == 'نجوم')
                     const Padding(
                       padding: EdgeInsets.only(top: 2),
@@ -749,14 +736,6 @@ class _ChartScreenState extends State<ChartScreen> {
                     ),
                   ]),
                 ),
-              if (layers.sm) ..._aiRows('SM', st.smAi, (v) {
-                st.setSmAi(v);
-                setSheet(() {});
-              }, const ['كل إشارات SM: ~56.7% بهدف 1R (ذهب ~55%)', 'SM + ذكاء 30%: ~60.5% بهدف 1R (ذهب ~57%) — 42% من الصفقات', 'SM + ذكاء الأقوى 15%: ~64% بهدف 1R (ذهب ~63%) — 22% من الصفقات']),
-              if (layers.sigs) ..._aiRows('AAB', st.aabAi, (v) {
-                st.setAabAi(v);
-                setSheet(() {});
-              }, const ['كل توصيات AAB: ~56% بهدف 1R (ذهب ~55%)', 'AAB + ذكاء 30%: ~62.4% بهدف 1R (ذهب ~58%) — ثلث الصفقات', 'AAB + ذكاء الأقوى 15%: ~66% بهدف 1R (ذهب ~65%) — 18% من الصفقات']),
               if (layers.star)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -977,12 +956,12 @@ class _ChartScreenState extends State<ChartScreen> {
     final s = st.signal;
     final mk = '${st.symbol.code}|${st.tf}';
     final auto = st.settings.autoHideWeak;
-    final hideAab = auto && st.aabHealth?.light == 'red' && !forceShow.contains('AAB|$mk');
+    final hideAab = auto && st.aabHealthNow?.light == 'red' && !forceShow.contains('AAB|$mk');
     final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
     final hideDm = auto && st.dmHealth?.light == 'red' && !forceShow.contains('DM|$mk');
     final hideSt = auto && st.stHealth?.light == 'red' && !forceShow.contains('ST|$mk');
     final hideKm = auto && st.kmHealth?.light == 'red' && !forceShow.contains('KM|$mk');
-    final hideSm = auto && st.smHealth?.light == 'red' && !forceShow.contains('SM|$mk');
+    final hideSm = auto && st.smHealthNow?.light == 'red' && !forceShow.contains('SM|$mk');
     final hideMp = auto && st.mpHealth?.light == 'red' && !forceShow.contains('Mp|$mk');
     final hideZero = auto && st.zeroHealth?.light == 'red' && !forceShow.contains('0.1|$mk');
     final hideAll = auto && st.allHealth?.light == 'red' && !forceShow.contains('ALL|$mk');
@@ -1087,11 +1066,11 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
         if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
         if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
-        if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealth!, 'SM|$mk'),
+        if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealthNow!, 'SM|$mk'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
         if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
-        if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealth!, 'AAB|$mk'),
+        if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealthNow!, 'AAB|$mk'),
         ..._bars(st, eff, showAab: !(hideAab && layers.sigs)),
       ] else if (!full && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
