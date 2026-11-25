@@ -38,6 +38,7 @@ class ChartLayers {
   bool king = false; // مؤشر King: ذكاء اصطناعي
   bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
   bool q = false; // مؤشر Q: خريطة الاحتمالات للـ 12 شمعة القادمة
+  bool gg = false; // مؤشر Gg: كل إشارات Mp — ما قبله King (بنجومه) وما رفضه (باهت)
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -70,6 +71,7 @@ class ChartLayers {
     ..king = king
     ..aiak = aiak
     ..q = q
+    ..gg = gg
     ..type = type
     ..sub = sub;
 }
@@ -1229,6 +1231,15 @@ class _Painter extends CustomPainter {
           ],
           pendTagPer: [for (final _ in r.pending) 'PQ'],
           starsPer: starr == null ? null : [for (final sg in r.signals) inStars(sg) ? starr!.of(sg.i, sg.dir) : -1]);
+    }
+    // ── Gg: كل إشارات Mp — قبلها King (✓ بنجومه) أو رفضها (باهتة «مرفوضة»)
+    if (L.gg && mr != null && kingr != null) {
+      final r = mr!;
+      final st0 = [for (final sg in r.signals) kingr!.stars(sg.i, sg.dir)];
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], 'Gg', Colors.white70,
+          tagPer: [for (final k in st0) k > 0 ? 'Gg مقبولة' : 'Gg مرفوضة'],
+          starsPer: [for (final k in st0) k > 0 ? k : -1],
+          weakPer: [for (final k in st0) k == 0]);
     }
     // ── AK: علامات شراء (أخضر) وبيع (أحمر) — توصيات AAB في أعلى 15% حسب King
     if (L.aiak && akr != null) {
