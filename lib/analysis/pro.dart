@@ -225,8 +225,8 @@ String volRegime(List<double> at) {
                 : price > 1
                     ? 0.5
                     : 0.05;
-  } else if (sym.category == 'stock') {
-    step = price < 50 ? 5 : (price < 500 ? 10 : 50);
+  } else if (sym.category == 'stock' || sym.category == 'index') {
+    step = price < 50 ? 5 : (price < 500 ? 10 : (price < 5000 ? 50 : (price < 20000 ? 100 : 500)));
   } else {
     step = price >= 50 ? 1.0 : (price >= 10 ? 0.5 : 0.01);
   }

@@ -6,6 +6,7 @@ const Map<String, String> categoryAr = {
   'exotic': 'نادرة',
   'metal': 'معادن',
   'crypto': 'كريبتو',
+  'index': 'مؤشرات',
   'stock': 'أسهم',
 };
 
@@ -58,6 +59,14 @@ final List<MarketSymbol> allSymbols = [
   const MarketSymbol('XRP/USD', 'ريبل', 'crypto', 'COINBASE:XRPUSD', 4, false),
   const MarketSymbol('SOL/USD', 'سولانا', 'crypto', 'COINBASE:SOLUSD', 2, false),
   const MarketSymbol('LTC/USD', 'لايتكوين', 'crypto', 'COINBASE:LTCUSD', 2, false),
+  // المؤشرات الأمريكية (King قوي على ناسداك وداو ~62% في الاختبار، مثل الذهب)
+  const MarketSymbol('NDX', 'ناسداك 100', 'index', 'NASDAQ:NDX', 2, false),
+  const MarketSymbol('SPX', 'إس آند بي 500', 'index', 'SP:SPX', 2, false),
+  const MarketSymbol('DJI', 'داو جونز 30', 'index', 'DJ:DJI', 2, false),
+  // صناديق المؤشرات (بديل متاح دائماً في مفاتيح Twelve Data المجانية)
+  const MarketSymbol('QQQ', 'ناسداك 100 — صندوق QQQ', 'index', 'NASDAQ:QQQ', 2, false),
+  const MarketSymbol('SPY', 'إس آند بي 500 — صندوق SPY', 'index', 'AMEX:SPY', 2, false),
+  const MarketSymbol('DIA', 'داو جونز — صندوق DIA', 'index', 'AMEX:DIA', 2, false),
   const MarketSymbol('AAPL', 'أبل', 'stock', 'NASDAQ:AAPL', 2, false),
   const MarketSymbol('MSFT', 'مايكروسوفت', 'stock', 'NASDAQ:MSFT', 2, false),
   const MarketSymbol('GOOGL', 'ألفابت (جوجل)', 'stock', 'NASDAQ:GOOGL', 2, false),

@@ -19,7 +19,7 @@ class MarketsScreen extends StatefulWidget {
 bool marketOpen(MarketSymbol s, DateTime u) {
   if (s.category == 'crypto') return true;
   final wd = u.weekday, h = u.hour + u.minute / 60;
-  if (s.category == 'stock') {
+  if (s.category == 'stock' || s.category == 'index') {
     if (wd > 5) return false;
     final summer = u.month >= 3 && u.month <= 10;
     final o = summer ? 13.5 : 14.5, c = summer ? 20.0 : 21.0;
@@ -58,9 +58,10 @@ const _catIcon = {
   'major': Icons.currency_exchange_rounded,
   'minor': Icons.swap_horiz_rounded,
   'exotic': Icons.public_rounded,
+  'index': Icons.show_chart_rounded,
   'stock': Icons.business_center_outlined,
 };
-const _catOrder = ['metal', 'crypto', 'major', 'minor', 'exotic', 'stock'];
+const _catOrder = ['metal', 'crypto', 'index', 'major', 'minor', 'exotic', 'stock'];
 
 class _MarketsScreenState extends State<MarketsScreen> {
   String q = '';
