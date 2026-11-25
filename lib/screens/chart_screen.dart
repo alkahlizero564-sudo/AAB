@@ -12,6 +12,7 @@ import '../analysis/lt_indicator.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'lot_calc.dart';
 import '../widgets/common.dart';
 import '../widgets/native_chart.dart';
 
@@ -350,9 +351,9 @@ class _ChartScreenState extends State<ChartScreen> {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            width: 29,
+            width: 25,
             height: 28,
-            margin: const EdgeInsets.symmetric(horizontal: 0.5),
+            margin: const EdgeInsets.symmetric(horizontal: 0.25),
             decoration: BoxDecoration(
               gradient: primary ? AppColors.goldGrad : null,
               color: primary ? null : (on ? AppColors.gold.withOpacity(0.18) : Colors.transparent),
@@ -1167,6 +1168,7 @@ class _ChartScreenState extends State<ChartScreen> {
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               _iconTool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(st), primary: true),
               _iconTool(Icons.leaderboard_outlined, 'مقارنة المؤشرات', () => _showBench(st)),
+              _iconTool(Icons.calculate_outlined, 'حاسبة اللوت', () => showLotCalc(context, st)),
               _iconTool(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', () => setState(() => layers.sr = !layers.sr),
                   on: layers.sr),
               _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
