@@ -1370,8 +1370,9 @@ class _ChartScreenState extends State<ChartScreen> {
     final spans = <InlineSpan>[];
     for (final (i, (t, why)) in w.indexed) {
       if (i > 0) spans.add(const TextSpan(text: '  •  ', style: TextStyle(color: AppColors.border)));
-      spans.add(TextSpan(text: t, style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w800)));
-      if (why != null) spans.add(TextSpan(text: ' ($why)', style: const TextStyle(color: AppColors.muted)));
+      // عزل كل عنصر (الاسم + السبب) حتى لا يختلط ترتيب العربي والإنجليزي بين المؤشرات
+      spans.add(TextSpan(text: '\u2067$t', style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w800)));
+      spans.add(TextSpan(text: why != null ? ' ($why)\u2069' : '\u2069', style: const TextStyle(color: AppColors.muted)));
     }
     return Container(
       width: double.infinity,
