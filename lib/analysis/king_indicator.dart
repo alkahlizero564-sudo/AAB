@@ -25,6 +25,8 @@ class KingResult {
   static const empty = KingResult(AllResult([], [], [], [], 'King'), {});
   double of(int i, int d) => conf[(i, d)] ?? double.nan;
   bool isStrong(int i, int d) => (conf[(i, d)] ?? 0) >= kingQ85;
+  /// نجوم King: ⭐ أعلى 30% • ⭐⭐ أعلى 15% • ⭐⭐⭐ أعلى 7% (0 = أقل من 30%)
+  int stars(int i, int d) => kingStars(conf[(i, d)] ?? 0);
   /// الثقة كنسبة مئوية للعرض (الاحتمال المقدّر)
   int pct(int i, int d) => ((conf[(i, d)] ?? 0) * 100).round();
 }
@@ -41,6 +43,12 @@ double _predict(List<double> x) {
   return s / kingTreeStart.length;
 }
 
+/// حد أعلى 7% من نموذج King الأساسي ونموذج الفريمات الصغيرة (من توقعات التدريب نفسها).
+/// اختبار لم يره (1R): ⭐ 56.2% • ⭐⭐ 61.0% • ⭐⭐⭐ 64.2% — والفريمات الصغيرة بعد السبريد: 63.6% • 67.4% • 73.8%.
+const kingQ93 = 0.6105149837333336;
+const kingLtQ93 = 0.7012974853333335;
+int kingStars(double p) => p >= kingQ93 ? 3 : (p >= kingQ85 ? 2 : (p >= kingQ70 ? 1 : 0));
+
 /// King للفريمات الصغيرة (1m و5m)، ثم تحويل احتماله لنفس مقياس King الأساسي
 /// (نفس ترتيب الإشارات، حتى تبقى حدود أعلى 30% و15% صالحة في كل التطبيق).
 double _predictLt(List<double> x) {
@@ -53,8 +61,8 @@ double _predictLt(List<double> x) {
     s += kingLtVal[n];
   }
   final p = s / kingLtTreeStart.length;
-  const from = [0.0, ...kingLtQ, 1.0];
-  const to = [0.0, kingQ30, kingQ50, kingQ70, kingQ85, 1.0];
+  const from = [0.0, ...kingLtQ, kingLtQ93, 1.0];
+  const to = [0.0, kingQ30, kingQ50, kingQ70, kingQ85, kingQ93, 1.0];
   for (var k = 1; k < from.length; k++) {
     if (p <= from[k]) return to[k - 1] + (p - from[k - 1]) / (from[k] - from[k - 1]) * (to[k] - to[k - 1]);
   }

@@ -1208,15 +1208,13 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
-    // ── King: إشارات أعلى 30% ثقة حسب الذكاء الاصطناعي، مع نسبة الثقة
+    // ── King: إشارات أعلى 30% ثقة مع نجوم القوة (⭐ 30% • ⭐⭐ 15% • ⭐⭐⭐ 7%)
     if (L.king && kingr != null) {
       final r = kingr!.res;
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'King', AppColors.gold,
-          tagPer: [
-            for (final sg in r.signals)
-              'King ${kingr!.pct(sg.i, sg.dir)}%${kingr!.isStrong(sg.i, sg.dir) ? ' قوي' : ''}'
-          ],
-          pendTagPer: [for (final p in r.pending) 'King ${kingr!.pct(p.i, p.dir)}%']);
+          tagPer: List.filled(r.signals.length, 'King'),
+          starsPer: [for (final sg in r.signals) math.max(1, kingr!.stars(sg.i, sg.dir))],
+          pendTagPer: [for (final p in r.pending) 'King ${'⭐' * math.max(1, kingr!.stars(p.i, p.dir))}']);
     }
     // ── PQ: نفس إشارات النجوم و SM و Alka مجتمعة في مؤشر واحد (أخضر شراء، أحمر بيع)
     if (L.pq && pqr != null) {

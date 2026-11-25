@@ -415,7 +415,7 @@ class _Disclaimer extends StatelessWidget {
 /// مؤشراتنا مرتبة من الأقوى (دقة اختبار لم يره بهدف 1R).
 List<(String, String, double, AllResult?)> _ranked(AppState st) => [
       ('AK', '🎯', 66, st.akR),
-      ('King', '🤖', st.kingTop == 15 ? 62.4 : 59.5, st.kingR?.res),
+      ('King', '🤖', 59.3, st.kingR?.res),
       ('AAB', '📈', 62.4, null),
       ('SM', '〰️', 60.5, st.smView),
       ('النجوم', '⭐', 61.3, st.starV?.res),
