@@ -4,9 +4,11 @@ import 'screens/home_shell.dart';
 import 'state/app_state.dart';
 import 'state/premarket_state.dart';
 import 'theme.dart';
+import 'services/alert_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  AlertService.boot();
   runApp(
     MultiProvider(
       providers: [

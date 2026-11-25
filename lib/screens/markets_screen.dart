@@ -5,6 +5,7 @@ import '../data/symbols.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'scanner_screen.dart';
 import '../widgets/common.dart';
 
 /// شاشة الأسواق: ساعة الجلسات، السوق الحالي، المفضلة، وكل الأسواق مقسّمة حسب النوع مع حالة الفتح.
@@ -84,6 +85,8 @@ class _MarketsScreenState extends State<MarketsScreen> {
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
       children: [
         _SessionsBar(now: now),
+        const SizedBox(height: 12),
+        _ScannerButton(),
         const SizedBox(height: 12),
         _CurrentCard(st: st),
         const SizedBox(height: 12),
@@ -448,4 +451,32 @@ class _Row extends StatelessWidget {
       ),
     );
   }
+}
+
+
+/// زر ماسح الأسواق: يفتح شاشة تفحص كل الأسواق وتعرض الإشارات القوية الآن.
+class _ScannerButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ScannerScreen())),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: AppColors.goldGrad,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Row(children: [
+            Icon(Icons.radar_rounded, color: AppColors.onAccent),
+            SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('ماسح الأسواق', style: TextStyle(color: AppColors.onAccent, fontWeight: FontWeight.w800, fontSize: 15)),
+                Text('أين توجد إشارة قوية الآن؟ (AK • King • النجوم)', style: TextStyle(color: AppColors.onAccent, fontSize: 11.5)),
+              ]),
+            ),
+            Icon(Icons.chevron_left_rounded, color: AppColors.onAccent),
+          ]),
+        ),
+      );
 }
