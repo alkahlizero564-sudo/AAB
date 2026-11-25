@@ -1256,8 +1256,8 @@ class _Painter extends CustomPainter {
       _dashed(canvas, x0, xe, yT, lp, dash: 5, gap: 3);
       _dashed(canvas, x0, xe, yB, lp, dash: 5, gap: 3);
       // سهم الاتجاه في وسط الصندوق (فقط إذا الميل واضح)
-      if (q.pUp >= 0.62 || q.pUp <= 0.38) {
-        final up = q.pUp >= 0.62;
+      if (q.leanUp || q.leanDown) {
+        final up = q.leanUp;
         final cx = (x0 + xe) / 2, cy = (yT + yB) / 2, s0 = math.min(10.0, (yB - yT) / 4);
         final path = Path()
           ..moveTo(cx, cy + (up ? -s0 : s0))

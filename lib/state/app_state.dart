@@ -407,7 +407,7 @@ class AppState extends ChangeNotifier {
     _fcRaw = fc;
     _applyAi();
     _holdAll();
-    qR = buildQ(candles, tf);
+    qR = buildQ(candles, tf, th: qThreshold(symbol.category, tf));
     signal = _unify(base, fc);
     algo = al;
     if (prev != null && prev.direction == signal!.direction) {

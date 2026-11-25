@@ -14,7 +14,10 @@ class QResult {
   final double price, atr, scale; // scale = المدى المتوقع (صعود + هبوط) بوحدات ATR
   final double pUp; // احتمال +1 ATR قبل −1 ATR
   final List<QArrow> arrows; // أسهم Q السابقة على الشارت ونتائجها
-  const QResult(this.i, this.price, this.atr, this.scale, this.pUp, [this.arrows = const []]);
+  final double th; // حد الميل الواضح (سهم/اتجاه) لهذا السوق والفريم — فوق 1 = لا أسهم
+  const QResult(this.i, this.price, this.atr, this.scale, this.pUp, [this.arrows = const [], this.th = 0.62]);
+  bool get leanUp => pUp >= th;
+  bool get leanDown => pUp <= 1 - th;
 
   /// دقة أسهم Q على هذا الشارت: (صحيحة، المكتملة)
   (int, int) get arrowStats {
@@ -172,6 +175,17 @@ class QArrow {
   const QArrow(this.i, this.dir, this.result);
 }
 
+/// حد الميل حسب السوق والفريم (اختبار لم يره، +1 ATR قبل −1 ATR):
+/// كريبتو 0.62 → بيتكوين 15m 60.1%، 1h 67.3%، 4h 66.2%؛ 5m: 0.66 → 56.3% (بيتكوين) و55.8% (إيثيريوم).
+/// ذهب: 0.62 ضعيف (5m 53.4%، 15m 55.2%، 1h 46.7%، 4h 48.9%) → 0.66 على 5m/15m (55.2% / 61.2%)، ولا أسهم على 1h فما فوق.
+/// 1m: الاتجاه غير موثوق (بيتكوين 48.6%، ذهب 53-54%) → لا أسهم.
+double qThreshold(String category, String tf) {
+  if (tf == '1m') return 2.0;
+  if (category == 'crypto') return tf == '5m' ? 0.66 : 0.62;
+  if (tf == '1h' || tf == '4h' || tf == '1d') return 2.0;
+  return 0.66;
+}
+
 /// Q على آخر شمعة مغلقة + أسهمه السابقة على الشارت ونتيجة كل سهم.
 QResult? buildQ(List<Candle> c, String tf, {double th = 0.62}) {
   final n = c.length;
@@ -183,7 +197,7 @@ QResult? buildQ(List<Candle> c, String tf, {double th = 0.62}) {
   var prevLean = 0, busy = -1;
   for (var i = 120; i <= n - 2; i++) {
     final q = qc.at(i);
-    if (q == null) continue;
+    if (q == null || th > 1) continue;
     final lean = q.pUp >= th ? 1 : (q.pUp <= 1 - th ? -1 : 0);
     // سهم عند بداية ميل واضح (ولا سهم جديد قبل انتهاء نتيجة السابق)
     if (lean != 0 && lean != prevLean && i > busy) {
@@ -212,5 +226,5 @@ QResult? buildQ(List<Candle> c, String tf, {double th = 0.62}) {
     }
     prevLean = lean;
   }
-  return QResult(now.i, now.price, now.atr, now.scale, now.pUp, arrows);
+  return QResult(now.i, now.price, now.atr, now.scale, now.pUp, arrows, th);
 }

@@ -597,7 +597,7 @@ class _ChartScreenState extends State<ChartScreen> {
           if (x.name == 'Q') {
             final q = st.qR;
             if (q == null) return 'جاري الحساب…';
-            return 'السوق ${q.regimeAr} • ${q.pUp >= 0.62 ? 'أقرب للصعود' : q.pUp <= 0.38 ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
+            return 'السوق ${q.regimeAr} • ${q.leanUp ? 'أقرب للصعود' : q.leanDown ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
           }
           if (x.name == 'PQ') {
             return st.pqV == null || st.pqV!.closed == 0
@@ -2069,9 +2069,9 @@ class _QCard extends StatelessWidget {
     final sym = st.symbol;
     final mood = const ['السوق هادئ — حركة صغيرة', 'السوق عادي', 'السوق متحرك — حركة كبيرة'][q.regime];
     final col = q.regime == 2 ? AppColors.down : (q.regime == 0 ? AppColors.up : AppColors.gold);
-    final lean = q.pUp >= 0.62
+    final lean = q.leanUp
         ? ('أقرب للصعود', AppColors.up)
-        : q.pUp <= 0.38
+        : q.leanDown
             ? ('أقرب للهبوط', AppColors.down)
             : ('الاتجاه غير واضح', AppColors.muted);
     return Container(
