@@ -1,0 +1,239 @@
+import pandas as pd, numpy as np, torch, torch.nn as nn, warnings, time, sys
+warnings.filterwarnings('ignore'); torch.set_num_threads(4)
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+@njit(cache=True)
+def label(o,h,l,c,a,d,w):
+    n=len(c)
+    for i in range(3,n-1):
+        if a[i]<=0: w[i]=-1; continue
+        e=o[i+1]; ext=l[i] if d>0 else h[i]
+        for j in range(i-2,i+1):
+            ext=min(ext,l[j]) if d>0 else max(ext,h[j])
+        risk=min(max((e-ext)*d+0.1*a[i],0.7*a[i]),2.5*a[i])
+        t1=e+d*risk; st=e-d*risk; res=-1
+        for j in range(i+1,min(n,i+80)):
+            if (d>0 and l[j]<=st) or (d<0 and h[j]>=st): res=0; break
+            if (d>0 and h[j]>=t1) or (d<0 and l[j]<=t1): res=1; break
+        w[i]=res if res>=0 else 0
+def load(p):
+    d=pd.read_csv(p); d.columns=[x.lower() for x in d.columns]; d=d.rename(columns={d.columns[0]:'time'})
+    d['time']=pd.to_datetime(d.time,utc=True,errors='coerce'); d=d.dropna(subset=['time']).reset_index(drop=True)
+    if 'volume' not in d: d['volume']=0
+    return d
+@njit(cache=True)
+def ctx_feats(o,h,l,c,v,a,F):
+    n=len(c)
+    # OB/FVG: آخر 4 مناطق لكل جهة (أعلى، أسفل، نشطة)
+    obt=np.zeros((2,4)); obb=np.zeros((2,4)); oba=np.zeros((2,4),np.int64)
+    fvt=np.zeros((2,4)); fvb=np.zeros((2,4)); fva=np.zeros((2,4),np.int64)
+    lastH=-1; lastL=-1; hB=True; lB=True
+    for i in range(160,n):
+        j=i-3
+        isH=True; isL=True
+        for q in range(j-3,j+4):
+            if q==j: continue
+            if h[q]>=h[j]: isH=False
+            if l[q]<=l[j]: isL=False
+        if isH: lastH=j; hB=False
+        if isL: lastL=j; lB=False
+        if lastH>=0 and (not hB) and c[i]>h[lastH]:
+            hB=True; li=lastH
+            for q in range(lastH,i+1):
+                if l[q]<l[li]: li=q
+            for q in range(li,max(0,li-6),-1):
+                if c[q]<o[q]:
+                    for s_ in range(3,0,-1): obt[0,s_]=obt[0,s_-1]; obb[0,s_]=obb[0,s_-1]; oba[0,s_]=oba[0,s_-1]
+                    obt[0,0]=h[q]; obb[0,0]=l[q]; oba[0,0]=1; break
+        if lastL>=0 and (not lB) and c[i]<l[lastL]:
+            lB=True; hi_=lastL
+            for q in range(lastL,i+1):
+                if h[q]>h[hi_]: hi_=q
+            for q in range(hi_,max(0,hi_-6),-1):
+                if c[q]>o[q]:
+                    for s_ in range(3,0,-1): obt[1,s_]=obt[1,s_-1]; obb[1,s_]=obb[1,s_-1]; oba[1,s_]=oba[1,s_-1]
+                    obt[1,0]=h[q]; obb[1,0]=l[q]; oba[1,0]=1; break
+        if l[i]>h[i-2] and l[i]-h[i-2]>=0.15*a[i]:
+            for s_ in range(3,0,-1): fvt[0,s_]=fvt[0,s_-1]; fvb[0,s_]=fvb[0,s_-1]; fva[0,s_]=fva[0,s_-1]
+            fvt[0,0]=l[i]; fvb[0,0]=h[i-2]; fva[0,0]=1
+        if h[i]<l[i-2] and l[i-2]-h[i]>=0.15*a[i]:
+            for s_ in range(3,0,-1): fvt[1,s_]=fvt[1,s_-1]; fvb[1,s_]=fvb[1,s_-1]; fva[1,s_]=fva[1,s_-1]
+            fvt[1,0]=l[i-2]; fvb[1,0]=h[i]; fva[1,0]=1
+        for s_ in range(4):  # إبطال بالإغلاق خلف المنطقة
+            if oba[0,s_]==1 and c[i]<obb[0,s_]: oba[0,s_]=0
+            if oba[1,s_]==1 and c[i]>obt[1,s_]: oba[1,s_]=0
+            if fva[0,s_]==1 and c[i]<fvb[0,s_]: fva[0,s_]=0
+            if fva[1,s_]==1 and c[i]>fvt[1,s_]: fva[1,s_]=0
+        ai=a[i] if a[i]>0 else 1.0
+        # فوليوم بروفايل 150 شمعة
+        lo=1e18; hi=-1e18
+        for q in range(i-150,i+1):
+            lo=min(lo,l[q]); hi=max(hi,h[q])
+        st=(hi-lo)/30.0+1e-12; w=np.zeros(30)
+        for q in range(i-150,i+1):
+            b0=min(29,max(0,int((l[q]-lo)/st))); b1=min(29,max(0,int((h[q]-lo)/st)))
+            for b in range(b0,b1+1): w[b]+=v[q]/(b1-b0+1)
+        pb=0
+        for b in range(30):
+            if w[b]>w[pb]: pb=b
+        tot=w.sum(); acc=w[pb]; up=pb; dn=pb
+        while acc<tot*0.7 and (up<29 or dn>0):
+            nu=w[up+1] if up<29 else -1.0; nd=w[dn-1] if dn>0 else -1.0
+            if nu>=nd: up+=1; acc+=w[up]
+            else: dn-=1; acc+=w[dn]
+        poc=lo+st*(pb+0.5); vah=lo+st*(up+1); val=lo+st*dn
+        cb=min(29,max(0,int((c[i]-lo)/st)))
+        h100=-1e18; l100=1e18
+        for q in range(i-100,i+1):
+            h100=max(h100,h[q]); l100=min(l100,l[q])
+        for di in range(2):  # 0 شراء، 1 بيع
+            d=1.0 if di==0 else -1.0
+            # أقرب OB/FVG في اتجاه الصفقة (تحت السعر للشراء)
+            bo=10.0; inob=0.0; bf=10.0; infv=0.0
+            for s_ in range(4):
+                if oba[di,s_]==1:
+                    edge=obt[di,s_] if di==0 else obb[di,s_]
+                    dist=(c[i]-edge)*d/ai
+                    if c[i]<=obt[di,s_] and c[i]>=obb[di,s_]: inob=1.0; dist=0.0
+                    if dist>=0 and dist<bo: bo=dist
+                if fva[di,s_]==1:
+                    edge=fvt[di,s_] if di==0 else fvb[di,s_]
+                    dist=(c[i]-edge)*d/ai
+                    if c[i]<=fvt[di,s_] and c[i]>=fvb[di,s_]: infv=1.0; dist=0.0
+                    if dist>=0 and dist<bf: bf=dist
+            fib=(h100-c[i])/(h100-l100+1e-12) if di==0 else (c[i]-l100)/(h100-l100+1e-12)
+            edgeV=val if di==0 else vah
+            F[i,di,0]=fib; F[i,di,1]=min(bo,10.0); F[i,di,2]=inob; F[i,di,3]=min(bf,10.0); F[i,di,4]=infv
+            F[i,di,5]=(c[i]-poc)*d/ai; F[i,di,6]=1.0 if (c[i]>=val and c[i]<=vah) else 0.0
+            F[i,di,7]=w[cb]/(w[pb]+1e-12); F[i,di,8]=(c[i]-edgeV)*d/ai
+
+@njit(cache=True)
+def smc_feats(o,h,l,c,a,hrs,G):
+    n=len(c)
+    ph=np.full(n,np.nan); pl=np.full(n,np.nan)  # آخر قمة/قاع مؤكد (3/3) معروف عند i
+    lastH=np.nan; lastL=np.nan; lastHi=-1; lastLi=-1
+    prevH=np.nan; prevL=np.nan
+    H8a=np.nan; H8b=np.nan; L8a=np.nan; L8b=np.nan; H8i=-1; L8i=-1
+    bos=0; bosAt=-1; prevBos=0; chochAt=-1
+    eqh=np.zeros(0); 
+    hs=np.zeros(30); hsi=np.zeros(30,np.int64); hn=0
+    ls=np.zeros(30); lsi=np.zeros(30,np.int64); ln_=0
+    sweptLo=-999; sweptHi=-999
+    for i in range(20,n):
+        j=i-3
+        isH=True; isL=True
+        for q in range(j-3,j+4):
+            if q==j: continue
+            if h[q]>=h[j]: isH=False
+            if l[q]<=l[j]: isL=False
+        if isH:
+            prevH=lastH; lastH=h[j]; lastHi=j
+            for s_ in range(29,0,-1): hs[s_]=hs[s_-1]; hsi[s_]=hsi[s_-1]
+            hs[0]=h[j]; hsi[0]=j; hn=min(hn+1,30)
+        if isL:
+            prevL=lastL; lastL=l[j]; lastLi=j
+            for s_ in range(29,0,-1): ls[s_]=ls[s_-1]; lsi[s_]=lsi[s_-1]
+            ls[0]=l[j]; lsi[0]=j; ln_=min(ln_+1,30)
+        # هيكل كبير 8/8
+        if i>=16:
+            k=i-8; iH=True; iL=True
+            for q in range(k-8,k+9):
+                if q==k: continue
+                if h[q]>=h[k]: iH=False
+                if l[q]<=l[k]: iL=False
+            if iH: H8b=H8a; H8a=h[k]; H8i=k
+            if iL: L8b=L8a; L8a=l[k]; L8i=k
+        # BOS / CHoCH
+        if not np.isnan(lastH) and c[i]>lastH and c[i-1]<=lastH:
+            if bos==-1: chochAt=i
+            prevBos=bos; bos=1; bosAt=i
+        if not np.isnan(lastL) and c[i]<lastL and c[i-1]>=lastL:
+            if bos==1: chochAt=i
+            prevBos=bos; bos=-1; bosAt=i
+        # سحب سيولة: كسر قاع/قمة مؤكدة والإغلاق داخلها
+        for s_ in range(min(ln_,10)):
+            if l[i]<ls[s_] and c[i]>ls[s_] and i-lsi[s_]<=100: sweptLo=i; break
+        for s_ in range(min(hn,10)):
+            if h[i]>hs[s_] and c[i]<hs[s_] and i-hsi[s_]<=100: sweptHi=i; break
+        ai=a[i] if a[i]>0 else 1.0
+        # EQH/EQL: قمتان (قاعان) متساويتان تقريباً فوق (تحت) السعر = سيولة
+        eqhD=10.0; eqlD=10.0
+        for x in range(min(hn,12)):
+            for y in range(x+1,min(hn,12)):
+                if abs(hs[x]-hs[y])<0.15*ai and hs[x]>c[i] and i-hsi[y]<=150:
+                    dd=(hs[x]-c[i])/ai
+                    if dd<eqhD: eqhD=dd
+        for x in range(min(ln_,12)):
+            for y in range(x+1,min(ln_,12)):
+                if abs(ls[x]-ls[y])<0.15*ai and ls[x]<c[i] and i-lsi[y]<=150:
+                    dd=(c[i]-ls[x])/ai
+                    if dd<eqlD: eqlD=dd
+        # بريميوم/ديسكاونت داخل آخر موجة كبيرة
+        rng_hi=max(H8a,lastH) if not np.isnan(H8a) else lastH
+        rng_lo=min(L8a,lastL) if not np.isnan(L8a) else lastL
+        pdpos=0.5
+        if not np.isnan(rng_hi) and not np.isnan(rng_lo) and rng_hi>rng_lo: pdpos=(c[i]-rng_lo)/(rng_hi-rng_lo)
+        ms8=0.0
+        if not np.isnan(H8b): ms8+=1.0 if H8a>H8b else -1.0
+        if not np.isnan(L8b): ms8+=1.0 if L8a>L8b else -1.0
+        body=(c[i]-o[i])/ai; mxb=0.0; mnb=0.0
+        for q in range(i-4,i+1):
+            b_=(c[q]-o[q])/ai
+            if b_>mxb: mxb=b_
+            if b_<mnb: mnb=b_
+        fvgUp=0.0; fvgDn=0.0
+        for q in range(i-4,i+1):
+            if l[q]>h[q-2]: fvgUp=1.0
+            if h[q]<l[q-2]: fvgDn=1.0
+        hr=hrs[i]; lon=1.0 if (hr>=7 and hr<10) else 0.0; ny=1.0 if (hr>=12 and hr<15) else 0.0
+        for di in range(2):
+            d=1.0 if di==0 else -1.0
+            G[i,di,0]=bos*d; G[i,di,1]=min(300.0,float(i-bosAt)) if bosAt>=0 else 300.0
+            G[i,di,2]=(1.0 if (chochAt>=0 and i-chochAt<=10 and bos*d>0) else 0.0)
+            G[i,di,3]=min(300.0,float(i-chochAt)) if chochAt>=0 else 300.0
+            G[i,di,4]=ms8*d
+            G[i,di,5]=pdpos if di==0 else 1-pdpos  # منخفض = ديسكاونت للشراء
+            G[i,di,6]=(1.0 if (di==0 and i-sweptLo<=5) or (di==1 and i-sweptHi<=5) else 0.0)
+            G[i,di,7]=(1.0 if (di==0 and i-sweptHi<=5) or (di==1 and i-sweptLo<=5) else 0.0)
+            G[i,di,8]=min(eqhD,10.0) if di==0 else min(eqlD,10.0)   # سيولة أمام الصفقة (هدف)
+            G[i,di,9]=min(eqlD,10.0) if di==0 else min(eqhD,10.0)   # سيولة خلف الصفقة
+            G[i,di,10]=body*d; G[i,di,11]=(mxb if di==0 else -mnb); G[i,di,12]=(-mnb if di==0 else mxb)
+            G[i,di,13]=fvgUp if di==0 else fvgDn; G[i,di,14]=fvgDn if di==0 else fvgUp
+            G[i,di,15]=lon; G[i,di,16]=ny
+            G[i,di,17]=((c[i]-lastL)/ai if di==0 else (lastH-c[i])/ai) if not (np.isnan(lastL) or np.isnan(lastH)) else 0.0
+
+sets=[('gold','15m','gold20/xau20_15m'),('gold','1h','gold20/xau20_1h'),('gold','4h','gold20/xau20_4h'),('btc','15m','gold10/btc10_15m'),('btc','1h','gold10/btc10_1h'),('btc','4h','gold10/btc10_4h'),('eth','1h','data/eth_1h_1819'),('eth','1h','data/eth_1h_2526'),('eur','1h','data/EUR_USD_1h')]
+Xs=[];ys=[];meta=[]
+for k_,(mk,tf,f) in enumerate(sets):
+    d=load(f'{S}/{f}.csv'); o,h,l,c=[d[x].values.astype(np.float64) for x in ['open','high','low','close']]
+    v=d.volume.fillna(0).values.astype(np.float64)+1e-9
+    pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc))); a=pd.Series(tr).ewm(alpha=1/14,adjust=False).mean().values
+    wb=np.zeros(len(c),np.int64); ws=np.zeros(len(c),np.int64); label(o,h,l,c,a,1,wb); label(o,h,l,c,a,-1,ws)
+    F=np.zeros((len(c),2,9)); ctx_feats(o,h,l,c,v,a,F)
+    hrs=((d.time.dt.hour.values-(2 if mk=='gold' else 0))%24).astype(np.int64)
+    G=np.zeros((len(c),2,18)); smc_feats(o,h,l,c,a,hrs,G)
+    yr=d.time.dt.year.values
+    tr_=((mk=='gold')&(yr>=2010)&(yr<=2018))|((mk=='btc')&(yr<=2020)); te_=~tr_&~((mk=='gold')&(yr<2010))
+    ii=np.arange(250,len(c)-81)
+    for di,dr in ((0,1),(1,-1)):
+        X=np.concatenate([G[ii,di],F[ii,di]],1)
+        Xs.append(X); ys.append((wb if dr>0 else ws)[ii]); meta.append(np.stack([np.full(len(ii),k_),tr_[ii],te_[ii],np.full(len(ii),dr)],1))
+    print('loaded',mk,tf,file=sys.stderr,flush=True)
+X=np.nan_to_num(np.concatenate(Xs)).astype(np.float32); y=np.concatenate(ys); M=np.concatenate(meta)
+names=['bos','bos_age','choch_recent','choch_age','ms8','pd_disc','swept_behind','swept_ahead','liq_ahead','liq_behind','body','disp_with','disp_against','fvg_with','fvg_against','london','ny','from_swing',
+       'fib','ob_dist','in_ob','fvg_dist','in_fvg','poc','in_va','node','va_edge']
+tr=M[:,1]==1; te=M[:,2]==1
+mk=np.array([sets[int(k)][0] for k in M[:,0]])
+print('train',tr.sum(),'test',te.sum(),'base test',round(y[te].mean()*100,1),flush=True)
+import lightgbm as lgb
+rs=np.random.RandomState(0); sub=np.where(tr)[0]; sub=sub[rs.rand(len(sub))<0.5]
+m=lgb.LGBMClassifier(n_estimators=500,learning_rate=0.02,num_leaves=31,min_child_samples=500,subsample=0.8,subsample_freq=1,colsample_bytree=0.7,reg_lambda=10,verbose=-1).fit(X[sub],y[sub])
+pv=m.predict_proba(X[tr][::5])[:,1]; pt=m.predict_proba(X[te])[:,1]; yt=y[te]; mt=mk[te]
+print('=== مؤشر SMC الذكي (كل مفاهيم SMC معاً)، هدف 1R عادل')
+for top in [10,5,2,1,0.5]:
+    thr=np.quantile(pv,1-top/100); k=pt>=thr
+    s=f"  أعلى {top}%: {yt[k].mean()*100:.1f}% n={k.sum()}"
+    for g in ['gold','btc','eth','eur']: s+=f" | {g} {yt[k&(mt==g)].mean()*100:.1f}%"
+    print(s,flush=True)
+imp=sorted(zip(m.feature_importances_,names),reverse=True)[:10]
+print('أهم المفاهيم:',[n for _,n in imp])
