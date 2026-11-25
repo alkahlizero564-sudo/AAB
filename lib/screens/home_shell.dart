@@ -33,6 +33,7 @@ class HomeShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
     final onChart = st.tab == 1;
+    final land = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       // صفحة الشارت لها رأسها الخاص (الرمز والأدوات): نخفي الشريط العلوي لنكسب مساحة
       appBar: onChart
@@ -165,7 +166,7 @@ class HomeShell extends StatelessWidget {
         ),
         ),
       ),
-      bottomNavigationBar: onChart && st.chartFull
+      bottomNavigationBar: onChart && (st.chartFull || land)
           ? null
           : SafeArea(
               top: false,

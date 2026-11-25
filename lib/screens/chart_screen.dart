@@ -27,6 +27,19 @@ class ChartScreen extends StatefulWidget {
 class _ChartScreenState extends State<ChartScreen> {
   final layers = debugChartLayers ?? ChartLayers();
   bool full = false; // وضع الشاشة الكاملة للشارت
+  bool _wasLand = false;
+
+  /// قلب الشاشة: أفقي (الشارت فقط) أو العودة للوضع العمودي.
+  Future<void> _rotate(bool landscape) async {
+    HapticFeedback.mediumImpact();
+    if (landscape) {
+      await SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+    } else {
+      await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      // بعد العودة: نسمح بالدوران التلقائي مرة أخرى
+      Future.delayed(const Duration(seconds: 2), () => SystemChrome.setPreferredOrientations(const []));
+    }
+  }
   int? sel; // الشمعة المختارة بالضغط المطوّل
   bool why = false; // إظهار سبب القرار في الشريط السفلي
   final forceShow = <String>{}; // مؤشرات طلب المستخدم إظهارها رغم أنها 🔴
@@ -337,9 +350,9 @@ class _ChartScreenState extends State<ChartScreen> {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            width: 32,
+            width: 29,
             height: 28,
-            margin: const EdgeInsets.symmetric(horizontal: 1),
+            margin: const EdgeInsets.symmetric(horizontal: 0.5),
             decoration: BoxDecoration(
               gradient: primary ? AppColors.goldGrad : null,
               color: primary ? null : (on ? AppColors.gold.withOpacity(0.18) : Colors.transparent),
@@ -1124,8 +1137,16 @@ class _ChartScreenState extends State<ChartScreen> {
         dm: layers.dm && !hideDm,
         st: layers.st && !hideSt);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkAlerts(st, eff));
+    // الوضع الأفقي (قلب الشاشة): الشارت وحده يملأ الشاشة مثل TradingView
+    final land = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final fs = full || land;
+    if (land != _wasLand) {
+      _wasLand = land;
+      SystemChrome.setEnabledSystemUIMode(land ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge);
+    }
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
+      if (!land)
       Container(
         padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
         decoration: const BoxDecoration(
@@ -1162,6 +1183,7 @@ class _ChartScreenState extends State<ChartScreen> {
               _iconTool(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', () => setState(() => layers.sr = !layers.sr),
                   on: layers.sr),
               _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
+              _iconTool(Icons.screen_rotation_rounded, 'قلب الشاشة', () => _rotate(true)),
               _iconTool(
                   full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded, full ? 'إظهار الأدوات' : 'شاشة كاملة',
                   () {
@@ -1172,7 +1194,7 @@ class _ChartScreenState extends State<ChartScreen> {
           ),
         ]),
       ),
-      if (!full)
+      if (!fs)
         // صف 2: الأُطر الزمنية | المؤشرات (مع لون حالتها)
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 5, 8, 3),
@@ -1224,13 +1246,19 @@ class _ChartScreenState extends State<ChartScreen> {
               left: 6,
               child: IgnorePointer(child: _TrendBoard(board: st.board)),
             ),
+          if (land)
+            Positioned(
+              top: 6,
+              right: 70,
+              child: _LandBar(st: st, onExit: () => _rotate(false), onLayers: _showLayers, onInds: _showIndicators),
+            ),
         ]),
       ),
       // الشاشة الكاملة: الشارت وحده بدون أي أشرطة
-      if (!full && st.forecast != null) ...[
+      if (!fs && st.forecast != null) ...[
         if (sel != null && sel! < st.candles.length)
           _candlePanel(st, sel!)
-        else if (!full)
+        else if (!fs)
           _forecastBar(st.forecast!, st.symbol),
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
@@ -1242,7 +1270,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
         if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealthNow!, 'AAB|$mk'),
         ..._bars(st, eff, showAab: !(hideAab && layers.sigs)),
-      ] else if (!full && st.forecast == null && s != null)
+      ] else if (!fs && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
     ]);
   }
@@ -1934,6 +1962,75 @@ class _TrendBoard extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         for (final k in const ['1h', '4h', '1d'])
           if (board.containsKey(k)) chip(k, board[k]!),
+      ]),
+    );
+  }
+}
+
+
+/// شريط عائم صغير فوق الشارت في الوضع الأفقي: الرمز والسعر، الفريمات، المؤشرات/الطبقات، والعودة.
+class _LandBar extends StatelessWidget {
+  final AppState st;
+  final VoidCallback onExit, onLayers, onInds;
+  const _LandBar({required this.st, required this.onExit, required this.onLayers, required this.onInds});
+  @override
+  Widget build(BuildContext context) {
+    final c = st.candles;
+    final px = c.isEmpty ? double.nan : c.last.close;
+    Widget btn(IconData i, VoidCallback f, {bool gold = false}) => InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: f,
+          child: Container(
+            width: 30,
+            height: 28,
+            decoration: BoxDecoration(
+              gradient: gold ? AppColors.goldGrad : null,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(i, size: 17, color: gold ? AppColors.onAccent : AppColors.text),
+          ),
+        );
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppColors.card.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border, width: 0.8),
+        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 10)],
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(st.symbol.code, style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w900, fontSize: 12.5)),
+        const SizedBox(width: 6),
+        if (!px.isNaN)
+          Text(st.symbol.fmt(px), style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(width: 8),
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            for (final t in AppState.timeframes.reversed)
+              InkWell(
+                borderRadius: BorderRadius.circular(7),
+                onTap: () => st.setTf(t),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  decoration: BoxDecoration(
+                    gradient: st.tf == t ? AppColors.goldGrad : null,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(t.toUpperCase(),
+                      style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          color: st.tf == t ? AppColors.onAccent : AppColors.muted)),
+                ),
+              ),
+          ]),
+        ),
+        const SizedBox(width: 6),
+        btn(Icons.auto_graph_rounded, onInds),
+        btn(Icons.layers_outlined, onLayers),
+        btn(Icons.screen_lock_portrait_rounded, onExit, gold: true),
       ]),
     );
   }
