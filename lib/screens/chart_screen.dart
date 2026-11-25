@@ -597,7 +597,7 @@ class _ChartScreenState extends State<ChartScreen> {
           if (x.name == 'Q') {
             final q = st.qR;
             if (q == null) return 'جاري الحساب…';
-            return 'السوق ${q.regimeAr} • ${q.pUp >= 0.55 ? 'أقرب للصعود' : q.pUp <= 0.45 ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
+            return 'السوق ${q.regimeAr} • ${q.pUp >= 0.62 ? 'أقرب للصعود' : q.pUp <= 0.38 ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
           }
           if (x.name == 'PQ') {
             return st.pqR == null || st.pqR!.closed == 0
@@ -2069,10 +2069,10 @@ class _QCard extends StatelessWidget {
     final sym = st.symbol;
     final mood = const ['السوق هادئ — حركة صغيرة', 'السوق عادي', 'السوق متحرك — حركة كبيرة'][q.regime];
     final col = q.regime == 2 ? AppColors.down : (q.regime == 0 ? AppColors.up : AppColors.gold);
-    final lean = q.pUp >= 0.55
-        ? ('أقرب للصعود ⬆', AppColors.up)
-        : q.pUp <= 0.45
-            ? ('أقرب للهبوط ⬇', AppColors.down)
+    final lean = q.pUp >= 0.62
+        ? ('أقرب للصعود', AppColors.up)
+        : q.pUp <= 0.38
+            ? ('أقرب للهبوط', AppColors.down)
             : ('الاتجاه غير واضح', AppColors.muted);
     return Container(
       constraints: const BoxConstraints(maxWidth: 220),
@@ -2094,6 +2094,9 @@ class _QCard extends StatelessWidget {
             style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w800)),
         const SizedBox(height: 2),
         Text(lean.$1, style: TextStyle(color: lean.$2, fontSize: 11, fontWeight: FontWeight.w700)),
+        if (q.arrowStats.$2 > 0)
+          Text('أسهم Q على هذا الشارت: صحيحة ${q.arrowStats.$1} من ${q.arrowStats.$2} (${(q.arrowStats.$1 / q.arrowStats.$2 * 100).round()}%)',
+              style: const TextStyle(color: AppColors.muted, fontSize: 10)),
       ]),
     );
   }
