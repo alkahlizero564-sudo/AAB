@@ -410,6 +410,14 @@ class _ChartScreenState extends State<ChartScreen> {
           toggle: () => layers.aiak = !layers.aiak
         ),
         (
+          name: 'Q',
+          emoji: '🗺️',
+          desc: 'خريطة الاحتمالات: أين سيكون السعر خلال 12 شمعة (منطقة 70% و90%) وحجم الحركة المتوقع',
+          health: null,
+          on: layers.q,
+          toggle: () => layers.q = !layers.q
+        ),
+        (
           name: 'PQ',
           emoji: '🔷',
           desc: 'نفس إشارات النجوم + SM + Alka مجتمعة في مؤشر واحد — أخضر للشراء وأحمر للبيع',
@@ -574,6 +582,7 @@ class _ChartScreenState extends State<ChartScreen> {
         final byName = {for (final x in inds) x.name: x};
         const groups = <(String, IconData, List<String>)>[
           ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['AK', 'King', 'AAB', 'SM']),
+          ('خريطة الاحتمالات', Icons.map_rounded, ['Q']),
           ('مؤشرات الثقة', Icons.verified_rounded, ['نجوم', 'PQ', 'ST', 'KM', 'DM']),
           ('بعيد المدى', Icons.landscape_rounded, ['LT']),
           ('الأساسية', Icons.layers_rounded, ['Mp', 'ALL', 'Alka', '0.1']),
@@ -585,6 +594,11 @@ class _ChartScreenState extends State<ChartScreen> {
           final h = x.health;
           if (x.name == 'نجوم') return st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق';
           if (x.name == 'LT') return _ltStatus(st);
+          if (x.name == 'Q') {
+            final q = st.qR;
+            if (q == null) return 'جاري الحساب…';
+            return 'الحركة القادمة: ${q.regimeAr} • ${q.pUp >= 0.55 ? 'ميل للصعود ${(q.pUp * 100).round()}%' : q.pUp <= 0.45 ? 'ميل للهبوط ${((1 - q.pUp) * 100).round()}%' : 'متوازن'}';
+          }
           if (x.name == 'PQ') {
             return st.pqR == null || st.pqR!.closed == 0
                 ? 'جاري الحساب…'
@@ -1230,6 +1244,7 @@ class _ChartScreenState extends State<ChartScreen> {
               ltR: st.ltR,
               pqR: st.pqR,
               akR: st.akR,
+              qR: st.qR,
               kingR: st.kingR,
               allR: st.allR,
               repaint: st.liveTick,
@@ -1245,6 +1260,12 @@ class _ChartScreenState extends State<ChartScreen> {
               top: 60,
               left: 6,
               child: IgnorePointer(child: _TrendBoard(board: st.board)),
+            ),
+          if (eff.q && st.qR != null && !land)
+            Positioned(
+              bottom: 26,
+              left: 6,
+              child: IgnorePointer(child: _QCard(st: st)),
             ),
           if (land)
             Positioned(
@@ -2031,6 +2052,55 @@ class _LandBar extends StatelessWidget {
         btn(Icons.auto_graph_rounded, onInds),
         btn(Icons.layers_outlined, onLayers),
         btn(Icons.screen_lock_portrait_rounded, onExit, gold: true),
+      ]),
+    );
+  }
+}
+
+
+/// بطاقة Q الصغيرة: حجم الحركة، منطقة 70%، الميل، واحتمال لمس مستويات قريبة.
+class _QCard extends StatelessWidget {
+  final AppState st;
+  const _QCard({required this.st});
+  @override
+  Widget build(BuildContext context) {
+    final q = st.qR!;
+    final sym = st.symbol;
+    final col = q.regime == 2 ? AppColors.down : (q.regime == 0 ? AppColors.up : AppColors.gold);
+    final lean = q.pUp >= 0.55
+        ? ('ميل للصعود ${(q.pUp * 100).round()}%', AppColors.up)
+        : q.pUp <= 0.45
+            ? ('ميل للهبوط ${((1 - q.pUp) * 100).round()}%', AppColors.down)
+            : ('متوازن', AppColors.muted);
+    final up2 = q.price + 2 * q.atr, dn2 = q.price - 2 * q.atr;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 230),
+      padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+      decoration: BoxDecoration(
+        color: AppColors.card.withOpacity(0.93),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: AppColors.gold.withOpacity(0.6), width: 0.8),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Q', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w900, fontSize: 13)),
+          const SizedBox(width: 6),
+          const Text('12 شمعة القادمة', style: TextStyle(color: AppColors.muted, fontSize: 10)),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(color: col.withOpacity(0.16), borderRadius: BorderRadius.circular(6)),
+            child: Text('حركة ${q.regimeAr}', style: TextStyle(color: col, fontSize: 10, fontWeight: FontWeight.w800)),
+          ),
+        ]),
+        const SizedBox(height: 3),
+        Text('منطقة 70%: \u2066${sym.fmt(q.band(1, 12))} – ${sym.fmt(q.band(3, 12))}\u2069',
+            style: const TextStyle(color: AppColors.text, fontSize: 11, fontWeight: FontWeight.w700)),
+        Text(lean.$1, style: TextStyle(color: lean.$2, fontSize: 10.5, fontWeight: FontWeight.w700)),
+        Text('احتمال لمس \u2066${sym.fmt(up2)}\u2069 فوق: ${(q.touchProb(up2) * 100).round()}%',
+            style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+        Text('احتمال لمس \u2066${sym.fmt(dn2)}\u2069 تحت: ${(q.touchProb(dn2) * 100).round()}%',
+            style: const TextStyle(color: AppColors.muted, fontSize: 10)),
       ]),
     );
   }

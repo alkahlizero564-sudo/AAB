@@ -1,0 +1,66 @@
+exec(open('/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad/ai/q1.py').read().split("y=np.log(df.U+df.D+1e-3)")[0])
+y=np.log(df.U+df.D+1e-3)
+g=lgb.LGBMRegressor(n_estimators=200,learning_rate=0.06,num_leaves=31,min_child_samples=500,verbose=-1).fit(df[tr][X].values[::3],y[tr].values[::3])
+m2=df.UPF.notna()
+gd=lgb.LGBMClassifier(n_estimators=200,learning_rate=0.04,num_leaves=31,min_child_samples=500,verbose=-1).fit(df[tr&m2][X].values[::2],df[tr&m2].UPF.values[::2])
+X32=df[X].values.astype(np.float32)
+sc=np.exp(g.predict(X32))
+qs=np.quantile((df.C/sc)[tr],[0.05,0.15,0.5,0.85,0.95])
+ps=np.linspace(0,1,101)
+cdfU=np.quantile((df.U/sc)[tr],ps); cdfD=np.quantile((df.D/sc)[tr],ps)
+def flat(booster):
+    dm=booster.dump_model(); F=[];T=[];L=[];R=[];V=[];starts=[]
+    for t in dm['tree_info']:
+        starts.append(len(F))
+        def rec(nd):
+            idx=len(F); F.append(-1);T.append(0.0);L.append(-1);R.append(-1);V.append(0.0)
+            if 'split_index' in nd:
+                assert nd['decision_type']=='<='
+                F[idx]=nd['split_feature']; T[idx]=nd['threshold']
+                l=rec(nd['left_child']); r=rec(nd['right_child']); L[idx]=l; R[idx]=r
+            else: V[idx]=nd['leaf_value']
+            return idx
+        rec(t['tree_structure'])
+    return starts,F,T,L,R,V
+def pred(fl,x):
+    st,F,T,L,R,V=fl; s=0.0
+    for o in st:
+        n=o
+        while F[n]!=-1: n=L[n] if x[F[n]]<=T[n] else R[n]
+        s+=V[n]
+    return s
+fs=flat(g.booster_); fd=flat(gd.booster_)
+xs=X32[:300]
+xs=xs.astype(np.float64)
+print('max diff scale',max(abs(pred(fs,x)-p) for x,p in zip(xs,g.predict(xs,raw_score=True))),'dir',max(abs(pred(fd,x)-p) for x,p in zip(xs,gd.predict(xs,raw_score=True))))
+fl=lambda a: ','.join(repr(float(v)) for v in a); il=lambda a: ','.join(str(v) for v in a)
+out=f"""// ملف مولّد تلقائياً — نموذج Q (خريطة الاحتمالات). لا تعدّل يدوياً.
+// المدى: LightGBM يتوقع log(أعلى صعود + أعمق هبوط خلال 12 شمعة بوحدات ATR). الاتجاه: احتمال +1 ATR قبل −1 ATR.
+// تدريب: ذهب 2010-2018 وبيتكوين 2017-2020 (15m/1h/4h). اختبار لم يره: تغطية منطقة 70% = 65-72% في كل الحالات.
+const qFeatures = {X!r};
+const qH = {H};
+const qZ = <double>[{fl(qs)}]; // كوانتيلات (الإغلاق بعد 12 شمعة ÷ المدى المتوقع): 5% 15% 50% 85% 95%
+const qScaleT = <double>[{fl(np.quantile(sc[tr],[1/3,2/3]))}]; // حدود: هادئ / عادي / متحرك
+const qCdfU = <double>[{fl(cdfU)}]; // توزيع أعلى صعود ÷ المدى (101 نقطة)
+const qCdfD = <double>[{fl(cdfD)}];
+const qsStart = <int>[{il(fs[0])}];
+const qsFeat = <int>[{il(fs[1])}];
+const qsThr = <double>[{fl(fs[2])}];
+const qsLeft = <int>[{il(fs[3])}];
+const qsRight = <int>[{il(fs[4])}];
+const qsVal = <double>[{fl(fs[5])}];
+const qdStart = <int>[{il(fd[0])}];
+const qdFeat = <int>[{il(fd[1])}];
+const qdThr = <double>[{fl(fd[2])}];
+const qdLeft = <int>[{il(fd[3])}];
+const qdRight = <int>[{il(fd[4])}];
+const qdVal = <double>[{fl(fd[5])}];
+""".replace("'",'"')
+open('/home/user/AAB/lib/analysis/q_model.dart','w').write(out)
+# لقطة للتحقق من التطابق: ذهب 1h آخر 500 شمعة
+d=load(S+'/gold20/xau20_1h.csv'); Fg=feats(d,'gold','1h')
+Fg=Fg.replace([np.inf,-np.inf],np.nan).dropna(subset=X).tail(500)
+pp=pd.DataFrame({'time':d.time.iloc[Fg.index].dt.strftime('%Y-%m-%d %H:%M:%S').values,'scale':np.exp(g.predict(Fg[X].values.astype(np.float32))),'up':gd.predict_proba(Fg[X].values.astype(np.float32))[:,1]})
+for c_ in X: pp[c_]=Fg[c_].values
+pp.to_csv(S+'/ai/q_parity.csv',index=False)
+print('nodes',len(fs[1]),len(fd[1]),'qZ',np.round(qs,3))

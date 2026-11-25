@@ -12,6 +12,8 @@ import '../analysis/zero_one.dart';
 import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
+import '../analysis/q_indicator.dart';
+import '../analysis/q_model.dart' show qH;
 import '../analysis/indicators.dart';
 import '../models.dart';
 import '../theme.dart';
@@ -35,6 +37,7 @@ class ChartLayers {
   bool pq = false; // مؤشر PQ: النجوم + SM + Alka
   bool king = false; // مؤشر King: ذكاء اصطناعي
   bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
+  bool q = false; // مؤشر Q: خريطة الاحتمالات للـ 12 شمعة القادمة
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -66,6 +69,7 @@ class ChartLayers {
     ..pq = pq
     ..king = king
     ..aiak = aiak
+    ..q = q
     ..type = type
     ..sub = sub;
 }
@@ -106,6 +110,7 @@ class NativeChart extends StatefulWidget {
   final AllResult? ltR;
   final AllResult? pqR;
   final AllResult? akR;
+  final QResult? qR;
   final KingResult? kingR;
   final MarketSymbol sym;
   final String tf;
@@ -130,6 +135,7 @@ class NativeChart extends StatefulWidget {
     this.ltR,
     this.pqR,
     this.akR,
+    this.qR,
     this.kingR,
     this.onSelect,
     this.repaint,
@@ -174,6 +180,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
   void initState() {
     super.initState();
     visible = _baseVisible = _defVisible(widget.tf);
+    shift = _home0;
     _ticker = createTicker(_onTick);
     // إطارات إضافية فقط أثناء الحركة الناعمة (مدى السعر أو الشمعة الحية)
     _smTicker = createTicker((_) {
@@ -213,16 +220,21 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
     super.didUpdateWidget(old);
     if (old.tf != widget.tf) {
       visible = _baseVisible = _defVisible(widget.tf);
-      shift = _homeShift;
+      shift = _home0;
+    } else if (old.layers.q != widget.layers.q && shift.abs() < 20) {
+      shift = _home0;
     }
   }
+
+  /// مع Q نترك مساحة أكبر يمين آخر شمعة لرسم الخريطة.
+  double get _home0 => widget.layers.q ? -14.0 : _homeShift;
 
   void _goHome({bool resetZoom = false}) {
     _stopFling();
     _hs0 = shift;
     _hv0 = visible;
     _hy0 = yZoom;
-    _hs1 = _homeShift;
+    _hs1 = _home0;
     _hv1 = resetZoom ? _defVisible(widget.tf) : visible;
     _hy1 = resetZoom ? 1 : yZoom;
     _home.forward(from: 0);
@@ -343,7 +355,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
                   DateTime.now().toUtc(), widget.algo,
-                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR),
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR),
             ),
           ),
         ),
@@ -418,9 +430,10 @@ class _Painter extends CustomPainter {
   final _Smooth? sm;
   final AllResult? pqr;
   final AllResult? akr;
+  final QResult? qr;
   final KingResult? kingr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -1224,6 +1237,54 @@ class _Painter extends CustomPainter {
       final r = akr!;
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'AK', null,
           tagPer: [for (final _ in r.signals) 'AK'], pendTagPer: [for (final _ in r.pending) 'AK']);
+    }
+    // ── Q: خريطة الاحتمالات (منطقة 90% فاتحة، 70% أغمق، والخط الأوسط) للـ 12 شمعة القادمة
+    if (L.q && qr != null && qr!.i < n) {
+      final q = qr!;
+      final x0 = xOf(q.i.toDouble());
+      final avail = math.max(barW * 4, w - 4 - x0);
+      final stepW = math.min(barW, avail / qH);
+      double xk(int k) => x0 + k * stepW;
+      Path zone(int a, int b) {
+        final p = Path()..moveTo(x0, yOf(q.price));
+        for (var k = 1; k <= qH; k++) {
+          p.lineTo(xk(k), yOf(q.band(b, k)));
+        }
+        for (var k = qH; k >= 1; k--) {
+          p.lineTo(xk(k), yOf(q.band(a, k)));
+        }
+        return p..close();
+      }
+      final gold = AppColors.gold;
+      canvas.save();
+      canvas.clipRect(Rect.fromLTWH(0, 0, w, h));
+      canvas.drawPath(zone(0, 4), Paint()..color = gold.withOpacity(0.08));
+      canvas.drawPath(zone(1, 3), Paint()..color = gold.withOpacity(0.17));
+      canvas.drawPath(
+          zone(1, 3),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 0.8
+            ..color = gold.withOpacity(0.55));
+      final mid = Path()..moveTo(x0, yOf(q.price));
+      for (var k = 1; k <= qH; k++) {
+        mid.lineTo(xk(k), yOf(q.band(2, k)));
+      }
+      canvas.drawPath(
+          mid,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.2
+            ..color = gold.withOpacity(0.8));
+      canvas.restore();
+      // لافتات الأطراف عند نهاية الخريطة
+      final xe = xk(qH);
+      for (final (qi, lab) in [(4, '90%'), (3, '70%'), (1, '70%'), (0, '90%')]) {
+        final pr = q.band(qi, qH);
+        if (!inY(pr)) continue;
+        _txt(canvas, '$lab ${sym.fmt(pr)}', Offset(math.min(xe - 70, w - 76), yOf(pr) - (qi >= 3 ? 14 : 0)),
+            color: qi == 3 || qi == 1 ? gold : gold.withOpacity(0.75), size: 8.5, bold: qi == 3 || qi == 1);
+      }
     }
     // ── LT بعيد المدى: يُرسم على الفريم اليومي فقط
     if (L.lt && ltr != null && tf == '1d') {
