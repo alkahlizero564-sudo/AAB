@@ -415,7 +415,7 @@ List<(String, String, double, AllResult?)> _ranked(AppState st) => [
       ('King', '🤖', st.kingTop == 15 ? 62.4 : 59.5, st.kingR?.res),
       ('AAB', '📈', 62.4, null),
       ('SM', '〰️', 60.5, st.smView),
-      ('النجوم', '⭐', 58, st.starR?.res),
+      ('النجوم', '⭐', 59.7, st.starV?.res),
       ('Mp', '👑', 55.4, st.mpR),
     ];
 

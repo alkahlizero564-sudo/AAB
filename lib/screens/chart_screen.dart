@@ -453,16 +453,16 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'KM',
           emoji: '💎',
-          desc: 'الأدق بهدف 1R — صفقات قليلة في السوق الهادئ',
-          health: st.kmHealth,
+          desc: 'SM في السوق الهادئ + فهم التوقيت (King) — صفقات قليلة ودقيقة',
+          health: st.kmHealthNow,
           on: layers.km,
           toggle: () => layers.km = !layers.km
         ),
         (
           name: 'ST',
           emoji: '🧠',
-          desc: 'نموذج متعلّم: أعلى 30% من إشارات Mp مع درجة الثقة',
-          health: st.stHealth,
+          desc: 'نموذج متعلّم: أعلى 30% من إشارات Mp + فهم التوقيت (King)',
+          health: st.stHealthNow,
           on: layers.st,
           toggle: () => layers.st = !layers.st
         ),
@@ -485,8 +485,8 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'ALL',
           emoji: '🔗',
-          desc: 'دمج AAB و Alka',
-          health: st.allHealth,
+          desc: 'دمج AAB و Alka + فهم التوقيت (King)',
+          health: st.allHealthNow,
           on: layers.all,
           toggle: () => layers.all = !layers.all
         ),
@@ -501,8 +501,8 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'Alka',
           emoji: '🕯️',
-          desc: 'شموع الانعكاس عند الدعم والمقاومة',
-          health: st.alkaHealth,
+          desc: 'شموع الانعكاس عند الدعم والمقاومة + فهم التوقيت (King)',
+          health: st.alkaHealthNow,
           on: layers.alka,
           toggle: () => layers.alka = !layers.alka
         ),
@@ -576,8 +576,8 @@ class _ChartScreenState extends State<ChartScreen> {
         // دقة كل مؤشر على بيانات لم يرها (بهدف 1R) — لشريط الدقة والترتيب
         final acc = <String, double>{
           'AK': 66, 'King': st.kingTop == 15 ? 62.4 : 59.5, 'AAB': 62.4, 'SM': 60.5,
-          'نجوم': 58, 'PQ': 55.5, 'ST': 58.6, 'KM': 60.4, 'DM': 59.2, 'LT': 67,
-          'Mp': 55.7, 'ALL': 56.6, 'Alka': 53.6, '0.1': 51.2,
+          'نجوم': 59.7, 'PQ': 55.5, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
+          'Mp': 55.7, 'ALL': 60.3, 'Alka': 59.6, '0.1': 51.2,
         };
         final byName = {for (final x in inds) x.name: x};
         const groups = <(String, IconData, List<String>)>[
@@ -1132,14 +1132,14 @@ class _ChartScreenState extends State<ChartScreen> {
     final mk = '${st.symbol.code}|${st.tf}';
     final auto = st.settings.autoHideWeak;
     final hideAab = auto && st.aabHealthNow?.light == 'red' && !forceShow.contains('AAB|$mk');
-    final hideAlka = auto && st.alkaHealth?.light == 'red' && !forceShow.contains('Alka|$mk');
+    final hideAlka = auto && st.alkaHealthNow?.light == 'red' && !forceShow.contains('Alka|$mk');
     final hideDm = auto && st.dmHealth?.light == 'red' && !forceShow.contains('DM|$mk');
-    final hideSt = auto && st.stHealth?.light == 'red' && !forceShow.contains('ST|$mk');
-    final hideKm = auto && st.kmHealth?.light == 'red' && !forceShow.contains('KM|$mk');
+    final hideSt = auto && st.stHealthNow?.light == 'red' && !forceShow.contains('ST|$mk');
+    final hideKm = auto && st.kmHealthNow?.light == 'red' && !forceShow.contains('KM|$mk');
     final hideSm = auto && st.smHealthNow?.light == 'red' && !forceShow.contains('SM|$mk');
     final hideMp = auto && st.mpHealth?.light == 'red' && !forceShow.contains('Mp|$mk');
     final hideZero = auto && st.zeroHealth?.light == 'red' && !forceShow.contains('0.1|$mk');
-    final hideAll = auto && st.allHealth?.light == 'red' && !forceShow.contains('ALL|$mk');
+    final hideAll = auto && st.allHealthNow?.light == 'red' && !forceShow.contains('ALL|$mk');
     final eff = layers.copyWith(
         sigs: layers.sigs && !hideAab,
         alka: layers.alka && !hideAlka,
@@ -1233,20 +1233,20 @@ class _ChartScreenState extends State<ChartScreen> {
               signal: s,
               forecast: st.forecast,
               algo: st.algo,
-              alka: st.alka,
+              alka: st.alkaV,
               zero: st.zero,
               mpR: st.mpR,
               smR: st.smView,
-              kmR: st.kmR,
+              kmR: st.kmV,
               dmR: st.dmR,
-              stR: st.stR,
-              starR: st.starR,
+              stR: st.stV,
+              starR: st.starV,
               ltR: st.ltR,
               pqR: st.pqR,
               akR: st.akR,
               qR: st.qR,
               kingR: st.kingR,
-              allR: st.allR,
+              allR: st.allV,
               repaint: st.liveTick,
               sym: st.symbol,
               tf: st.tf,
@@ -1281,14 +1281,14 @@ class _ChartScreenState extends State<ChartScreen> {
           _candlePanel(st, sel!)
         else if (!fs)
           _forecastBar(st.forecast!, st.symbol),
-        if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
+        if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealthNow!, 'ALL|$mk'),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
-        if (hideSt && layers.st) _hiddenNotice('ST', st.stHealth!, 'ST|$mk'),
-        if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealth!, 'KM|$mk'),
+        if (hideSt && layers.st) _hiddenNotice('ST', st.stHealthNow!, 'ST|$mk'),
+        if (hideKm && layers.km) _hiddenNotice('KM', st.kmHealthNow!, 'KM|$mk'),
         if (hideSm && layers.sm) _hiddenNotice('SM', st.smHealthNow!, 'SM|$mk'),
         if (hideMp && layers.mp) _hiddenNotice('Mp', st.mpHealth!, 'Mp|$mk'),
         if (hideZero && layers.zero) _hiddenNotice('0.1', st.zeroHealth!, '0.1|$mk'),
-        if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
+        if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealthNow!, 'Alka|$mk'),
         if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealthNow!, 'AAB|$mk'),
         ..._bars(st, eff, showAab: !(hideAab && layers.sigs)),
       ] else if (!fs && st.forecast == null && s != null)
@@ -1300,8 +1300,8 @@ class _ChartScreenState extends State<ChartScreen> {
   /// والمؤشرات المنتظرة كلها في سطر واحد صغير — حتى يبقى الشارت كبيراً.
   List<Widget> _bars(AppState st, ChartLayers eff, {bool showAab = true}) {
     final e = <(String, Decision, String?)>[];
-    if (eff.star && st.starR != null) {
-      final r = st.starR!;
+    if (eff.star && st.starV != null) {
+      final r = st.starV!;
       final d = r.res.decision;
       var n = 0;
       final oi = r.res.signals.lastIndexWhere((x) => x.exitI < 0);
@@ -1314,18 +1314,18 @@ class _ChartScreenState extends State<ChartScreen> {
     if (eff.pq && st.pqR != null) e.add(('PQ', st.pqR!.decision, null));
     if (eff.lt) e.add(_ltEntry(st));
     final fam = <(String, AllResult)>[
-      if (eff.km && st.kmR != null) ('KM', st.kmR!),
+      if (eff.km && st.kmV != null) ('KM', st.kmV!),
       if (eff.dm && st.dmR != null) ('DM', st.dmR!),
-      if (eff.st && st.stR != null) ('ST', st.stR!.res),
+      if (eff.st && st.stV != null) ('ST', st.stV!.res),
       if (eff.sm && st.smView != null) ('SM', st.smView!),
       if (eff.mp && st.mpR != null) ('Mp', st.mpR!),
     ];
     for (final (t, r) in fam) {
       e.add((t, r.decision, null));
     }
-    if (eff.all && st.allR != null) e.add(('ALL', st.allR!.decision, null));
+    if (eff.all && st.allV != null) e.add(('ALL', st.allV!.decision, null));
     if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
-    if (eff.alka && st.alka != null) e.add(('Alka', st.alka!.decision, null));
+    if (eff.alka && st.alkaV != null) e.add(('Alka', st.alkaV!.decision, null));
     final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak;
     if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
 
@@ -1397,19 +1397,19 @@ class _ChartScreenState extends State<ChartScreen> {
   /// كل الصفقات المفتوحة لأول مؤشر مشغّل عنده صفقة (مع محركين: قد تكون شراء + بيع).
   List<(String, PastSignal)> _openTrades(AppState st, ChartLayers eff) {
     final l = <(String, List<PastSignal>?)>[
-      if (eff.star) ('نجوم', st.starR?.res.signals),
+      if (eff.star) ('نجوم', st.starV?.res.signals),
       if (eff.king) ('King', st.kingR?.res.signals),
       if (eff.aiak) ('AK', st.akR?.signals),
       if (eff.pq) ('PQ', st.pqR?.signals),
       if (eff.lt && st.tf == '1d') ('LT', st.ltR?.signals),
-      if (eff.km) ('KM', st.kmR?.signals),
+      if (eff.km) ('KM', st.kmV?.signals),
       if (eff.dm) ('DM', st.dmR?.signals),
-      if (eff.st) ('ST', st.stR?.res.signals),
+      if (eff.st) ('ST', st.stV?.res.signals),
       if (eff.sm) ('SM', st.smView?.signals),
       if (eff.mp) ('Mp', st.mpR?.signals),
-      if (eff.all) ('ALL', st.allR?.signals),
+      if (eff.all) ('ALL', st.allV?.signals),
       if (eff.zero) ('0.1', st.zero?.signals),
-      if (eff.alka) ('Alka', st.alka?.signals),
+      if (eff.alka) ('Alka', st.alkaV?.signals),
     ];
     for (final (t, sg) in l) {
       final open = [for (final x in sg ?? const <PastSignal>[]) if (x.exitI < 0) (t, x)];
@@ -1432,12 +1432,12 @@ class _ChartScreenState extends State<ChartScreen> {
     final first = st.loading || DateTime.now().difference(_seenAt).inSeconds < 8;
     final l = <(String, List<PastSignal>?, List<PendingSetup>?)>[
       if (eff.king) ('King', st.kingR?.res.signals, st.kingR?.res.pending),
-      if (eff.star) ('نجوم', st.starR?.res.signals, st.starR?.res.pending),
+      if (eff.star) ('نجوم', st.starV?.res.signals, st.starV?.res.pending),
       if (eff.aiak) ('AK', st.akR?.signals, st.akR?.pending),
       if (eff.pq) ('PQ', st.pqR?.signals, st.pqR?.pending),
       if (eff.sm) ('SM', st.smView?.signals, st.smView?.pending),
-      if (eff.st) ('ST', st.stR?.res.signals, st.stR?.res.pending),
-      if (eff.km) ('KM', st.kmR?.signals, st.kmR?.pending),
+      if (eff.st) ('ST', st.stV?.res.signals, st.stV?.res.pending),
+      if (eff.km) ('KM', st.kmV?.signals, st.kmV?.pending),
       if (eff.mp) ('Mp', st.mpR?.signals, st.mpR?.pending),
       if (eff.sigs) ('AAB', st.forecast?.signals, st.forecast?.pending),
     ];
