@@ -1238,53 +1238,37 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'AK', null,
           tagPer: [for (final _ in r.signals) 'AK'], pendTagPer: [for (final _ in r.pending) 'AK']);
     }
-    // ── Q: خريطة الاحتمالات (منطقة 90% فاتحة، 70% أغمق، والخط الأوسط) للـ 12 شمعة القادمة
+    // ── Q (مبسّط): صندوق «السعر غالباً سيكون هنا» بخطين: أعلى متوقع وأدنى متوقع
     if (L.q && qr != null && qr!.i < n) {
       final q = qr!;
-      final x0 = xOf(q.i.toDouble());
-      final avail = math.max(barW * 4, w - 4 - x0);
-      final stepW = math.min(barW, avail / qH);
-      double xk(int k) => x0 + k * stepW;
-      Path zone(int a, int b) {
-        final p = Path()..moveTo(x0, yOf(q.price));
-        for (var k = 1; k <= qH; k++) {
-          p.lineTo(xk(k), yOf(q.band(b, k)));
-        }
-        for (var k = qH; k >= 1; k--) {
-          p.lineTo(xk(k), yOf(q.band(a, k)));
-        }
-        return p..close();
-      }
+      final x0 = xOf((n - 1).toDouble()) + barW * 0.6;
+      final xe = math.min(w - 4, x0 + math.max(barW * qH, 60));
+      final top = q.band(3, qH), bot = q.band(1, qH);
+      final yT = yOf(top), yB = yOf(bot);
       final gold = AppColors.gold;
       canvas.save();
       canvas.clipRect(Rect.fromLTWH(0, 0, w, h));
-      canvas.drawPath(zone(0, 4), Paint()..color = gold.withOpacity(0.08));
-      canvas.drawPath(zone(1, 3), Paint()..color = gold.withOpacity(0.17));
-      canvas.drawPath(
-          zone(1, 3),
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 0.8
-            ..color = gold.withOpacity(0.55));
-      final mid = Path()..moveTo(x0, yOf(q.price));
-      for (var k = 1; k <= qH; k++) {
-        mid.lineTo(xk(k), yOf(q.band(2, k)));
+      final box = RRect.fromRectAndRadius(Rect.fromLTRB(x0, yT, xe, yB), const Radius.circular(6));
+      canvas.drawRRect(box, Paint()..color = gold.withOpacity(0.12));
+      final lp = Paint()
+        ..color = gold
+        ..strokeWidth = 1.4;
+      _dashed(canvas, x0, xe, yT, lp, dash: 5, gap: 3);
+      _dashed(canvas, x0, xe, yB, lp, dash: 5, gap: 3);
+      // سهم الاتجاه في وسط الصندوق (فقط إذا الميل واضح)
+      if (q.pUp >= 0.55 || q.pUp <= 0.45) {
+        final up = q.pUp >= 0.55;
+        final cx = (x0 + xe) / 2, cy = (yT + yB) / 2, s0 = math.min(10.0, (yB - yT) / 4);
+        final path = Path()
+          ..moveTo(cx, cy + (up ? -s0 : s0))
+          ..lineTo(cx - s0, cy + (up ? s0 : -s0) * 0.6)
+          ..lineTo(cx + s0, cy + (up ? s0 : -s0) * 0.6)
+          ..close();
+        canvas.drawPath(path, Paint()..color = (up ? _up : _down).withOpacity(0.85));
       }
-      canvas.drawPath(
-          mid,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.2
-            ..color = gold.withOpacity(0.8));
       canvas.restore();
-      // لافتات الأطراف عند نهاية الخريطة
-      final xe = xk(qH);
-      for (final (qi, lab) in [(3, 'أعلى متوقع'), (1, 'أدنى متوقع')]) {
-        final pr = q.band(qi, qH);
-        if (!inY(pr)) continue;
-        _txt(canvas, '$lab ${sym.fmt(pr)}', Offset(math.min(xe - 110, w - 116), yOf(pr) - (qi >= 3 ? 14 : 0)),
-            color: qi == 3 || qi == 1 ? gold : gold.withOpacity(0.75), size: 8.5, bold: qi == 3 || qi == 1);
-      }
+      if (inY(top)) _txt(canvas, 'أعلى متوقع ${sym.fmt(top)}', Offset(math.max(4, xe - 118), yT - 15), color: gold, size: 9, bold: true);
+      if (inY(bot)) _txt(canvas, 'أدنى متوقع ${sym.fmt(bot)}', Offset(math.max(4, xe - 118), yB + 3), color: gold, size: 9, bold: true);
     }
     // ── LT بعيد المدى: يُرسم على الفريم اليومي فقط
     if (L.lt && ltr != null && tf == '1d') {
