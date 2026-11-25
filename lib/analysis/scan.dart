@@ -3,6 +3,7 @@ import 'alka.dart';
 import 'all_indicator.dart';
 import 'forecast.dart';
 import 'king_indicator.dart';
+import 'low_tf.dart';
 import 'sm_indicator.dart';
 import 'star_indicator.dart';
 import 'zero_one.dart';
@@ -24,14 +25,15 @@ const scanAcc = {'AK': 66.0, 'King': 62.4, 'النجوم': 61.3};
 /// يفحص الشموع ويرجع آخر إشارة مفتوحة لكل مؤشر قوي (AK، King قوي، النجوم بفهم التوقيت)
 /// ظهرت خلال آخر [maxAge] شمعة مغلقة.
 List<ScanHit> scanCandles(List<Candle> c, MarketSymbol sym,
-    {List<Candle>? daily, double rr1 = 1, double rr2 = 2, double alkaTp1 = 0.35, int maxAge = 6}) {
+    {List<Candle>? daily, double rr1 = 1, double rr2 = 2, double alkaTp1 = 0.35, int maxAge = 6, String tf = '15m'}) {
   final n = c.length;
   if (n < 260) return const [];
   final hist = n;
-  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist);
-  final fAll = buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist);
-  final ak = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
-  final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
+  final ms = minStopFor(tf, c.last.close);
+  final fc = wideForecast(buildForecast(c, rr1: rr1, rr2: rr2, history: hist), ms);
+  final fAll = wideForecast(buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist), ms);
+  final ak = wideAlka(buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist), ms);
+  final z = wideZero(buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist), ms);
   final mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending, zero: z.signals, zeroPending: z.pending, tag: 'Mp');
   final st = buildStar(c, mp);
   final sm = buildSm(c, mp, stars: st);

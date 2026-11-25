@@ -47,7 +47,9 @@ class DashboardScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: AppColors.border, width: 0.8),
                 ),
-                child: ExpansionTile(
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: ExpansionTile(
                   tilePadding: const EdgeInsets.symmetric(horizontal: 14),
                   iconColor: AppColors.gold,
                   collapsedIconColor: AppColors.muted,
@@ -64,6 +66,7 @@ class DashboardScreen extends StatelessWidget {
                     _IndicatorsPanel(sig: sig),
                     _PatternsPanel(sig: sig),
                   ],
+                ),
                 ),
               ),
             ),

@@ -74,7 +74,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           }
           final c = await _md.fetch(sym, tf, s, count: AppState.candleCount(tf));
           final rr1 = s.rr1For(sym.category), rr2 = s.rr2, a1 = s.alkaTp1;
-          final hits = await Isolate.run(() => scanCandles(c, sym, rr1: rr1, rr2: rr2, alkaTp1: a1));
+          final hits = await Isolate.run(() => scanCandles(c, sym, rr1: rr1, rr2: rr2, alkaTp1: a1, tf: tf));
           if (!mounted) return;
           setState(() {
             for (final h in hits) {

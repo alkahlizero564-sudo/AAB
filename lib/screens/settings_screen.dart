@@ -155,7 +155,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.border, width: 0.8),
         ),
-        child: Theme(
+        child: Material(
+          type: MaterialType.transparency,
+          child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             initiallyExpanded: open,
@@ -175,6 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             expandedCrossAxisAlignment: CrossAxisAlignment.start,
             children: kids,
           ),
+        ),
         ),
       );
 
@@ -442,7 +445,9 @@ class _AlertsSectionState extends State<_AlertsSection> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: on ? AppColors.gold : AppColors.border, width: 0.8),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           activeColor: AppColors.onAccent,
@@ -496,6 +501,7 @@ class _AlertsSectionState extends State<_AlertsSection> {
           ),
         ],
       ]),
+      ),
     );
   }
 }

@@ -4,6 +4,7 @@ import 'all_indicator.dart';
 import 'forecast.dart';
 import 'indicators.dart';
 import 'king_model.dart';
+import 'king_model_lt.dart';
 import 'sm_indicator.dart';
 import 'st_indicator.dart';
 import 'star_indicator.dart';
@@ -40,6 +41,26 @@ double _predict(List<double> x) {
   return s / kingTreeStart.length;
 }
 
+/// King للفريمات الصغيرة (1m و5m)، ثم تحويل احتماله لنفس مقياس King الأساسي
+/// (نفس ترتيب الإشارات، حتى تبقى حدود أعلى 30% و15% صالحة في كل التطبيق).
+double _predictLt(List<double> x) {
+  var s = 0.0;
+  for (final o in kingLtTreeStart) {
+    var n = o;
+    while (kingLtFeat[n] != -1) {
+      n = x[kingLtFeat[n]] <= kingLtThr[n] ? kingLtLeft[n] : kingLtRight[n];
+    }
+    s += kingLtVal[n];
+  }
+  final p = s / kingLtTreeStart.length;
+  const from = [0.0, ...kingLtQ, 1.0];
+  const to = [0.0, kingQ30, kingQ50, kingQ70, kingQ85, 1.0];
+  for (var k = 1; k < from.length; k++) {
+    if (p <= from[k]) return to[k - 1] + (p - from[k - 1]) / (from[k] - from[k - 1]) * (to[k] - to[k - 1]);
+  }
+  return 1;
+}
+
 /// يحسب خصائص الإشارات ويقيّمها. نفس حساب ملف التدريب تماماً (لا نظر للمستقبل).
 class KingScorer {
   final List<Candle> c;
@@ -47,6 +68,7 @@ class KingScorer {
   late final List<List<double>> rib;
   late final List<int> rdF, rdA, h4, hD;
   late final double tfm;
+  late final bool lowTf; // 1m و5m: نموذج King الخاص بالفريمات الصغيرة
   KingScorer(this.c) {
     final n = c.length;
     final cl = [for (final x in c) x.close];
@@ -77,6 +99,7 @@ class KingScorer {
     hD = htfTrend(c, 1440);
     // التدريب كان على 15m و1h و4h فقط: الفريمات الأخرى تُقرّب لأقربها
     tfm = base <= 30 ? 15 : base <= 120 ? 60 : 240;
+    lowTf = base <= 5;
   }
 
   double score(int i, int dir, double entry, double sl, String src, [KingCtx? ctx]) {
@@ -86,7 +109,7 @@ class KingScorer {
       if (ctx == null) return double.nan;
       x.addAll(ctx.extra(this, i, dir, src));
     }
-    return _predict(x);
+    return lowTf ? _predictLt(x) : _predict(x);
   }
 
   /// الخصائص الـ 41 بنفس ترتيب [kingFeatures] (null إن لم تتوفر).

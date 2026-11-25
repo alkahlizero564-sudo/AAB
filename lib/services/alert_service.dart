@@ -105,7 +105,7 @@ class AlertService {
             lastApi = DateTime.now();
           }
           final List<Candle> c = await md.fetch(sym, tf, s, count: 500);
-          final hits = scanCandles(c, sym, rr1: s.rr1For(sym.category), rr2: s.rr2, alkaTp1: s.alkaTp1, maxAge: tf == '5m' ? 3 : 1);
+          final hits = scanCandles(c, sym, rr1: s.rr1For(sym.category), rr2: s.rr2, alkaTp1: s.alkaTp1, maxAge: tf == '5m' ? 3 : 1, tf: tf);
           for (final h in hits) {
             final key = '${sym.code}|$tf|${h.key}';
             if (sent.contains(key)) continue;
