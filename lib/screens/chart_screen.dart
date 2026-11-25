@@ -420,7 +420,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'PQ',
           emoji: '🔷',
-          desc: 'نفس إشارات النجوم + SM + Alka مجتمعة في مؤشر واحد — أخضر للشراء وأحمر للبيع',
+          desc: 'النجوم + SM + Alka في مؤشر واحد + فهم التوقيت (King): نجمتان فأكثر تكفيهما ثقة جيدة، وغيرها تحتاج ثقة عالية',
           health: null,
           on: layers.pq,
           toggle: () => layers.pq = !layers.pq
@@ -436,7 +436,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'نجوم',
           emoji: '⭐',
-          desc: 'كل إشارات Mp ونجوم الثقة: درجة ثقة ST + هدوء السوق (كل نجمة أدق)',
+          desc: 'إشارات Mp ونجوم الثقة + فهم التوقيت (King): كل نجمة أدق، ونجمتان فأكثر تكفيهما ثقة جيدة',
           health: null,
           on: layers.star,
           toggle: () => layers.star = !layers.star
@@ -576,7 +576,7 @@ class _ChartScreenState extends State<ChartScreen> {
         // دقة كل مؤشر على بيانات لم يرها (بهدف 1R) — لشريط الدقة والترتيب
         final acc = <String, double>{
           'AK': 66, 'King': st.kingTop == 15 ? 62.4 : 59.5, 'AAB': 62.4, 'SM': 60.5,
-          'نجوم': 59.7, 'PQ': 55.5, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
+          'نجوم': 61.3, 'PQ': 61.3, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
           'Mp': 55.7, 'ALL': 60.3, 'Alka': 59.6, '0.1': 51.2,
         };
         final byName = {for (final x in inds) x.name: x};
@@ -600,9 +600,9 @@ class _ChartScreenState extends State<ChartScreen> {
             return 'السوق ${q.regimeAr} • ${q.pUp >= 0.62 ? 'أقرب للصعود' : q.pUp <= 0.38 ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
           }
           if (x.name == 'PQ') {
-            return st.pqR == null || st.pqR!.closed == 0
+            return st.pqV == null || st.pqV!.closed == 0
                 ? 'جاري الحساب…'
-                : 'الآن ${(st.pqR!.winRate * 100).toStringAsFixed(0)}% من ${st.pqR!.closed}';
+                : 'الآن ${(st.pqV!.winRate * 100).toStringAsFixed(0)}% من ${st.pqV!.closed}';
           }
           if (h == null) return 'جاري الحساب…';
           if (h.trades < 20) return 'عينة صغيرة (${h.trades} صفقة)';
@@ -1242,7 +1242,7 @@ class _ChartScreenState extends State<ChartScreen> {
               stR: st.stV,
               starR: st.starV,
               ltR: st.ltR,
-              pqR: st.pqR,
+              pqR: st.pqV,
               akR: st.akR,
               qR: st.qR,
               kingR: st.kingR,
@@ -1311,7 +1311,7 @@ class _ChartScreenState extends State<ChartScreen> {
     }
     if (eff.king && st.kingR != null) e.add(('King', st.kingR!.res.decision, null));
     if (eff.aiak && st.akR != null) e.add(('AK', st.akR!.decision, null));
-    if (eff.pq && st.pqR != null) e.add(('PQ', st.pqR!.decision, null));
+    if (eff.pq && st.pqV != null) e.add(('PQ', st.pqV!.decision, null));
     if (eff.lt) e.add(_ltEntry(st));
     final fam = <(String, AllResult)>[
       if (eff.km && st.kmV != null) ('KM', st.kmV!),
@@ -1400,7 +1400,7 @@ class _ChartScreenState extends State<ChartScreen> {
       if (eff.star) ('نجوم', st.starV?.res.signals),
       if (eff.king) ('King', st.kingR?.res.signals),
       if (eff.aiak) ('AK', st.akR?.signals),
-      if (eff.pq) ('PQ', st.pqR?.signals),
+      if (eff.pq) ('PQ', st.pqV?.signals),
       if (eff.lt && st.tf == '1d') ('LT', st.ltR?.signals),
       if (eff.km) ('KM', st.kmV?.signals),
       if (eff.dm) ('DM', st.dmR?.signals),
@@ -1434,7 +1434,7 @@ class _ChartScreenState extends State<ChartScreen> {
       if (eff.king) ('King', st.kingR?.res.signals, st.kingR?.res.pending),
       if (eff.star) ('نجوم', st.starV?.res.signals, st.starV?.res.pending),
       if (eff.aiak) ('AK', st.akR?.signals, st.akR?.pending),
-      if (eff.pq) ('PQ', st.pqR?.signals, st.pqR?.pending),
+      if (eff.pq) ('PQ', st.pqV?.signals, st.pqV?.pending),
       if (eff.sm) ('SM', st.smView?.signals, st.smView?.pending),
       if (eff.st) ('ST', st.stV?.res.signals, st.stV?.res.pending),
       if (eff.km) ('KM', st.kmV?.signals, st.kmV?.pending),
