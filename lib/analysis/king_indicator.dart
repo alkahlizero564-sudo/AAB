@@ -238,12 +238,15 @@ class KingEval {
 /// فلتر الذكاء على مؤشر آخر: يُبقي الإشارات التي يضعها King في أعلى [top]% (0 = بدون فلتر).
 /// اختبار على إشارات لم يرها (1R): SM 56.7% → 60.5% (30%) → 63.9% (15%)،
 /// و AAB 56.0% → 62.4% (30%) → 66.0% (15%).
-AllResult kingFilter(AllResult r, KingEval? e, int top, {bool Function(int i, int dir)? keep}) {
+/// [wide]/[wideTop]: الإشارات التي يتحقق فيها [wide] (مثل نجمتين فأكثر) يكفيها أعلى [wideTop]%.
+AllResult kingFilter(AllResult r, KingEval? e, int top,
+    {bool Function(int i, int dir)? keep, int wideTop = 0, bool Function(int i, int dir)? wide}) {
   if (top == 0 || e == null) return r;
-  final thr = kingThreshold(top);
+  final thr = kingThreshold(top), thrW = wideTop == 0 ? thr : kingThreshold(wideTop);
+  bool pass(int i, int dir, double sc) => sc >= thr || (wide != null && i >= 0 && wide(i, dir) && sc >= thrW);
   final sigs = <PastSignal>[], src = <String>[];
   for (final (q, s) in r.signals.indexed) {
-    if ((keep?.call(s.i, s.dir) ?? false) || e.score(s.i, s.dir, s.entry, s.sl, r.sources[q]) >= thr) {
+    if ((keep?.call(s.i, s.dir) ?? false) || pass(s.i, s.dir, e.score(s.i, s.dir, s.entry, s.sl, r.sources[q]))) {
       sigs.add(s);
       src.add(r.sources[q]);
     }
@@ -251,7 +254,7 @@ AllResult kingFilter(AllResult r, KingEval? e, int top, {bool Function(int i, in
   final openDirs = {for (final x in sigs) if (x.exitI < 0) x.dir};
   final pend = <PendingSetup>[], pSrc = <String>[];
   for (final (q, p) in r.pending.indexed) {
-    if (!openDirs.contains(p.dir) && e.score(p.i, p.dir, p.trigger, p.sl, r.pendingSrc[q]) >= thr) {
+    if (!openDirs.contains(p.dir) && pass(p.i, p.dir, e.score(p.i, p.dir, p.trigger, p.sl, r.pendingSrc[q]))) {
       pend.add(p);
       pSrc.add(r.pendingSrc[q]);
     }

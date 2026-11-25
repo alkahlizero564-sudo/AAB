@@ -67,11 +67,11 @@ class AppState extends ChangeNotifier {
   AllResult? smView; // SM بعد فلتر الذكاء (للعرض)
   QResult? qR; // مؤشر Q: خريطة الاحتمالات
   // «فهم التوقيت»: نسخ العرض بعد فلتر King (أعلى 30%) — الأصل يبقى كما هو لأن King يستخدمه كمعلومات
-  // اختبار لم يره (1R): Alka 56.0→59.6% • النجوم 56.5→59.7% • ST 56.9→60.6% • KM 58.9→63.3% • ALL 56.0→60.3%
+  // اختبار لم يره (1R): Alka 56.0→59.6% • النجوم 56.5→61.3% (نجمتان: King 30%، وغيرها 15%) • PQ 56.5→61.3% • ST 56.9→60.6% • KM 58.9→63.3% • ALL 56.0→60.3%
   AlkaResult? alkaV;
   StarResult? starV;
   StResult? stV;
-  AllResult? kmV, allV;
+  AllResult? kmV, allV, pqV;
   AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
   IndHealth? get akHealth => _aiH(15, 2);
   IndHealth? _tH(int k) => 4 + k < aiHealth.length ? aiHealth[4 + k] : null;
@@ -305,6 +305,7 @@ class AppState extends ChangeNotifier {
     stV = null;
     kmV = null;
     allV = null;
+    pqV = null;
     algo = null;
     alka = null;
     allR = null;
@@ -565,8 +566,11 @@ class AppState extends ChangeNotifier {
   /// نسخ العرض بفهم التوقيت (فلتر King أعلى 30%) مع ثبات الإشارات.
   void _buildViews() {
     final e = kingR?.eval;
-    AllResult f(String name, AllResult r) {
-      final v = kingFilter(r, e, 30, keep: _keep('$name|v'));
+    AllResult f(String name, AllResult r, {StarResult? stars}) {
+      // النجوم و PQ: الإشارة بنجمتين فأكثر يكفيها أعلى 30% من King، وغيرها تحتاج أعلى 15%
+      final v = stars == null
+          ? kingFilter(r, e, 30, keep: _keep('$name|v'))
+          : kingFilter(r, e, 15, keep: _keep('$name|v'), wideTop: 30, wide: (i, d) => stars.of(i, d) >= 2);
       _remember('$name|v', v.signals);
       return v;
     }
@@ -579,7 +583,8 @@ class AppState extends ChangeNotifier {
       alkaV = null;
     }
     final sr = starR;
-    starV = sr == null ? null : StarResult(f('نجوم|$starMin', sr.res), sr.stars, sr.hot, sr.held, sr.near);
+    starV = sr == null ? null : StarResult(f('نجوم|$starMin', sr.res, stars: sr), sr.stars, sr.hot, sr.held, sr.near);
+    pqV = pqR == null || sr == null ? null : f('PQ', pqR!, stars: sr);
     final tr = stR;
     stV = tr == null ? null : StResult(f('ST', tr.res), tr.conf);
     kmV = kmR == null ? null : f('KM', kmR!);
