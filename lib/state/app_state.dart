@@ -66,8 +66,19 @@ class AppState extends ChangeNotifier {
   static const smAi = 30, aabAi = 30;
   AllResult? smView; // SM بعد فلتر الذكاء (للعرض)
   QResult? qR; // مؤشر Q: خريطة الاحتمالات
+  // «فهم التوقيت»: نسخ العرض بعد فلتر King (أعلى 30%) — الأصل يبقى كما هو لأن King يستخدمه كمعلومات
+  // اختبار لم يره (1R): Alka 56.0→59.6% • النجوم 56.5→59.7% • ST 56.9→60.6% • KM 58.9→63.3% • ALL 56.0→60.3%
+  AlkaResult? alkaV;
+  StarResult? starV;
+  StResult? stV;
+  AllResult? kmV, allV;
   AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
   IndHealth? get akHealth => _aiH(15, 2);
+  IndHealth? _tH(int k) => 4 + k < aiHealth.length ? aiHealth[4 + k] : null;
+  IndHealth? get alkaHealthNow => _tH(0) ?? alkaHealth;
+  IndHealth? get allHealthNow => _tH(1) ?? allHealth;
+  IndHealth? get kmHealthNow => _tH(2) ?? kmHealth;
+  IndHealth? get stHealthNow => _tH(3) ?? stHealth;
   Forecast? _fcRaw;
   List<IndHealth?> aiHealth = const []; // [SM 30، SM 15، AAB 30، AAB 15]
   IndHealth? _aiH(int top, int base) => top == 0 ? null : (base + (top == 15 ? 1 : 0) < aiHealth.length ? aiHealth[base + (top == 15 ? 1 : 0)] : null);
@@ -289,6 +300,11 @@ class AppState extends ChangeNotifier {
     smView = null;
     akR = null;
     qR = null;
+    alkaV = null;
+    starV = null;
+    stV = null;
+    kmV = null;
+    allV = null;
     algo = null;
     alka = null;
     allR = null;
@@ -546,6 +562,30 @@ class AppState extends ChangeNotifier {
     _remember('AAB', forecast?.signals);
   }
 
+  /// نسخ العرض بفهم التوقيت (فلتر King أعلى 30%) مع ثبات الإشارات.
+  void _buildViews() {
+    final e = kingR?.eval;
+    AllResult f(String name, AllResult r) {
+      final v = kingFilter(r, e, 30, keep: _keep('$name|v'));
+      _remember('$name|v', v.signals);
+      return v;
+    }
+
+    final ak = alka;
+    if (ak != null) {
+      final v = f('Alka', AllResult(ak.signals, List.filled(ak.signals.length, 'Alka'), ak.pending, List.filled(ak.pending.length, 'Alka'), 'Alka'));
+      alkaV = AlkaResult(v.signals, v.pending);
+    } else {
+      alkaV = null;
+    }
+    final sr = starR;
+    starV = sr == null ? null : StarResult(f('نجوم|$starMin', sr.res), sr.stars, sr.hot, sr.held, sr.near);
+    final tr = stR;
+    stV = tr == null ? null : StResult(f('ST', tr.res), tr.conf);
+    kmV = kmR == null ? null : f('KM', kmR!);
+    allV = allR == null ? null : f('ALL', allR!);
+  }
+
   /// كل إشارة ظهرت على شمعة مغلقة تبقى ظاهرة (لا تظهر ثم تختفي).
   void _holdAll() {
     final c = candles;
@@ -564,6 +604,7 @@ class AppState extends ChangeNotifier {
     final kr = kingR;
     if (kr != null) kingR = KingResult(_mem.hold('King|$kingTop|$kingNearOnly', c, kr.res), kr.conf, kr.eval);
     if (forecast != null) forecast = _mem.holdForecast('AAB', c, forecast!);
+    _buildViews();
     final ak = alka;
     if (ak != null) {
       final (s, p) = _mem.holdList('Alka', c, ak.signals, ak.pending);
@@ -603,7 +644,7 @@ class AppState extends ChangeNotifier {
     dmHealth = at(7);
     stHealth = at(8);
     kingHealth = [for (var q = 0; q < 8; q++) at(9 + q)];
-    aiHealth = [for (var q = 0; q < 4; q++) at(17 + q)];
+    aiHealth = [for (var q = 0; q < 8; q++) at(17 + q)];
   }
 
   /// صحة AAB و Alka على هذا السوق (تُحسب في الخلفية وتُحفظ ساعتين).

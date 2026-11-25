@@ -1256,8 +1256,8 @@ class _Painter extends CustomPainter {
       _dashed(canvas, x0, xe, yT, lp, dash: 5, gap: 3);
       _dashed(canvas, x0, xe, yB, lp, dash: 5, gap: 3);
       // سهم الاتجاه في وسط الصندوق (فقط إذا الميل واضح)
-      if (q.pUp >= 0.55 || q.pUp <= 0.45) {
-        final up = q.pUp >= 0.55;
+      if (q.pUp >= 0.62 || q.pUp <= 0.38) {
+        final up = q.pUp >= 0.62;
         final cx = (x0 + xe) / 2, cy = (yT + yB) / 2, s0 = math.min(10.0, (yB - yT) / 4);
         final path = Path()
           ..moveTo(cx, cy + (up ? -s0 : s0))
@@ -1267,6 +1267,37 @@ class _Painter extends CustomPainter {
         canvas.drawPath(path, Paint()..color = (up ? _up : _down).withOpacity(0.85));
       }
       canvas.restore();
+      // أسهم Q السابقة على الشموع مع ✓ (صح) أو ✗ (خطأ)
+      for (final ar in q.arrows) {
+        if (ar.i < i0 || ar.i > i1) continue;
+        final x = xOf(ar.i.toDouble());
+        final up = ar.dir > 0;
+        final y = up ? yOf(c[ar.i].low) + 10 : yOf(c[ar.i].high) - 10;
+        final s0 = math.max(4.0, math.min(7.0, barW * 0.45));
+        final col = up ? _up : _down;
+        final tri = Path()
+          ..moveTo(x, up ? y : y)
+          ..lineTo(x - s0, up ? y + s0 * 1.4 : y - s0 * 1.4)
+          ..lineTo(x + s0, up ? y + s0 * 1.4 : y - s0 * 1.4)
+          ..close();
+        canvas.drawPath(tri, Paint()..color = col.withOpacity(0.9));
+        if (ar.result != 0) {
+          final ok = ar.result > 0;
+          final cy = up ? y + s0 * 1.4 + 8 : y - s0 * 1.4 - 8;
+          final pen = Paint()
+            ..color = ok ? _up : _down
+            ..strokeWidth = 2
+            ..strokeCap = StrokeCap.round
+            ..style = PaintingStyle.stroke;
+          canvas.drawCircle(Offset(x, cy), 6.5, Paint()..color = AppColors.bg.withOpacity(0.85));
+          if (ok) {
+            canvas.drawPath(Path()..moveTo(x - 3.5, cy)..lineTo(x - 1, cy + 3)..lineTo(x + 4, cy - 3), pen);
+          } else {
+            canvas.drawLine(Offset(x - 3, cy - 3), Offset(x + 3, cy + 3), pen);
+            canvas.drawLine(Offset(x + 3, cy - 3), Offset(x - 3, cy + 3), pen);
+          }
+        }
+      }
       if (inY(top)) _txt(canvas, 'أعلى متوقع ${sym.fmt(top)}', Offset(math.max(4, xe - 118), yT - 15), color: gold, size: 9, bold: true);
       if (inY(bot)) _txt(canvas, 'أدنى متوقع ${sym.fmt(bot)}', Offset(math.max(4, xe - 118), yB + 3), color: gold, size: 9, bold: true);
     }

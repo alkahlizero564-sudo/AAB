@@ -44,12 +44,8 @@ class IndHealth {
 /// (سنوات لم يُضبط عليها أي مؤشر) — (بهدف 1R ، بإدارة التطبيق ، عدد الصفقات بهدف 1R).
 /// DM خاص بالذهب فرقمه من ذهب 2021-2026 وحده.
 const longTermAcc = <String, (double, double, int)>{
-  'KM': (60.4, 82.1, 1425),
   'DM': (59.2, 82.0, 868),
-  'ST': (58.6, 82.1, 3572),
-  'ALL': (56.6, 81.3, 11097),
   'Mp': (55.7, 80.8, 12662),
-  'Alka': (53.6, 78.9, 24345),
   '0.1': (51.2, 76.7, 2884),
 };
 
@@ -95,7 +91,9 @@ List<IndHealth> computeHealth(List<Candle> c,
     return h(kept, closed.where((s) => s.result > 0).length, closed.length);
   }
   final aabSrc = List.filled(f.signals.length, 'AAB');
-  final aiH = [hk(sm.signals, sm.sources, 30), hk(sm.signals, sm.sources, 15), hk(f.signals, aabSrc, 30), hk(f.signals, aabSrc, 15)];
+  final aiH = [hk(sm.signals, sm.sources, 30), hk(sm.signals, sm.sources, 15), hk(f.signals, aabSrc, 30), hk(f.signals, aabSrc, 15),
+    // فهم التوقيت: Alka، ALL، KM، ST (أعلى 30% حسب King)
+    hk(k.signals, List.filled(k.signals.length, 'Alka'), 30), hk(all.signals, all.sources, 30), hk(km.signals, km.sources, 30), hk(st.signals, st.sources, 30)];
   return [h(f.signals, f.wins, f.closed), h(k.signals, k.wins, k.closed), h(all.signals, all.wins, all.closed),
       h(z.signals, z.wins, z.closed), h(mp.signals, mp.wins, mp.closed), h(sm.signals, sm.wins, sm.closed), h(km.signals, km.wins, km.closed), h(dm.signals, dm.wins, dm.closed),
       h(st.signals, st.wins, st.closed), ...kingH, ...aiH];

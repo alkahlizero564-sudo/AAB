@@ -1,0 +1,47 @@
+import pandas as pd, numpy as np, warnings
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier
+import lightgbm as lgb
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/signals2.csv'); ta=pd.read_csv(S+'/ai/ta.csv'); qf=pd.read_csv(S+'/ai/qfeat.csv')
+strat=['turtle20','turtle55','holygrail','rsi2','soup','nr7','squeeze','volbrk','r8020','emax']
+pm=pd.concat([ch[~ch.src.isin(strat)] for ch in pd.read_csv(S+'/ai/pro.csv',chunksize=200000)]); pm=pm[pm.tf!='1d'].reset_index(drop=True)
+for o in (ta,qf,pm): assert len(o)==len(df) and (o.win.values==df.win.values).all()
+tcols=[c for c in ta.columns if c.startswith('t_')]; ccols=list(pm.columns[7+41:7+41+15]); qcols=['q_scale','q_pup']
+for c in tcols: df[c]=ta[c].values
+for c in ccols: df[c]=pm[c].values
+for c in qcols: df[c]=qf[c].values
+base=[c for c in df.columns if c not in ['market','tf','year','dir','win','r','src'] and not c.startswith(('i_','t_','c_')) and c not in ccols+qcols]
+safe=['i_st','i_stars','i_near','i_hot','i_held','i_sm','i_smstrong','i_km','i_daily200','i_sr_behind','i_sr_ahead','i_ribage','i_lt']
+trm=((df.market=='gold20')&(df.year>=2010)&(df.year<=2018))|((df.market=='btc')&(df.year<=2020))
+test=~trm&~((df.market=='gold20')&(df.year<2010))
+tr,te=df[trm],df[test]; gold=(te.market=='gold20').values
+rk=lambda p,ref: np.searchsorted(np.sort(ref),p)/len(ref)
+def ev(lab,res):
+    s=f"{lab:46s}"
+    for top in [30,15,7]:
+        a=[te.win.values[p>=np.quantile(q,1-top/100)].mean() for q,p in res]
+        g=[te.win.values[(p>=np.quantile(q,1-top/100))&gold].mean() for q,p in res]
+        s+=f" | {top}%: {np.mean(a)*100:.1f}±{np.std(a)*100:.1f} (ذهب {np.mean(g)*100:.1f})"
+    print(s,flush=True)
+def rf(fs,seeds=range(1,6)):
+    out=[]
+    for sd in seeds:
+        m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=sd).fit(tr[fs].values.astype(np.float32),tr.win)
+        out.append((m.predict_proba(tr[fs].values.astype(np.float32))[:,1],m.predict_proba(te[fs].values.astype(np.float32))[:,1]))
+    return out
+def lg(fs,seeds=range(1,6)):
+    out=[]
+    for sd in seeds:
+        m=lgb.LGBMClassifier(n_estimators=400,learning_rate=0.015,num_leaves=15,min_child_samples=200,subsample=0.8,subsample_freq=1,colsample_bytree=0.5,reg_lambda=10,verbose=-1,random_state=sd).fit(tr[fs].fillna(0).values,tr.win)
+        out.append((m.predict_proba(tr[fs].fillna(0).values)[:,1],m.predict_proba(te[fs].fillna(0).values)[:,1]))
+    return out
+for c in qcols: df[c]=df[c].fillna(df[c].median())
+tr,te=df[trm],df[test]
+king=rf(base+safe); ev('King الحالي (54)',king)
+ev('King + Q (56)',rf(base+safe+qcols))
+allf=base+safe+tcols+ccols+qcols
+m_rf=rf(allf); ev(f'المايسترو RF — كل شي ({len(allf)})',m_rf)
+m_lg=lg(allf); ev(f'المايسترو LightGBM — كل شي ({len(allf)})',m_lg)
+ev('دمج King + المايسترو LightGBM',[((rk(a,a)+rk(c,c))/2,(rk(b,a)+rk(d,c))/2) for (a,b),(c,d) in zip(king,m_lg)])
+ev('دمج King + RF + LightGBM (الكل)',[((rk(a,a)+rk(c,c)+rk(e,e))/3,(rk(b,a)+rk(d,c)+rk(f,e))/3) for (a,b),(c,d),(e,f) in zip(king,m_rf,m_lg)])
