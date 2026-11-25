@@ -109,7 +109,6 @@ ThemeData buildTheme() {
     // انتقالات الصفحات: تكبير ناعم
     pageTransitionsTheme: const PageTransitionsTheme(builders: {
       TargetPlatform.android: ZoomPageTransitionsBuilder(),
-      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
     }),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
