@@ -12,6 +12,15 @@ import '../services/market_data_service.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 
+/// الفحص في Isolate منفصل (الدالة على مستوى الملف حتى لا تحمل الشاشة معها)، ولو فشل نفحص مباشرة.
+Future<List<ScanHit>> _scanAsync(List<Candle> c, MarketSymbol sym, double rr1, double rr2, double a1, String tf) async {
+  try {
+    return await Isolate.run(() => scanCandles(c, sym, rr1: rr1, rr2: rr2, alkaTp1: a1, tf: tf));
+  } catch (_) {
+    return scanCandles(c, sym, rr1: rr1, rr2: rr2, alkaTp1: a1, tf: tf);
+  }
+}
+
 /// ماسح الأسواق: يفحص الأسواق والفريمات ويعرض أين توجد إشارة قوية الآن (AK، King، النجوم).
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({super.key});
@@ -74,7 +83,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           }
           final c = await _md.fetch(sym, tf, s, count: AppState.candleCount(tf));
           final rr1 = s.rr1For(sym.category), rr2 = s.rr2, a1 = s.alkaTp1;
-          final hits = await Isolate.run(() => scanCandles(c, sym, rr1: rr1, rr2: rr2, alkaTp1: a1, tf: tf));
+          final hits = await _scanAsync(c, sym, rr1, rr2, a1, tf);
           if (!mounted) return;
           setState(() {
             for (final h in hits) {
@@ -174,7 +183,14 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 style: const TextStyle(color: AppColors.muted, fontSize: 12)),
           ],
           const SizedBox(height: 14),
-          if (!running && total > 0 && rows.isEmpty)
+          if (!running && total > 0 && rows.isEmpty && errors.length >= done && done > 0)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.down)),
+              child: Text('تعذّر جلب البيانات لكل الأسواق.\n${errors.isEmpty ? '' : errors.first}',
+                  textAlign: TextAlign.center, style: const TextStyle(color: AppColors.text, height: 1.5)),
+            )
+          else if (!running && total > 0 && rows.isEmpty)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
