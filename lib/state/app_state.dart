@@ -16,6 +16,7 @@ import '../analysis/star_indicator.dart';
 import '../analysis/lt_indicator.dart';
 import '../analysis/pq_indicator.dart';
 import '../analysis/king_indicator.dart';
+import '../analysis/low_tf.dart';
 import '../analysis/signal_memory.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/signal_engine.dart';
@@ -361,11 +362,12 @@ class AppState extends ChangeNotifier {
     final s = settings, sym = symbol, cfg = EngineConfig.current;
     final rr1 = settings.rr1For(symbol.category), rr2 = settings.rr2;
     final alkaTp1 = settings.alkaTp1;
+    final tf0 = tf;
     (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) res;
     try {
-      res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1));
+      res = await Isolate.run(() => _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1, tf0));
     } catch (_) {
-      res = _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1); // احتياط
+      res = _computeAll(snap, h, s, sym, cfg, rr1, rr2, alkaTp1, tf0); // احتياط
     }
     _analyzing = false;
     if (gen != _gen) return;
@@ -383,7 +385,7 @@ class AppState extends ChangeNotifier {
   void _analyze() {
     if (candles.isEmpty) return;
     _apply(_computeAll(candles, htf, settings, symbol, EngineConfig.current,
-        settings.rr1For(symbol.category), settings.rr2, settings.alkaTp1));
+        settings.rr1For(symbol.category), settings.rr2, settings.alkaTp1, tf));
   }
 
   void _apply((TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) r) {
@@ -405,7 +407,7 @@ class AppState extends ChangeNotifier {
     _fcRaw = fc;
     _applyAi();
     _holdAll();
-    qR = buildQ(candles, tf);
+    qR = buildQ(candles, tf, th: qThreshold(symbol.category, tf));
     signal = _unify(base, fc);
     algo = al;
     if (prev != null && prev.direction == signal!.direction) {
@@ -571,8 +573,9 @@ class AppState extends ChangeNotifier {
       final v = stars == null
           ? kingFilter(r, e, 30, keep: _keep('$name|v'))
           : kingFilter(r, e, 15, keep: _keep('$name|v'), wideTop: 30, wide: (i, d) => stars.of(i, d) >= 2);
-      _remember('$name|v', v.signals);
-      return v;
+      final g = _mem.gateAll('$name|v', candles, v);
+      _remember('$name|v', g.signals);
+      return g;
     }
 
     final ak = alka;
@@ -781,16 +784,18 @@ class AppState extends ChangeNotifier {
 
 /// كل الحسابات الثقيلة (تعمل داخل Isolate): المحرك القديم للطبقات، محرك التوصيات، و AAB Algo.
 (TradeSignal, Forecast, AlgoResult, AlkaResult, AllResult, ZeroResult, AllResult, Forecast) _computeAll(List<Candle> c, List<Candle>? htf,
-    AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1) {
+    AppSettings s, MarketSymbol sym, EngineConfig cfg, double rr1, double rr2, double alkaTp1, String tf) {
+  // 1m و5m: إشارات الوقف القريب جداً تُحذف (السبريد يأكلها)
+  final ms = c.isEmpty ? 0.0 : minStopFor(tf, c.last.close);
   final base = SignalEngine.analyze(c, htf: htf, s: s, sym: sym, cfg: cfg);
   final hist = c.length; // الإشارات على كل الشموع المحمّلة (300 أو 600)
-  final fc = buildForecast(c, rr1: rr1, rr2: rr2, history: hist);
+  final fc = wideForecast(buildForecast(c, rr1: rr1, rr2: rr2, history: hist), ms);
   final al = aabAlgo(c, sens: 2.0, withPanel: false);
-  final ak = buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
+  final ak = wideAlka(buildAlka(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist), ms);
   // ALL و Mp (وما بُني عليها: النجوم، ST، SM، King): AAB بالإعداد الأصلي الذي تدرّبت عليه النماذج
-  final fAll = buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist);
+  final fAll = wideForecast(buildForecast(c, rr1: alkaTp1, rr2: rr2, history: hist), ms);
   final all = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending);
-  final z = buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist);
+  final z = wideZero(buildZeroOne(c, rr1: alkaTp1, rr2: rr2, sym: sym, history: hist), ms);
   // Mp: ALL + 0.1 (إشارات 0.1 بدون فلتر الشمعة الصغيرة ولها الأولوية)
   var mp = combineAll(c, fAll.signals, fAll.pending, ak.signals, ak.pending, zero: z.signals, zeroPending: z.pending, tag: 'Mp');
   if (s.extraSameDir) mp = _withExtras(c, mp, sym, alkaTp1, rr2, hist);

@@ -1208,15 +1208,13 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
-    // ── King: إشارات أعلى 30% ثقة حسب الذكاء الاصطناعي، مع نسبة الثقة
+    // ── King: إشارات أعلى 30% ثقة مع نجوم القوة (⭐ 30% • ⭐⭐ 15% • ⭐⭐⭐ 7%)
     if (L.king && kingr != null) {
       final r = kingr!.res;
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'King', AppColors.gold,
-          tagPer: [
-            for (final sg in r.signals)
-              'King ${kingr!.pct(sg.i, sg.dir)}%${kingr!.isStrong(sg.i, sg.dir) ? ' قوي' : ''}'
-          ],
-          pendTagPer: [for (final p in r.pending) 'King ${kingr!.pct(p.i, p.dir)}%']);
+          tagPer: List.filled(r.signals.length, 'King'),
+          starsPer: [for (final sg in r.signals) math.max(1, kingr!.stars(sg.i, sg.dir))],
+          pendTagPer: [for (final p in r.pending) 'King ${'⭐' * math.max(1, kingr!.stars(p.i, p.dir))}']);
     }
     // ── PQ: نفس إشارات النجوم و SM و Alka مجتمعة في مؤشر واحد (أخضر شراء، أحمر بيع)
     if (L.pq && pqr != null) {
@@ -1256,8 +1254,8 @@ class _Painter extends CustomPainter {
       _dashed(canvas, x0, xe, yT, lp, dash: 5, gap: 3);
       _dashed(canvas, x0, xe, yB, lp, dash: 5, gap: 3);
       // سهم الاتجاه في وسط الصندوق (فقط إذا الميل واضح)
-      if (q.pUp >= 0.62 || q.pUp <= 0.38) {
-        final up = q.pUp >= 0.62;
+      if (q.leanUp || q.leanDown) {
+        final up = q.leanUp;
         final cx = (x0 + xe) / 2, cy = (yT + yB) / 2, s0 = math.min(10.0, (yB - yT) / 4);
         final path = Path()
           ..moveTo(cx, cy + (up ? -s0 : s0))

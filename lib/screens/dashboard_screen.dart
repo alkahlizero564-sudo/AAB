@@ -47,7 +47,9 @@ class DashboardScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: AppColors.border, width: 0.8),
                 ),
-                child: ExpansionTile(
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: ExpansionTile(
                   tilePadding: const EdgeInsets.symmetric(horizontal: 14),
                   iconColor: AppColors.gold,
                   collapsedIconColor: AppColors.muted,
@@ -64,6 +66,7 @@ class DashboardScreen extends StatelessWidget {
                     _IndicatorsPanel(sig: sig),
                     _PatternsPanel(sig: sig),
                   ],
+                ),
                 ),
               ),
             ),
@@ -412,7 +415,7 @@ class _Disclaimer extends StatelessWidget {
 /// مؤشراتنا مرتبة من الأقوى (دقة اختبار لم يره بهدف 1R).
 List<(String, String, double, AllResult?)> _ranked(AppState st) => [
       ('AK', '🎯', 66, st.akR),
-      ('King', '🤖', st.kingTop == 15 ? 62.4 : 59.5, st.kingR?.res),
+      ('King', '🤖', 59.3, st.kingR?.res),
       ('AAB', '📈', 62.4, null),
       ('SM', '〰️', 60.5, st.smView),
       ('النجوم', '⭐', 61.3, st.starV?.res),

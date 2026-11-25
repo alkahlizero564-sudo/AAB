@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../services/settings_service.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import '../services/alert_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -154,7 +155,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.border, width: 0.8),
         ),
-        child: Theme(
+        child: Material(
+          type: MaterialType.transparency,
+          child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             initiallyExpanded: open,
@@ -174,6 +177,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             expandedCrossAxisAlignment: CrossAxisAlignment.start,
             children: kids,
           ),
+        ),
         ),
       );
 
@@ -245,6 +249,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ]),
           ]),
         ),
+        const _AlertsSection(),
         _section(Icons.vpn_key_rounded, 'مفاتيح البيانات', 'Tiingo ${hasTi ? '✓' : '—'} • Twelve Data $tw/4', [
           const Text('Tiingo: فوركس وذهب. Twelve Data: فوركس وذهب وأسهم — أضف حتى 4 مفاتيح ويتم التبديل بينها تلقائياً.',
               style: TextStyle(color: AppColors.muted, fontSize: 11.5, height: 1.4)),
@@ -404,6 +409,98 @@ class _KeyFieldState extends State<KeyField> {
               onPressed: _confirmDelete,
             ),
         ]),
+      ),
+    );
+  }
+}
+
+
+/// تنبيهات والتطبيق مقفول (AK • King • النجوم على المفضلة).
+class _AlertsSection extends StatefulWidget {
+  const _AlertsSection();
+  @override
+  State<_AlertsSection> createState() => _AlertsSectionState();
+}
+
+class _AlertsSectionState extends State<_AlertsSection> {
+  bool on = false, busy = false;
+  List<String> tfs = const ['15m', '1h'];
+
+  @override
+  void initState() {
+    super.initState();
+    () async {
+      final o = await AlertService.isOn(), t = await AlertService.tfs();
+      if (mounted) setState(() { on = o; tfs = t; });
+    }();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: on ? AppColors.gold : AppColors.border, width: 0.8),
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          activeColor: AppColors.onAccent,
+          activeTrackColor: AppColors.gold,
+          secondary: const Icon(Icons.notifications_active_rounded, color: AppColors.gold),
+          title: const Text('تنبيهات والتطبيق مقفول', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+          subtitle: const Text('كل 15 دقيقة يفحص المفضلة وينبّهك بأي إشارة جديدة من AK أو King أو النجوم',
+              style: TextStyle(fontSize: 11, color: AppColors.muted, height: 1.4)),
+          value: on,
+          onChanged: busy
+              ? null
+              : (v) async {
+                  setState(() => busy = true);
+                  final ok = await AlertService.setOn(v);
+                  if (!mounted) return;
+                  setState(() { busy = false; if (ok) on = v; });
+                  if (!ok) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('اسمح للتطبيق بالإشعارات من إعدادات الهاتف')));
+                  }
+                },
+        ),
+        if (on) ...[
+          const Text('الفريمات', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, children: [
+            for (final t in const ['5m', '15m', '1h', '4h'])
+              ChoiceChip(
+                label: Text(t.toUpperCase(),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: tfs.contains(t) ? AppColors.onAccent : AppColors.text)),
+                selected: tfs.contains(t),
+                selectedColor: AppColors.gold,
+                backgroundColor: AppColors.surface,
+                showCheckmark: false,
+                visualDensity: VisualDensity.compact,
+                onSelected: (_) {
+                  final n = [...tfs];
+                  n.contains(t) ? (n.length > 1 ? n.remove(t) : null) : n.add(t);
+                  setState(() => tfs = n);
+                  AlertService.setTfs(n);
+                },
+              ),
+          ]),
+          const SizedBox(height: 6),
+          const Text('الأسواق: المفضلة (حتى 8). أندرويد قد يؤخر الفحص قليلاً لتوفير البطارية.',
+              style: TextStyle(fontSize: 11, color: AppColors.muted, height: 1.4)),
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: AlertService.test,
+            icon: const Icon(Icons.notifications_rounded, size: 18, color: AppColors.gold),
+            label: const Text('تنبيه تجريبي', style: TextStyle(color: AppColors.gold)),
+          ),
+        ],
+      ]),
       ),
     );
   }

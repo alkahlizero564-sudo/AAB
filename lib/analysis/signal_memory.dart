@@ -7,7 +7,50 @@ import 'forecast.dart';
 /// الإشارة المحفوظة تُعاد بنفس مستوياتها (الدخول، الوقف، الأهداف)، ونتيجتها تُحسب من الشموع الحالية.
 class SignalMemory {
   final Map<String, Map<String, (PastSignal, String, int)>> _m = {}; // مؤشر → (وقت|اتجاه) → (الإشارة، المصدر، وقت الشمعة)
-  void clear() => _m.clear();
+  // بوابة الوقت: الإشارة التي لم تظهر خلال شمعة من إغلاق شمعتها لا تُعرض أبداً
+  // (تظهر أحياناً على شمعة قديمة لأن نافذة الشموع تحركت وتغيّرت المتوسطات الطويلة في أولها).
+  final Map<String, int> _t0 = {}, _prev = {}; // مؤشر → آخر شمعة مغلقة عند أول تحليل / عند التحليل السابق
+  final Map<String, Map<String, bool>> _ok = {}; // مؤشر → (وقت|اتجاه) → مسموحة؟ (يُقرر مرة واحدة)
+  void clear() {
+    _m.clear();
+    _t0.clear();
+    _prev.clear();
+    _ok.clear();
+  }
+
+  /// يحذف الإشارات المتأخرة: المسموح = ما كان على الشارت عند فتحه، أو ما ظهر قبل إغلاق الشمعة التي تليه.
+  List<PastSignal> gate(String name, List<Candle> c, List<PastSignal> sigs) {
+    final n = c.length;
+    if (n < 3) return sigs;
+    final last = c[n - 2].time.millisecondsSinceEpoch;
+    final t0 = _t0.putIfAbsent(name, () => last);
+    final prev = _prev[name] ?? last;
+    final ok = _ok.putIfAbsent(name, () => {});
+    var drop = false;
+    final keep = <bool>[];
+    for (final s in sigs) {
+      if (s.i < 0 || s.i >= n) {
+        keep.add(true);
+        continue;
+      }
+      final t = c[s.i].time.millisecondsSinceEpoch;
+      final v = ok.putIfAbsent('$t|${s.dir}', () => t <= t0 || t >= prev);
+      keep.add(v);
+      if (!v) drop = true;
+    }
+    _prev[name] = last;
+    if (ok.length > 3000) ok.removeWhere((k, _) => int.parse(k.split('|').first) < c.first.time.millisecondsSinceEpoch);
+    if (!drop) return sigs;
+    return [for (final (q, s) in sigs.indexed) if (keep[q]) s];
+  }
+
+  AllResult gateAll(String name, List<Candle> c, AllResult r) {
+    final g = gate(name, c, r.signals);
+    if (identical(g, r.signals)) return r;
+    final keepSet = {for (final s in g) (s.i, s.dir)};
+    final src = [for (final (q, s) in r.signals.indexed) if (keepSet.contains((s.i, s.dir))) q < r.sources.length ? r.sources[q] : ''];
+    return AllResult(g, src, r.pending, r.pendingSrc, r.tag, r.extra);
+  }
 
   static int _find(List<Candle> c, int t) {
     var lo = 0, hi = c.length - 1;
@@ -45,9 +88,12 @@ class SignalMemory {
   }
 
   /// يُرجع [sigs] مع الإشارات المحفوظة التي اختفت (آخر [window] شمعة فقط).
-  (List<PastSignal>, List<String>) _hold(String name, List<Candle> c, List<PastSignal> sigs, List<String> src, int window) {
+  (List<PastSignal>, List<String>) _hold(String name, List<Candle> c, List<PastSignal> sigs0, List<String> src0, int window) {
     final n = c.length;
-    if (n < 3) return (sigs, src);
+    if (n < 3) return (sigs0, src0);
+    final sigs = gate(name, c, sigs0);
+    final kept = identical(sigs, sigs0) ? null : {for (final s in sigs) (s.i, s.dir)};
+    final src = kept == null || src0.isEmpty ? src0 : [for (final (q, s) in sigs0.indexed) if (kept.contains((s.i, s.dir))) q < src0.length ? src0[q] : ''];
     final mem = _m.putIfAbsent(name, () => {});
     final cur = <String>{};
     for (final (q, s) in sigs.indexed) {

@@ -39,6 +39,27 @@ jobs:
             sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$F"
           fi
 
+      # التنبيهات والتطبيق مقفول: إذن الإشعارات + تشغيل الفحص بعد إعادة التشغيل + desugaring لمكتبة الإشعارات
+      - name: Notifications setup
+        run: |
+          F=android/app/src/main/AndroidManifest.xml
+          for P in POST_NOTIFICATIONS RECEIVE_BOOT_COMPLETED WAKE_LOCK; do
+            if ! grep -q "android.permission.$P" "$F"; then
+              sed -i "s#<application#<uses-permission android:name=\"android.permission.$P\"/>\n    <application#" "$F"
+            fi
+          done
+          G=android/app/build.gradle.kts
+          if [ -f "$G" ] && ! grep -q 'isCoreLibraryDesugaringEnabled' "$G"; then
+            sed -i 's#targetCompatibility = JavaVersion.VERSION_17#targetCompatibility = JavaVersion.VERSION_17\n        isCoreLibraryDesugaringEnabled = true#' "$G"
+            printf '\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n' >> "$G"
+          fi
+          G2=android/app/build.gradle
+          if [ -f "$G2" ] && ! grep -q 'coreLibraryDesugaringEnabled' "$G2"; then
+            sed -i 's#targetCompatibility = JavaVersion.VERSION_1[0-9_]*#&\n        coreLibraryDesugaringEnabled true#' "$G2"
+            printf '\ndependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.1.4"\n}\n' >> "$G2"
+          fi
+          grep -n 'permission' "$F"; grep -n -i 'desugar' android/app/build.gradle* || true
+
       - run: flutter pub get
 
       # أيقونة التطبيق (الذهبي الفاخر) واسم التطبيق على الهاتف

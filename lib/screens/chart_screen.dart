@@ -396,7 +396,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'King',
           emoji: '🤖',
-          desc: 'ذكاء اصطناعي (150 شجرة، 54 معلومة من السوق ومؤشراتنا): الأقوى من إشارات Mp مع نسبة الثقة — اختر كم يعرض فوق، و«قوي» = أعلى 15%',
+          desc: 'ذكاء اصطناعي يقرأ 54 معلومة من السوق ومؤشراتنا — كل إشارة عليها نجوم قوتها: ⭐ 56% • ⭐⭐ 61% • ⭐⭐⭐ 64% (1M/5M: 64% • 67% • 74%)',
           health: st.kingHealthNow,
           on: layers.king,
           toggle: () => layers.king = !layers.king
@@ -575,7 +575,7 @@ class _ChartScreenState extends State<ChartScreen> {
         final inds = _indicators(st);
         // دقة كل مؤشر على بيانات لم يرها (بهدف 1R) — لشريط الدقة والترتيب
         final acc = <String, double>{
-          'AK': 66, 'King': st.kingTop == 15 ? 62.4 : 59.5, 'AAB': 62.4, 'SM': 60.5,
+          'AK': 66, 'King': 59.3, 'AAB': 62.4, 'SM': 60.5,
           'نجوم': 61.3, 'PQ': 61.3, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
           'Mp': 55.7, 'ALL': 60.3, 'Alka': 59.6, '0.1': 51.2,
         };
@@ -597,7 +597,7 @@ class _ChartScreenState extends State<ChartScreen> {
           if (x.name == 'Q') {
             final q = st.qR;
             if (q == null) return 'جاري الحساب…';
-            return 'السوق ${q.regimeAr} • ${q.pUp >= 0.62 ? 'أقرب للصعود' : q.pUp <= 0.38 ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
+            return 'السوق ${q.regimeAr} • ${q.leanUp ? 'أقرب للصعود' : q.leanDown ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
           }
           if (x.name == 'PQ') {
             return st.pqV == null || st.pqV!.closed == 0
@@ -748,49 +748,22 @@ class _ChartScreenState extends State<ChartScreen> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: kids),
             );
         final onCount = inds.where((x) => x.on).length;
+        // King: بدل الاختيار — نجوم على كل إشارة حسب قوتها
         final kingOpts = optBox([
-          Row(children: [
-            const Text('King يعرض:', style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w800)),
-            const SizedBox(width: 8),
-            Flexible(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: _seg(const [('15', 'الأقوى 15%'), ('30', '30%'), ('50', '50%'), ('70', '70%')], '${st.kingTop}', (v) {
-                  st.setKingTop(int.parse(v));
-                  setSheet(() {});
-                }),
-              ),
-            ),
-          ]),
+          const Text('نجوم King = قوة الإشارة', style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
-          Text(
-              st.kingNearOnly
-                  ? switch (st.kingTop) {
-                      15 => 'الأقوى + دخول قريب: ~63% بهدف 1R (ذهب ~61%) — نصف الصفقات تقريباً',
-                      50 => '50% + دخول قريب: ~59% بهدف 1R (ذهب ~57%) — ثلث الصفقات تقريباً',
-                      70 => '70% + دخول قريب: ~59% بهدف 1R (ذهب ~57%) — ربع الصفقات تقريباً',
-                      _ => '30% + دخول قريب: ~60.5% بهدف 1R (ذهب ~59%) — أقل من نصف الصفقات',
-                    }
-                  : switch (st.kingTop) {
-                      15 => 'أقل إشارات وأدقها: ~62.4% بهدف 1R (ذهب ~61%)',
-                      50 => 'إشارات أكثر (ضعف 30% تقريباً): ~57.5% بهدف 1R (ذهب ~56%)',
-                      70 => 'أكثر الإشارات: ~56.6% بهدف 1R (ذهب ~55%)',
-                      _ => 'المتوازن (الافتراضي): ~59.3% بهدف 1R (ذهب ~58.5%)',
-                    },
-              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-          Row(children: [
-            const Expanded(
-              child: Text('دخول قريب فقط (قريب من قاع/قمة آخر 5 شموع)',
-                  style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
+          for (final (st0, acc, lt) in const [('⭐', '56%', '64%'), ('⭐⭐', '61%', '67%'), ('⭐⭐⭐', '64%', '74%')])
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: [
+                SizedBox(width: 52, child: Text(st0, style: const TextStyle(fontSize: 12))),
+                Text('الدقة ~$acc', style: const TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
+                const Spacer(),
+                Text('1M/5M ~$lt', style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+              ]),
             ),
-            Switch(
-              value: st.kingNearOnly,
-              onChanged: (v) {
-                st.setKingNearOnly(v);
-                setSheet(() {});
-              },
-            ),
-          ]),
+          const Text('كل ما زادت النجوم: إشارات أقل وأدق. اختبار على سنين لم يرها (هدف 1R، والفريمات الصغيرة بعد السبريد).',
+              style: TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
         ]);
         final starOpts = optBox([
           Row(children: [
@@ -2069,9 +2042,9 @@ class _QCard extends StatelessWidget {
     final sym = st.symbol;
     final mood = const ['السوق هادئ — حركة صغيرة', 'السوق عادي', 'السوق متحرك — حركة كبيرة'][q.regime];
     final col = q.regime == 2 ? AppColors.down : (q.regime == 0 ? AppColors.up : AppColors.gold);
-    final lean = q.pUp >= 0.62
+    final lean = q.leanUp
         ? ('أقرب للصعود', AppColors.up)
-        : q.pUp <= 0.38
+        : q.leanDown
             ? ('أقرب للهبوط', AppColors.down)
             : ('الاتجاه غير واضح', AppColors.muted);
     return Container(
