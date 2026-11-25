@@ -1,0 +1,82 @@
+import pandas as pd, numpy as np, warnings, time, sys
+warnings.filterwarnings('ignore')
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier, RandomForestRegressor
+from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+import lightgbm as lgb
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+df=pd.read_csv(S+'/ai/signals2.csv'); ta=pd.read_csv(S+'/ai/ta.csv'); qf=pd.read_csv(S+'/ai/qfeat.csv')
+for c in [c for c in ta.columns if c.startswith('t_')]: df[c]=ta[c].values
+df['q_scale']=qf.q_scale.fillna(qf.q_scale.median()).values; df['q_pup']=qf.q_pup.fillna(0.5).values
+base=[c for c in df.columns if c not in ['market','tf','year','dir','win','r','src'] and not c.startswith(('i_','t_','q_'))]
+safe=['i_st','i_stars','i_near','i_hot','i_held','i_sm','i_smstrong','i_km','i_daily200','i_sr_behind','i_sr_ahead','i_ribage','i_lt']
+F0=base+safe
+y=df.win.values; R=df.r.values; w2=(df.r==1.5).astype(int).values
+mk=df.market.values; yr=df.year.values
+train=((mk=='gold20')&(yr>=2010)&(yr<=2018))|((mk=='btc')&(yr<=2020))
+test=~train&~((mk=='gold20')&(yr<2010))
+fit=((mk=='gold20')&(yr>=2010)&(yr<=2015))|((mk=='btc')&(yr<=2019))
+val=((mk=='gold20')&(yr>=2016)&(yr<=2018))|((mk=='btc')&(yr==2020))
+extra_tr=np.isin(mk,['eth'])&(yr<=2019)|np.isin(mk,['eurusd19','gbpusd19','audusd19','usdcad19','nas19','oil19'])
+def score(p_ref,p,mask,top=15):
+    thr=np.quantile(p_ref,1-top/100); k=(p>=thr)&mask
+    return y[k].mean()*100, k.sum()
+def make(kind,prm,seed):
+    if kind=='rf': return RandomForestClassifier(n_estimators=prm.get('n',150),max_depth=prm['d'],min_samples_leaf=prm['leaf'],max_features=prm.get('mf',0.3),n_jobs=-1,random_state=seed)
+    if kind=='et': return ExtraTreesClassifier(n_estimators=prm.get('n',300),max_depth=prm['d'],min_samples_leaf=prm['leaf'],max_features=prm.get('mf',0.5),n_jobs=-1,random_state=seed)
+    if kind=='lgb': return lgb.LGBMClassifier(n_estimators=prm['n'],learning_rate=prm['lr'],num_leaves=prm['nl'],min_child_samples=prm['mc'],subsample=0.8,subsample_freq=1,colsample_bytree=prm.get('cs',0.5),reg_lambda=prm.get('l2',10),verbose=-1,random_state=seed)
+    if kind=='hgb': return HistGradientBoostingClassifier(max_iter=prm['n'],learning_rate=prm['lr'],max_leaf_nodes=prm['nl'],min_samples_leaf=prm['mc'],l2_regularization=1.0,random_state=seed)
+    if kind=='mlp': return make_pipeline(StandardScaler(),MLPClassifier(hidden_layer_sizes=prm['h'],alpha=prm['a'],max_iter=60,early_stopping=True,random_state=seed))
+    if kind=='lr': return make_pipeline(StandardScaler(),LogisticRegression(C=prm['C'],max_iter=500))
+    if kind=='knn': return make_pipeline(StandardScaler(),KNeighborsClassifier(n_neighbors=prm['k']))
+def run(kind,prm,feats,trmask,target='win',weight=None,seed=1):
+    X=df[feats].values.astype(np.float32)
+    yy={'win':y,'2r':w2}[target] if target!='r' else None
+    if target=='r':
+        m=RandomForestRegressor(n_estimators=150,max_depth=prm['d'],min_samples_leaf=prm['leaf'],max_features=0.3,n_jobs=-1,random_state=seed).fit(X[trmask],R[trmask])
+        return m.predict(X)
+    m=make(kind,prm,seed)
+    if weight is not None and kind in ('rf','et','lgb','hgb'):
+        m.fit(X[trmask],yy[trmask],**({'sample_weight':weight[trmask]} if kind!='lgb' else {'sample_weight':weight[trmask]}))
+    else: m.fit(X[trmask],yy[trmask])
+    return m.predict_proba(X)[:,1]
+recw=np.where(mk=='gold20',(yr-2009)/9.0,np.where(mk=='btc',(yr-2016)/4.0,1.0)).clip(0.2,1.5)
+configs=[]
+for d,leaf in [(8,150),(10,120),(12,80),(14,60),(None,100),(10,60),(16,150)]: configs.append(('rf',{'d':d,'leaf':leaf},'F0','win',None,f'RF d{d} leaf{leaf}'))
+configs.append(('rf',{'d':10,'leaf':120,'mf':0.15},'F0','win',None,'RF d10 mf0.15'))
+configs.append(('rf',{'d':10,'leaf':120,'mf':0.5},'F0','win',None,'RF d10 mf0.5'))
+configs.append(('rf',{'d':10,'leaf':120,'n':500},'F0','win',None,'RF d10 500 شجرة'))
+for d,leaf in [(10,60),(14,40),(None,80)]: configs.append(('et',{'d':d,'leaf':leaf},'F0','win',None,f'ExtraTrees d{d} leaf{leaf}'))
+for n,lr,nl,mc in [(400,0.015,15,200),(800,0.01,31,300),(300,0.03,7,500),(1500,0.005,15,400),(600,0.02,63,800)]: configs.append(('lgb',{'n':n,'lr':lr,'nl':nl,'mc':mc},'F0','win',None,f'LightGBM n{n} lr{lr} nl{nl}'))
+configs.append(('hgb',{'n':300,'lr':0.03,'nl':15,'mc':300},'F0','win',None,'HistGB'))
+configs.append(('mlp',{'h':(64,32),'a':1e-3},'F0','win',None,'شبكة عصبية 64-32'))
+configs.append(('mlp',{'h':(128,),'a':1e-2},'F0','win',None,'شبكة عصبية 128'))
+configs.append(('lr',{'C':0.1},'F0','win',None,'انحدار لوجستي'))
+configs.append(('knn',{'k':300},'F0','win',None,'kNN 300'))
+configs.append(('rf',{'d':10,'leaf':120},'F0','r',None,'RF يتوقع R (حجم الربح)'))
+configs.append(('rf',{'d':10,'leaf':120},'F0','2r',None,'RF يتوقع الوصول للهدف 2'))
+configs.append(('rf',{'d':10,'leaf':120},'F0','win','rec','RF وزن أكبر للسنين الحديثة'))
+configs.append(('lgb',{'n':400,'lr':0.015,'nl':15,'mc':200},'F0','win','rec','LightGBM وزن حديث'))
+configs.append(('rf',{'d':10,'leaf':120},'FT','win',None,'RF + تحليل فني + Q'))
+configs.append(('rf',{'d':10,'leaf':120},'F0','win','extra','RF + بيانات أكثر (إيثيريوم/عملات/مؤشرات 2019)'))
+configs.append(('lgb',{'n':400,'lr':0.015,'nl':15,'mc':200},'F0','win','extra','LightGBM + بيانات أكثر'))
+FT=F0+[c for c in df.columns if c.startswith('t_')]+['q_scale','q_pup']
+res=[]; preds={}
+for kind,prm,fs,tgt,wmode,name in configs:
+    t=time.time(); feats=F0 if fs=='F0' else FT
+    trm=fit|(extra_tr if wmode=='extra' else False)
+    wt=recw if wmode=='rec' else None
+    p=run(kind,prm,feats,trm,tgt,wt)
+    v15,_=score(p[fit],p,val,15); v30,_=score(p[fit],p,val,30)
+    res.append((name,kind,prm,fs,tgt,wmode,v15,v30)); preds[name]=p
+    print(f"{name:52s} تحقق 15%: {v15:.1f} • 30%: {v30:.1f}  ({time.time()-t:.0f}s)",flush=True)
+# دمج أفضل 3 على التحقق
+rk=lambda p,ref: np.searchsorted(np.sort(ref),p)/len(ref)
+best=sorted(res,key=lambda x:-x[6])[:3]
+ens=np.mean([rk(preds[b[0]],preds[b[0]][fit]) for b in best],0)
+e15,_=score(ens[fit],ens,val,15); e30,_=score(ens[fit],ens,val,30)
+print(f"{'دمج أفضل 3 على التحقق':52s} تحقق 15%: {e15:.1f} • 30%: {e30:.1f}",flush=True)
+import pickle; pickle.dump((res,best,(e15,e30)),open(S+'/ai/search_res.pkl','wb'))

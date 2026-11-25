@@ -1,0 +1,26 @@
+exec(open('/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad/ai/search.py').read().split("recw=")[0])
+FT=F0+[c for c in df.columns if c.startswith('t_')]+['q_scale','q_pup']
+gold=(mk=='gold20')
+rk=lambda p,ref: np.searchsorted(np.sort(ref),p)/len(ref)
+def ev(lab,ps):
+    s=f"{lab:46s}"
+    for top in [30,15,7]:
+        a=[];g=[]
+        for p in ps:
+            thr=np.quantile(p[train],1-top/100); k=(p>=thr)&test
+            a.append(y[k].mean()); g.append(y[k&gold].mean())
+        s+=f" | {top}%: {np.mean(a)*100:.1f}±{np.std(a)*100:.1f} (ذهب {np.mean(g)*100:.1f})"
+    print(s,flush=True)
+    grp={'ذهب':mk=='gold20','بيتكوين':mk=='btc','إيثيريوم':mk=='eth','عملات':np.isin(mk,['eurusd19','gbpusd19','audusd19','usdcad19','eurusd26','gbpusd26','usdjpy26']),'مؤشرات/نفط':np.isin(mk,['nas19','oil19','nas26','us30_26','oil26']),'فضة':mk=='silver26'}
+    s2='      15% حسب السوق:'
+    for gn,gm in grp.items():
+        a=[y[(p>=np.quantile(p[train],0.85))&test&gm].mean() for p in ps]; nn=int(np.mean([((p>=np.quantile(p[train],0.85))&test&gm).sum() for p in ps]))
+        s2+=f" {gn} {np.mean(a)*100:.1f}% ({nn})"
+    print(s2,flush=True)
+def fitp(kind,prm,feats,trm,seed):
+    X=df[feats].values.astype(np.float32); m=make(kind,prm,seed).fit(X[trm],y[trm]); return m.predict_proba(X)[:,1]
+test=~(train|extra_tr)&~((mk=='gold20')&(yr<2010))
+seeds=range(1,6)
+ev('King الحالي (اختبار عادل)',[fitp('rf',{'d':10,'leaf':120},F0,train,s) for s in seeds])
+ev('King + بيانات أكثر (اختبار عادل)',[fitp('rf',{'d':10,'leaf':120},F0,train|extra_tr,s) for s in seeds])
+ev('LightGBM + بيانات أكثر (اختبار عادل)',[fitp('lgb',{'n':400,'lr':0.015,'nl':15,'mc':200},F0,train|extra_tr,s) for s in seeds])
