@@ -1,0 +1,59 @@
+import pandas as pd, numpy as np, sys, warnings
+warnings.filterwarnings('ignore')
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+src=open(S+'/ai/tv35.py').read()
+exec(src[src.index('def load'):src.index('def strategies')])
+@njit(cache=False)
+def box(o,h,l,c,sig,stop,rr,R):
+    n=len(c)
+    for i in range(1,n-1):
+        d=sig[i]
+        if d==0: continue
+        e=o[i+1]; sp=stop[i]; risk=(e-sp)*d
+        if risk<=0: continue
+        tp=e+d*rr*risk; R[i]=-9.0
+        for j in range(i+1,min(n,i+400)):
+            if (d>0 and l[j]<=sp) or (d<0 and h[j]>=sp): R[i]=-1.0; break
+            if j>i+1 and ((d>0 and h[j]>=tp) or (d<0 and l[j]<=tp)): R[i]=rr; break
+        if R[i]==-9.0: R[i]=(c[min(n-1,i+399)]-e)*d/risk
+sets=[('gold','15m','gold20/xau20_15m'),('gold','1h','gold20/xau20_1h'),('gold','4h','gold20/xau20_4h'),('btc','15m','gold10/btc10_15m'),('btc','1h','gold10/btc10_1h'),('btc','4h','gold10/btc10_4h'),('nas','1h','data/NAS100_USD_1h'),('eth','1h','data/eth_1h_2526')]
+res={}
+for mk,tf,f in sets:
+    d=load(f'{S}/{f}.csv'); o,h,l,c=[d[x].values.astype(np.float64) for x in ['open','high','low','close']]
+    a10=atr(d,10)
+    yr=d.time.dt.year.values
+    te=~(((mk=='gold')&(yr<=2018))|((mk=='btc')&(yr<=2020)))
+    # Supertrend 10/3 وخط الوقف
+    hl=(d.high+d.low)/2; up=(hl-3*a10).values; dn=(hl+3*a10).values; n=len(c)
+    fu=up.copy(); fd=dn.copy(); trd=np.ones(n)
+    for i in range(1,n):
+        fu[i]=max(up[i],fu[i-1]) if c[i-1]>fu[i-1] else up[i]
+        fd[i]=min(dn[i],fd[i-1]) if c[i-1]<fd[i-1] else dn[i]
+        trd[i]=1 if c[i]>fd[i-1] else (-1 if c[i]<fu[i-1] else trd[i-1])
+    st_sig=np.where((trd==1)&(np.r_[1,trd[:-1]]==-1),1,np.where((trd==-1)&(np.r_[-1,trd[:-1]]==1),-1,0)).astype(np.int64)
+    st_stop=np.where(trd==1,fu,fd)
+    # UT Bot (1, 10)
+    av=a10.values; ts=np.zeros(n); stt=np.zeros(n)
+    for i in range(1,n):
+        nl=av[i]; p=ts[i-1]
+        if c[i]>p and c[i-1]>p: ts[i]=max(p,c[i]-nl)
+        elif c[i]<p and c[i-1]<p: ts[i]=min(p,c[i]+nl)
+        elif c[i]>p: ts[i]=c[i]-nl
+        else: ts[i]=c[i]+nl
+        stt[i]=1 if c[i]>ts[i] else -1
+    ut_sig=np.where((stt==1)&(np.r_[1,stt[:-1]]==-1),1,np.where((stt==-1)&(np.r_[-1,stt[:-1]]==1),-1,0)).astype(np.int64)
+    for nm,sg,sp in [('Supertrend + صندوق',st_sig,st_stop),('UT Bot + صندوق',ut_sig,ts)]:
+        sg=sg.copy(); sg[:210]=0
+        for rr in (1.0,2.0,3.0):
+            R=np.full(n,np.nan); box(o,h,l,c,sg,sp.astype(np.float64),rr,R)
+            m=~np.isnan(R)&te
+            for g in [mk,'all']:
+                x=res.setdefault((nm,rr,g),[]); x.extend(R[m].tolist())
+    print('done',mk,tf,file=sys.stderr,flush=True)
+for nm in ['Supertrend + صندوق','UT Bot + صندوق']:
+    for rr in (1.0,2.0,3.0):
+        s=f"{nm:20s} هدف {rr:.0f}:1"
+        for g in ['all','gold','btc','nas','eth']:
+            v=np.array(res[(nm,rr,g)]); s+=f" | {g}: {(v>0).mean()*100:4.1f}% R {v.mean():+.3f} n={len(v)}"
+        print(s)

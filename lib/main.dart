@@ -27,9 +27,18 @@ class App extends StatelessWidget {
       title: 'AAB',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
+      scrollBehavior: const _SmoothScroll(),
       builder: (context, child) =>
           Directionality(textDirection: TextDirection.rtl, child: child!),
       home: const HomeShell(),
     );
   }
+}
+
+
+/// تمرير ناعم بارتداد في كل التطبيق.
+class _SmoothScroll extends MaterialScrollBehavior {
+  const _SmoothScroll();
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) => const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics());
 }

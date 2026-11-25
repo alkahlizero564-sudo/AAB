@@ -27,6 +27,19 @@ class ChartScreen extends StatefulWidget {
 class _ChartScreenState extends State<ChartScreen> {
   final layers = debugChartLayers ?? ChartLayers();
   bool full = false; // وضع الشاشة الكاملة للشارت
+  bool _wasLand = false;
+
+  /// قلب الشاشة: أفقي (الشارت فقط) أو العودة للوضع العمودي.
+  Future<void> _rotate(bool landscape) async {
+    HapticFeedback.mediumImpact();
+    if (landscape) {
+      await SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+    } else {
+      await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      // بعد العودة: نسمح بالدوران التلقائي مرة أخرى
+      Future.delayed(const Duration(seconds: 2), () => SystemChrome.setPreferredOrientations(const []));
+    }
+  }
   int? sel; // الشمعة المختارة بالضغط المطوّل
   bool why = false; // إظهار سبب القرار في الشريط السفلي
   final forceShow = <String>{}; // مؤشرات طلب المستخدم إظهارها رغم أنها 🔴
@@ -337,9 +350,9 @@ class _ChartScreenState extends State<ChartScreen> {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            width: 32,
+            width: 29,
             height: 28,
-            margin: const EdgeInsets.symmetric(horizontal: 1),
+            margin: const EdgeInsets.symmetric(horizontal: 0.5),
             decoration: BoxDecoration(
               gradient: primary ? AppColors.goldGrad : null,
               color: primary ? null : (on ? AppColors.gold.withOpacity(0.18) : Colors.transparent),
@@ -395,6 +408,14 @@ class _ChartScreenState extends State<ChartScreen> {
           health: st.akHealth,
           on: layers.aiak,
           toggle: () => layers.aiak = !layers.aiak
+        ),
+        (
+          name: 'Q',
+          emoji: '🗺️',
+          desc: 'يوضّح أين سيكون السعر غالباً في الفترة القادمة، وهل السوق هادئ أو متحرك',
+          health: null,
+          on: layers.q,
+          toggle: () => layers.q = !layers.q
         ),
         (
           name: 'PQ',
@@ -552,6 +573,42 @@ class _ChartScreenState extends State<ChartScreen> {
       builder: (_) => StatefulBuilder(builder: (ctx, setSheet) {
         final st = context.watch<AppState>();
         final inds = _indicators(st);
+        // دقة كل مؤشر على بيانات لم يرها (بهدف 1R) — لشريط الدقة والترتيب
+        final acc = <String, double>{
+          'AK': 66, 'King': st.kingTop == 15 ? 62.4 : 59.5, 'AAB': 62.4, 'SM': 60.5,
+          'نجوم': 58, 'PQ': 55.5, 'ST': 58.6, 'KM': 60.4, 'DM': 59.2, 'LT': 67,
+          'Mp': 55.7, 'ALL': 56.6, 'Alka': 53.6, '0.1': 51.2,
+        };
+        final byName = {for (final x in inds) x.name: x};
+        const groups = <(String, IconData, List<String>)>[
+          ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['AK', 'King', 'AAB', 'SM']),
+          ('خريطة الاحتمالات', Icons.map_rounded, ['Q']),
+          ('مؤشرات الثقة', Icons.verified_rounded, ['نجوم', 'PQ', 'ST', 'KM', 'DM']),
+          ('بعيد المدى', Icons.landscape_rounded, ['LT']),
+          ('الأساسية', Icons.layers_rounded, ['Mp', 'ALL', 'Alka', '0.1']),
+        ];
+        final rankOf = {
+          for (final (q, e) in ([...acc.entries.where((e) => e.key != 'LT')]..sort((x, y) => y.value.compareTo(x.value))).indexed) e.key: q + 1
+        };
+        String live(({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle}) x) {
+          final h = x.health;
+          if (x.name == 'نجوم') return st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق';
+          if (x.name == 'LT') return _ltStatus(st);
+          if (x.name == 'Q') {
+            final q = st.qR;
+            if (q == null) return 'جاري الحساب…';
+            return 'السوق ${q.regimeAr} • ${q.pUp >= 0.55 ? 'أقرب للصعود' : q.pUp <= 0.45 ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
+          }
+          if (x.name == 'PQ') {
+            return st.pqR == null || st.pqR!.closed == 0
+                ? 'جاري الحساب…'
+                : 'الآن ${(st.pqR!.winRate * 100).toStringAsFixed(0)}% من ${st.pqR!.closed}';
+          }
+          if (h == null) return 'جاري الحساب…';
+          if (h.trades < 20) return 'عينة صغيرة (${h.trades} صفقة)';
+          return 'الآن ${(h.winRate * 100).toStringAsFixed(0)}% من ${h.trades} صفقة';
+        }
+
         Widget card(({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle}) x) {
           final h = x.health;
           final col = x.name == 'LT'
@@ -562,222 +619,245 @@ class _ChartScreenState extends State<ChartScreen> {
                   'red' => AppColors.down,
                   _ => AppColors.muted,
                 };
-          return Material(
-            color: x.on ? AppColors.gold.withOpacity(0.10) : AppColors.card,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: x.on ? AppColors.gold : AppColors.border, width: x.on ? 1.4 : 0.8),
+          final a = acc[x.name] ?? 50;
+          final barCol = a >= 60 ? AppColors.up : a >= 55 ? AppColors.gold : AppColors.muted;
+          final rank = rankOf[x.name] ?? 99;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              gradient: x.on
+                  ? const LinearGradient(colors: [Color(0xFF241F12), AppColors.card], begin: Alignment.topRight, end: Alignment.bottomLeft)
+                  : null,
+              color: x.on ? null : AppColors.card,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: x.on ? AppColors.gold : AppColors.border, width: x.on ? 1.4 : 0.8),
+              boxShadow: x.on ? [BoxShadow(color: AppColors.gold.withOpacity(0.15), blurRadius: 12)] : null,
             ),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                setState(x.toggle);
-                setSheet(() {});
-              },
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Text(x.emoji, style: const TextStyle(fontSize: 15)),
-                    const SizedBox(width: 6),
-                    Text(x.name,
-                        style: TextStyle(
-                            color: x.on ? AppColors.gold : AppColors.text, fontSize: 15, fontWeight: FontWeight.w800)),
-                    const Spacer(),
-                    Icon(x.on ? Icons.check_circle_rounded : Icons.circle_outlined,
-                        size: 18, color: x.on ? AppColors.gold : AppColors.muted),
-                  ]),
-                  const SizedBox(height: 3),
-                  Text(x.desc,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: AppColors.muted, fontSize: 10.5, height: 1.3)),
-                  const Spacer(),
-                  Row(children: [
-                    Container(width: 7, height: 7, decoration: BoxDecoration(color: col, shape: BoxShape.circle)),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(
-                        x.name == 'نجوم'
-                            ? (st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق')
-                            : x.name == 'LT'
-                            ? _ltStatus(st)
-                            : x.name == 'PQ'
-                            ? (st.pqR == null || st.pqR!.closed == 0
-                                ? 'جاري الحساب…'
-                                : 'الآن ${(st.pqR!.winRate * 100).toStringAsFixed(0)}% من ${st.pqR!.closed} صفقة')
-                            : h == null
-                            ? 'جاري الحساب…'
-                            : h.trades < 20
-                                ? 'عينة صغيرة (${h.trades} صفقة)'
-                                : '${h.label} • ${(h.winRate * 100).toStringAsFixed(0)}% من ${h.trades}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: col, fontSize: 10.5, fontWeight: FontWeight.w700),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  setState(x.toggle);
+                  setSheet(() {});
+                },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      if (rank < 99) Container(
+                        width: 20,
+                        height: 20,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          gradient: rank <= 3 ? AppColors.goldGrad : null,
+                          color: rank <= 3 ? null : AppColors.surface,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text('$rank',
+                            style: TextStyle(
+                                fontSize: 10.5, fontWeight: FontWeight.w900, color: rank <= 3 ? AppColors.onAccent : AppColors.muted)),
                       ),
-                    ),
+                      const SizedBox(width: 6),
+                      Text(x.emoji, style: const TextStyle(fontSize: 14)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(x.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: x.on ? AppColors.gold : AppColors.text, fontSize: 15, fontWeight: FontWeight.w900)),
+                      ),
+                      // مفتاح تشغيل صغير
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 34,
+                        height: 19,
+                        padding: const EdgeInsets.all(2),
+                        alignment: x.on ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
+                        decoration: BoxDecoration(
+                          color: x.on ? AppColors.gold : AppColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: x.on ? AppColors.gold : AppColors.border),
+                        ),
+                        child: Container(
+                          width: 14,
+                          height: 14,
+                          decoration: BoxDecoration(color: x.on ? AppColors.onAccent : AppColors.muted, shape: BoxShape.circle),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 4),
+                    Text(x.desc,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: AppColors.muted, fontSize: 10.5, height: 1.3)),
+                    const Spacer(),
+                    // شريط الدقة (50% → 70%)
+                    Row(children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(3),
+                          child: LinearProgressIndicator(
+                            value: ((a - 50) / 20).clamp(0.02, 1.0).toDouble(),
+                            minHeight: 5,
+                            backgroundColor: AppColors.surface,
+                            valueColor: AlwaysStoppedAnimation(barCol),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text('${a.toStringAsFixed(a == a.roundToDouble() ? 0 : 1)}%',
+                          style: TextStyle(color: barCol, fontSize: 11.5, fontWeight: FontWeight.w900)),
+                    ]),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Container(width: 6, height: 6, decoration: BoxDecoration(color: col, shape: BoxShape.circle)),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(live(x),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: col, fontSize: 10.5, fontWeight: FontWeight.w700)),
+                      ),
+                    ]),
                   ]),
-                  if (x.name == 'King')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Text('اختبار لم يره: 59.5% • «قوي» 62.4%',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ),
-                  if (x.name == 'PQ')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Text('المدى الطويل (ذهب): 53-58% • إدارة ~78-81%',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ),
-                  if (x.name == 'LT')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Text('المدى الطويل (ذهب): ترند 67% • ارتداد 70%',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ),
-                  if (x.name == 'AK')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Text('اختبار لم يره: 66% (ذهب 65%)',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ),
-                  if (x.name == 'SM' || x.name == 'AAB')
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(x.name == 'SM' ? 'اختبار لم يره: 60.5% (ذهب 57%)' : 'اختبار لم يره: 62.4% (ذهب 58%)',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ),
-                  if (x.name == 'نجوم')
-                    const Padding(
-                      padding: EdgeInsets.only(top: 2),
-                      child: Text('المدى الطويل: 3 نجوم 64% • بلا 55%',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ),
-                  if (longTermAcc[x.name] case final lt?)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text('المدى الطويل ${lt.$1.toStringAsFixed(0)}% • إدارة ${lt.$2.toStringAsFixed(0)}%',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.text, fontSize: 10, fontWeight: FontWeight.w600)),
-                    ),
-                ]),
+                ),
               ),
             ),
           );
         }
 
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Widget grid(List<String> names) => GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.42,
+              children: [for (final n in names) if (byName[n] != null) card(byName[n]!)],
+            );
+        Widget optBox(List<Widget> kids) => Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.gold.withOpacity(0.4), width: 0.8),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: kids),
+            );
+        final onCount = inds.where((x) => x.on).length;
+        final kingOpts = optBox([
+          Row(children: [
+            const Text('King يعرض:', style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w800)),
+            const SizedBox(width: 8),
+            Flexible(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: _seg(const [('15', 'الأقوى 15%'), ('30', '30%'), ('50', '50%'), ('70', '70%')], '${st.kingTop}', (v) {
+                  st.setKingTop(int.parse(v));
+                  setSheet(() {});
+                }),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+              st.kingNearOnly
+                  ? switch (st.kingTop) {
+                      15 => 'الأقوى + دخول قريب: ~63% بهدف 1R (ذهب ~61%) — نصف الصفقات تقريباً',
+                      50 => '50% + دخول قريب: ~59% بهدف 1R (ذهب ~57%) — ثلث الصفقات تقريباً',
+                      70 => '70% + دخول قريب: ~59% بهدف 1R (ذهب ~57%) — ربع الصفقات تقريباً',
+                      _ => '30% + دخول قريب: ~60.5% بهدف 1R (ذهب ~59%) — أقل من نصف الصفقات',
+                    }
+                  : switch (st.kingTop) {
+                      15 => 'أقل إشارات وأدقها: ~62.4% بهدف 1R (ذهب ~61%)',
+                      50 => 'إشارات أكثر (ضعف 30% تقريباً): ~57.5% بهدف 1R (ذهب ~56%)',
+                      70 => 'أكثر الإشارات: ~56.6% بهدف 1R (ذهب ~55%)',
+                      _ => 'المتوازن (الافتراضي): ~59.3% بهدف 1R (ذهب ~58.5%)',
+                    },
+              style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+          Row(children: [
+            const Expanded(
+              child: Text('دخول قريب فقط (قريب من قاع/قمة آخر 5 شموع)',
+                  style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
+            ),
+            Switch(
+              value: st.kingNearOnly,
+              onChanged: (v) {
+                st.setKingNearOnly(v);
+                setSheet(() {});
+              },
+            ),
+          ]),
+        ]);
+        final starOpts = optBox([
+          Row(children: [
+            const Text('أقل عدد نجوم:', style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w800)),
+            const SizedBox(width: 8),
+            _seg(const [('0', 'الكل'), ('1', '1'), ('2', '2'), ('3', '3')], '${st.starMin}', (v) {
+              st.setStarMin(int.parse(v));
+              setSheet(() {});
+            }),
+          ]),
+          const SizedBox(height: 6),
+        ]);
+
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.85,
+          maxChildSize: 0.95,
+          builder: (_, ctl) => ListView(
+            controller: ctl,
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
+            children: [
               Center(
                 child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+                    width: 36, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
               ),
               const SizedBox(height: 10),
               Row(children: [
-                const Text('المؤشرات',
-                    style: TextStyle(color: AppColors.text, fontSize: 17, fontWeight: FontWeight.w800)),
+                const Icon(Icons.auto_graph_rounded, color: AppColors.gold, size: 22),
                 const SizedBox(width: 8),
-                Text('${st.symbol.code} • ${st.tf}', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-              ]),
-              const SizedBox(height: 2),
-              const Text('شغّل أي عدد معاً. السطر الملوّن: أداؤه الآن على هذا السوق (آخر 5000 شمعة). السطر الأبيض: دقته على المدى الطويل (بهدف 1R، وبإدارة التطبيق).',
-                  style: TextStyle(color: AppColors.muted, fontSize: 11)),
-              const SizedBox(height: 8),
-              if (layers.king)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(children: [
-                    const Text('King يعرض:',
-                        style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: _seg(const [('15', 'الأقوى 15%'), ('30', '30%'), ('50', '50%'), ('70', '70%')],
-                            '${st.kingTop}', (v) {
-                          st.setKingTop(int.parse(v));
-                          setSheet(() {});
-                        }),
-                      ),
-                    ),
-                  ]),
+                const Text('المؤشرات', style: TextStyle(color: AppColors.text, fontSize: 18, fontWeight: FontWeight.w900)),
+                const SizedBox(width: 8),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: AppColors.gold.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+                  child: Text('مشغّل: $onCount', style: const TextStyle(color: AppColors.gold, fontSize: 11, fontWeight: FontWeight.w800)),
                 ),
-              if (layers.king)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                      st.kingNearOnly
-                          ? switch (st.kingTop) {
-                              15 => 'الأقوى + دخول قريب: ~63% بهدف 1R (ذهب ~61%) — نصف الصفقات تقريباً',
-                              50 => '50% + دخول قريب: ~59% بهدف 1R (ذهب ~57%) — ثلث الصفقات تقريباً',
-                              70 => '70% + دخول قريب: ~59% بهدف 1R (ذهب ~57%) — ربع الصفقات تقريباً',
-                              _ => '30% + دخول قريب: ~60.5% بهدف 1R (ذهب ~59%) — أقل من نصف الصفقات',
-                            }
-                          : switch (st.kingTop) {
-                              15 => 'أقل إشارات وأدقها: ~62.4% بهدف 1R (ذهب ~61%)',
-                              50 => 'إشارات أكثر (ضعف 30% تقريباً): ~57.5% بهدف 1R (ذهب ~56%)',
-                              70 => 'أكثر الإشارات: ~56.6% بهدف 1R (ذهب ~55%)',
-                              _ => 'المتوازن (الافتراضي): ~59.3% بهدف 1R (ذهب ~58.5%)',
-                            },
-                      style: const TextStyle(color: AppColors.muted, fontSize: 11)),
-                ),
-              if (layers.king)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(children: [
-                    const Expanded(
-                      child: Text('دخول قريب فقط (قريب من قاع/قمة آخر 5 شموع)',
-                          style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
-                    ),
-                    Switch(
-                      value: st.kingNearOnly,
-                      onChanged: (v) {
-                        st.setKingNearOnly(v);
-                        setSheet(() {});
-                      },
-                    ),
-                  ]),
-                ),
-              if (layers.star)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(children: [
-                    const Text('أقل عدد نجوم:',
-                        style: TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w700)),
-                    const SizedBox(width: 8),
-                    _seg(const [('0', 'الكل'), ('1', '1'), ('2', '2'), ('3', '3')], '${st.starMin}', (v) {
-                      st.setStarMin(int.parse(v));
+                if (onCount > 0)
+                  TextButton(
+                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: const Size(0, 30)),
+                    onPressed: () {
+                      setState(() {
+                        for (final x in inds) {
+                          if (x.on) x.toggle();
+                        }
+                      });
                       setSheet(() {});
-                    }),
-                  ]),
-                ),
-              Flexible(
-                  child: GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.5,
-                children: [for (final x in inds) card(x)],
-              )),
-            ]),
+                    },
+                    child: const Text('إيقاف الكل', style: TextStyle(color: AppColors.muted, fontSize: 11.5)),
+                  ),
+              ]),
+              const SizedBox(height: 4),
+              Text('${st.symbol.code} • ${st.tf.toUpperCase()} — مرتبة من الأدق. النسبة = دقته على بيانات لم يرها (بهدف 1R). السطر الملوّن = أداؤه الآن على هذا السوق (آخر 5000 شمعة).',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
+              for (final (title, icon, names) in groups) ...[
+                const SizedBox(height: 14),
+                Row(children: [
+                  Icon(icon, size: 17, color: AppColors.gold),
+                  const SizedBox(width: 6),
+                  Text(title, style: const TextStyle(color: AppColors.text, fontSize: 14, fontWeight: FontWeight.w800)),
+                ]),
+                const SizedBox(height: 8),
+                grid(names),
+                if (names.contains('King') && layers.king) kingOpts,
+                if (names.contains('نجوم') && layers.star) starOpts,
+              ],
+            ],
           ),
         );
       }),
@@ -1071,8 +1151,16 @@ class _ChartScreenState extends State<ChartScreen> {
         dm: layers.dm && !hideDm,
         st: layers.st && !hideSt);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkAlerts(st, eff));
+    // الوضع الأفقي (قلب الشاشة): الشارت وحده يملأ الشاشة مثل TradingView
+    final land = MediaQuery.orientationOf(context) == Orientation.landscape;
+    final fs = full || land;
+    if (land != _wasLand) {
+      _wasLand = land;
+      SystemChrome.setEnabledSystemUIMode(land ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge);
+    }
     return Column(children: [
       // صف 1: الرمز والسعر + أدوات (قراءة، مقارنة، طبقات، شاشة كاملة)
+      if (!land)
       Container(
         padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
         decoration: const BoxDecoration(
@@ -1109,6 +1197,7 @@ class _ChartScreenState extends State<ChartScreen> {
               _iconTool(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', () => setState(() => layers.sr = !layers.sr),
                   on: layers.sr),
               _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
+              _iconTool(Icons.screen_rotation_rounded, 'قلب الشاشة', () => _rotate(true)),
               _iconTool(
                   full ? Icons.close_fullscreen_rounded : Icons.open_in_full_rounded, full ? 'إظهار الأدوات' : 'شاشة كاملة',
                   () {
@@ -1119,7 +1208,7 @@ class _ChartScreenState extends State<ChartScreen> {
           ),
         ]),
       ),
-      if (!full)
+      if (!fs)
         // صف 2: الأُطر الزمنية | المؤشرات (مع لون حالتها)
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 5, 8, 3),
@@ -1155,6 +1244,7 @@ class _ChartScreenState extends State<ChartScreen> {
               ltR: st.ltR,
               pqR: st.pqR,
               akR: st.akR,
+              qR: st.qR,
               kingR: st.kingR,
               allR: st.allR,
               repaint: st.liveTick,
@@ -1171,13 +1261,25 @@ class _ChartScreenState extends State<ChartScreen> {
               left: 6,
               child: IgnorePointer(child: _TrendBoard(board: st.board)),
             ),
+          if (eff.q && st.qR != null && !land)
+            Positioned(
+              bottom: 26,
+              left: 6,
+              child: IgnorePointer(child: _QCard(st: st)),
+            ),
+          if (land)
+            Positioned(
+              top: 6,
+              right: 70,
+              child: _LandBar(st: st, onExit: () => _rotate(false), onLayers: _showLayers, onInds: _showIndicators),
+            ),
         ]),
       ),
       // الشاشة الكاملة: الشارت وحده بدون أي أشرطة
-      if (!full && st.forecast != null) ...[
+      if (!fs && st.forecast != null) ...[
         if (sel != null && sel! < st.candles.length)
           _candlePanel(st, sel!)
-        else if (!full)
+        else if (!fs)
           _forecastBar(st.forecast!, st.symbol),
         if (hideAll && layers.all) _hiddenNotice('ALL', st.allHealth!, 'ALL|$mk'),
         if (hideDm && layers.dm) _hiddenNotice('DM', st.dmHealth!, 'DM|$mk'),
@@ -1189,7 +1291,7 @@ class _ChartScreenState extends State<ChartScreen> {
         if (hideAlka && layers.alka) _hiddenNotice('Alka', st.alkaHealth!, 'Alka|$mk'),
         if (hideAab && layers.sigs) _hiddenNotice('AAB', st.aabHealthNow!, 'AAB|$mk'),
         ..._bars(st, eff, showAab: !(hideAab && layers.sigs)),
-      ] else if (!full && st.forecast == null && s != null)
+      ] else if (!fs && st.forecast == null && s != null)
         _bottomBar(s, st.symbol),
     ]);
   }
@@ -1881,6 +1983,116 @@ class _TrendBoard extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         for (final k in const ['1h', '4h', '1d'])
           if (board.containsKey(k)) chip(k, board[k]!),
+      ]),
+    );
+  }
+}
+
+
+/// شريط عائم صغير فوق الشارت في الوضع الأفقي: الرمز والسعر، الفريمات، المؤشرات/الطبقات، والعودة.
+class _LandBar extends StatelessWidget {
+  final AppState st;
+  final VoidCallback onExit, onLayers, onInds;
+  const _LandBar({required this.st, required this.onExit, required this.onLayers, required this.onInds});
+  @override
+  Widget build(BuildContext context) {
+    final c = st.candles;
+    final px = c.isEmpty ? double.nan : c.last.close;
+    Widget btn(IconData i, VoidCallback f, {bool gold = false}) => InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: f,
+          child: Container(
+            width: 30,
+            height: 28,
+            decoration: BoxDecoration(
+              gradient: gold ? AppColors.goldGrad : null,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(i, size: 17, color: gold ? AppColors.onAccent : AppColors.text),
+          ),
+        );
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppColors.card.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border, width: 0.8),
+        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 10)],
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(st.symbol.code, style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w900, fontSize: 12.5)),
+        const SizedBox(width: 6),
+        if (!px.isNaN)
+          Text(st.symbol.fmt(px), style: const TextStyle(color: AppColors.gold, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(width: 8),
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            for (final t in AppState.timeframes.reversed)
+              InkWell(
+                borderRadius: BorderRadius.circular(7),
+                onTap: () => st.setTf(t),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  decoration: BoxDecoration(
+                    gradient: st.tf == t ? AppColors.goldGrad : null,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(t.toUpperCase(),
+                      style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          color: st.tf == t ? AppColors.onAccent : AppColors.muted)),
+                ),
+              ),
+          ]),
+        ),
+        const SizedBox(width: 6),
+        btn(Icons.auto_graph_rounded, onInds),
+        btn(Icons.layers_outlined, onLayers),
+        btn(Icons.screen_lock_portrait_rounded, onExit, gold: true),
+      ]),
+    );
+  }
+}
+
+
+/// بطاقة Q الصغيرة (مبسّطة): حال السوق، أين سيكون السعر غالباً، وأي جهة أقرب.
+class _QCard extends StatelessWidget {
+  final AppState st;
+  const _QCard({required this.st});
+  @override
+  Widget build(BuildContext context) {
+    final q = st.qR!;
+    final sym = st.symbol;
+    final mood = const ['السوق هادئ — حركة صغيرة', 'السوق عادي', 'السوق متحرك — حركة كبيرة'][q.regime];
+    final col = q.regime == 2 ? AppColors.down : (q.regime == 0 ? AppColors.up : AppColors.gold);
+    final lean = q.pUp >= 0.55
+        ? ('أقرب للصعود ⬆', AppColors.up)
+        : q.pUp <= 0.45
+            ? ('أقرب للهبوط ⬇', AppColors.down)
+            : ('الاتجاه غير واضح', AppColors.muted);
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card.withOpacity(0.93),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.gold.withOpacity(0.6), width: 0.8),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Q', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w900, fontSize: 14)),
+          const SizedBox(width: 6),
+          Flexible(child: Text(mood, style: TextStyle(color: col, fontSize: 11.5, fontWeight: FontWeight.w800))),
+        ]),
+        const SizedBox(height: 3),
+        const Text('السعر غالباً سيكون بين:', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
+        Text('\u2066${sym.fmt(q.band(1, 12))}  —  ${sym.fmt(q.band(3, 12))}\u2069',
+            style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 2),
+        Text(lean.$1, style: TextStyle(color: lean.$2, fontSize: 11, fontWeight: FontWeight.w700)),
       ]),
     );
   }

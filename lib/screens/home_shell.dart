@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -32,6 +33,7 @@ class HomeShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
     final onChart = st.tab == 1;
+    final land = MediaQuery.orientationOf(context) == Orientation.landscape;
     return Scaffold(
       // صفحة الشارت لها رأسها الخاص (الرمز والأدوات): نخفي الشريط العلوي لنكسب مساحة
       appBar: onChart
@@ -150,7 +152,9 @@ class HomeShell extends StatelessWidget {
       body: SafeArea(
         top: onChart,
         bottom: false,
-        child: IndexedStack(
+        child: _TabFade(
+          tab: st.tab,
+          child: IndexedStack(
           index: st.tab,
           children: const [
             DashboardScreen(),
@@ -160,8 +164,9 @@ class HomeShell extends StatelessWidget {
             SettingsScreen(),
           ],
         ),
+        ),
       ),
-      bottomNavigationBar: onChart && st.chartFull
+      bottomNavigationBar: onChart && (st.chartFull || land)
           ? null
           : SafeArea(
               top: false,
@@ -181,7 +186,10 @@ class HomeShell extends StatelessWidget {
                           // زر الشارت في المنتصف: دائرة ذهبية بارزة
                           ? Center(
                               child: GestureDetector(
-                                onTap: () => st.setTab(1),
+                                onTap: () {
+                                  HapticFeedback.selectionClick();
+                                  st.setTab(1);
+                                },
                                 child: Container(
                                   width: 52,
                                   height: 52,
@@ -201,7 +209,10 @@ class HomeShell extends StatelessWidget {
                             )
                           : InkWell(
                               borderRadius: BorderRadius.circular(20),
-                              onTap: () => st.setTab(i),
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                st.setTab(i);
+                              },
                               child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                                 AnimatedContainer(
                                   duration: const Duration(milliseconds: 200),
@@ -229,4 +240,42 @@ class HomeShell extends StatelessWidget {
             ),
     );
   }
+}
+
+
+/// انتقال ناعم عند تغيير التبويب (تلاشٍ وانزلاق خفيف) مع الإبقاء على حالة كل شاشة.
+class _TabFade extends StatefulWidget {
+  final int tab;
+  final Widget child;
+  const _TabFade({required this.tab, required this.child});
+  @override
+  State<_TabFade> createState() => _TabFadeState();
+}
+
+class _TabFadeState extends State<_TabFade> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 260), value: 1);
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+
+  @override
+  void didUpdateWidget(_TabFade old) {
+    super.didUpdateWidget(old);
+    if (old.tab != widget.tab) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _a,
+        child: widget.child,
+        builder: (_, child) => Opacity(
+          opacity: 0.35 + 0.65 * _a.value,
+          child: Transform.translate(offset: Offset(0, 14 * (1 - _a.value)), child: child),
+        ),
+      );
 }

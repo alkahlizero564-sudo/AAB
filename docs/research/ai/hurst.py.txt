@@ -1,0 +1,52 @@
+import pandas as pd, numpy as np, sys
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+src=open(S+'/ai/tv35.py').read(); exec(src[src.index('@njit'):src.index('def load')].replace('cache=True','cache=False'))
+@njit(cache=True)
+def hurst(lp,win,H):
+    lags=np.array([1,2,4,8,16]); lx=np.log(lags.astype(np.float64))
+    n=len(lp)
+    for i in range(win+16,n):
+        ys=np.zeros(5)
+        for k in range(5):
+            L=lags[k]; s=0.0; s2=0.0; m=0
+            for t in range(i-win+L,i+1):
+                dlt=lp[t]-lp[t-L]; s+=dlt; s2+=dlt*dlt; m+=1
+            var=s2/m-(s/m)**2
+            ys[k]=0.5*np.log(max(var,1e-20))
+        mx=lx.mean(); my=ys.mean()
+        H[i]=((lx-mx)*(ys-my)).sum()/((lx-mx)**2).sum()
+def load(p):
+    d=pd.read_csv(p); d.columns=[x.lower() for x in d.columns]; d=d.rename(columns={d.columns[0]:'time'})
+    d['time']=pd.to_datetime(d.time,utc=True,errors='coerce'); return d.dropna(subset=['time']).reset_index(drop=True)
+sets=[('gold','15m','gold20/xau20_15m'),('gold','1h','gold20/xau20_1h'),('gold','4h','gold20/xau20_4h'),('btc','15m','gold10/btc10_15m'),('btc','1h','gold10/btc10_1h'),('btc','4h','gold10/btc10_4h'),('eth','1h','data/eth_1h_1819'),('eth','1h','data/eth_1h_2526'),('eur','1h','data/EUR_USD_1h')]
+rows=[]
+for mk,tf,f in sets:
+    d=load(f'{S}/{f}.csv'); o,h,l,c=[d[x].values.astype(np.float64) for x in ['open','high','low','close']]
+    n=len(c); pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc))); a=pd.Series(tr).ewm(alpha=1/14,adjust=False).mean().values
+    H=np.full(n,np.nan); hurst(np.log(c),128,H)
+    cs=pd.Series(c); hi20=pd.Series(h).shift(1).rolling(20).max().values; lo20=pd.Series(l).shift(1).rolling(20).min().values
+    mid=cs.rolling(20).mean(); sd=cs.rolling(20).std(); bu=(mid+2*sd).values; bl=(mid-2*sd).values
+    brk=np.where((c>hi20)&(np.r_[0,c[:-1]]<=np.r_[0,hi20[:-1]]),1,np.where((c<lo20)&(np.r_[0,c[:-1]]>=np.r_[0,lo20[:-1]]),-1,0))
+    fade=np.where((c<bl)&(np.r_[0,c[:-1]]>=np.r_[0,bl[:-1]]),1,np.where((c>bu)&(np.r_[0,c[:-1]]<=np.r_[0,bu[:-1]]),-1,0))
+    yr=d.time.dt.year.values
+    train=((mk=='gold')&(yr>=2010)&(yr<=2018))|((mk=='btc')&(yr<=2020)); test=~train&~((mk=='gold')&(yr<2010))
+    for nm,sg in [('كسر (ترند)',brk),('عكس الأطراف (تذبذب)',fade)]:
+        s=sg.astype(np.int64).copy(); s[:300]=0
+        w=np.full(n,-1,np.int64); r=np.zeros(n); simall(o,h,l,c,a,s,w,r)
+        m=(w>=0)&~np.isnan(H)
+        for reg,rm in [('H>0.55 ترند',H>0.55),('H 0.45-0.55',(H>=0.45)&(H<=0.55)),('H<0.45 تذبذب',H<0.45),('الكل',H>-9)]:
+            for ph,pm in [('train',train),('test',test)]:
+                mm=m&rm&pm
+                rows.append((nm,reg,mk,tf,ph,w[mm].sum(),mm.sum(),r[mm].sum()))
+    print('done',mk,tf,'H mean',np.nanmean(H).round(3),'pct>0.55',(H>0.55).mean().round(3),'pct<0.45',(H<0.45).mean().round(3),file=sys.stderr)
+df=pd.DataFrame(rows,columns=['s','reg','mk','tf','ph','w','n','r'])
+for nm in ['كسر (ترند)','عكس الأطراف (تذبذب)']:
+    print('=====',nm)
+    for reg in ['H>0.55 ترند','H 0.45-0.55','H<0.45 تذبذب','الكل']:
+        q=df[(df.s==nm)&(df.reg==reg)]
+        out=f"  {reg:14s}"
+        for ph in ['train','test']:
+            z=q[q.ph==ph]; out+=f" | {ph}: {z.w.sum()/z.n.sum()*100:5.1f}% R {z.r.sum()/z.n.sum():+.3f} n={z.n.sum()}"
+        g=q[(q.ph=='test')&(q.mk=='gold')]; out+=f" | ذهب اختبار {g.w.sum()/max(1,g.n.sum())*100:.1f}% R {g.r.sum()/max(1,g.n.sum()):+.3f}"
+        print(out)

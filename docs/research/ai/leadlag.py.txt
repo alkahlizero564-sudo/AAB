@@ -1,0 +1,36 @@
+import pandas as pd, numpy as np
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+src=open(S+'/ai/tv35.py').read(); exec(src[src.index('@njit'):src.index('def load')].replace('cache=True','cache=False'))
+def load(p):
+    d=pd.read_csv(p); d.columns=[x.lower() for x in d.columns]; d=d.rename(columns={d.columns[0]:'time'})
+    d['time']=pd.to_datetime(d.time,utc=True,errors='coerce'); return d.dropna(subset=['time']).set_index('time')[['open','high','low','close']]
+pairs=[('1m',['data/btc_1m_tail'],['data/eth_1m_tail_2526']),('5m',['data/btc_5m'],['data/eth_5m_2526']),
+       ('15m',['gold10/btc10_15m'],['data/eth_15m_1819','data/eth_15m_2526']),('1h',['gold10/btc10_1h'],['data/eth_1h_1819','data/eth_1h_2526'])]
+for tf,bf,ef in pairs:
+    B=pd.concat([load(f'{S}/{x}.csv') for x in bf]); E=pd.concat([load(f'{S}/{x}.csv') for x in ef])
+    B=B[~B.index.duplicated()]; E=E[~E.index.duplicated()]
+    J=E.join(B,rsuffix='_b',how='inner').sort_index()
+    rb=np.log(J.close_b).diff(); re=np.log(J.close).diff()
+    print(f'===== {tf}: {len(J)} شمعة مشتركة')
+    print(f"  ارتباط نفس الشمعة {rb.corr(re):.3f} | بيتكوين الآن ← إيثيريوم الشمعة الجاية {rb.corr(re.shift(-1)):+.4f} | إيثيريوم الآن ← بيتكوين الجاية {re.corr(rb.shift(-1)):+.4f}")
+    o,h,l,c=[J[k].values.astype(np.float64) for k in ['open','high','low','close']]
+    cb=J.close_b.values; hb=J.high_b.values; lb=J.low_b.values
+    pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc))); a=pd.Series(tr).ewm(alpha=1/14,adjust=False).mean().values
+    pcb=np.r_[cb[0],cb[:-1]]; trb=np.maximum(hb-lb,np.maximum(abs(hb-pcb),abs(lb-pcb))); ab=pd.Series(trb).ewm(alpha=1/14,adjust=False).mean().values
+    h20b=pd.Series(hb).shift(1).rolling(20).max().values; l20b=pd.Series(lb).shift(1).rolling(20).min().values
+    h20e=pd.Series(h).shift(1).rolling(20).max().values; l20e=pd.Series(l).shift(1).rolling(20).min().values
+    mb=(cb-pcb)/ab; me=(c-pc)/a
+    sigs={
+     'بيتكوين كسر 20 وإيثيريوم لسه':np.where((cb>h20b)&(c<h20e),1,np.where((cb<l20b)&(c>l20e),-1,0)),
+     'شمعة بيتكوين قوية (>1.5ATR) وإيثيريوم ضعيفة (<0.5)':np.where((mb>1.5)&(me<0.5),1,np.where((mb<-1.5)&(me>-0.5),-1,0)),
+     'فجوة 3 شموع: بيتكوين سبق إيثيريوم بـ 1.5 ATR':None,
+    }
+    rb3=(cb-np.r_[cb[:3],cb[:-3]])/ab; re3=(c-np.r_[c[:3],c[:-3]])/a
+    gap=rb3-re3; sigs['فجوة 3 شموع: بيتكوين سبق إيثيريوم بـ 1.5 ATR']=np.where(gap>1.5,1,np.where(gap<-1.5,-1,0))
+    for nm,s in sigs.items():
+        s=s.astype(np.int64).copy(); s[:60]=0
+        s=np.where((s!=0)&(np.r_[0,s[:-1]]==s),0,s)  # أول شمعة فقط
+        w=np.full(len(c),-1,np.int64); r=np.zeros(len(c)); simall(o,h,l,c,a,s,w,r)
+        m=w>=0
+        print(f"  {nm:52s}: {w[m].mean()*100:5.1f}% R {r[m].mean():+.3f} n={m.sum()}")

@@ -17,6 +17,7 @@ import '../analysis/lt_indicator.dart';
 import '../analysis/pq_indicator.dart';
 import '../analysis/king_indicator.dart';
 import '../analysis/signal_memory.dart';
+import '../analysis/q_indicator.dart';
 import '../analysis/signal_engine.dart';
 import '../data/symbols.dart';
 import '../models.dart';
@@ -64,6 +65,7 @@ class AppState extends ChangeNotifier {
   // (اختبار لم يره، 1R: SM 56.7% → 60.5% ، AAB 56.0% → 62.4%)
   static const smAi = 30, aabAi = 30;
   AllResult? smView; // SM بعد فلتر الذكاء (للعرض)
+  QResult? qR; // مؤشر Q: خريطة الاحتمالات
   AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
   IndHealth? get akHealth => _aiH(15, 2);
   Forecast? _fcRaw;
@@ -286,6 +288,7 @@ class AppState extends ChangeNotifier {
     _fcRaw = null;
     smView = null;
     akR = null;
+    qR = null;
     algo = null;
     alka = null;
     allR = null;
@@ -385,6 +388,7 @@ class AppState extends ChangeNotifier {
     _fcRaw = fc;
     _applyAi();
     _holdAll();
+    qR = buildQ(candles, tf);
     signal = _unify(base, fc);
     algo = al;
     if (prev != null && prev.direction == signal!.direction) {

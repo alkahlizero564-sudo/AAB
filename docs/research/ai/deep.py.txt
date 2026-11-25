@@ -1,0 +1,74 @@
+import pandas as pd, numpy as np, torch, torch.nn as nn, warnings, time
+warnings.filterwarnings('ignore'); torch.set_num_threads(4)
+from sklearn.ensemble import RandomForestClassifier
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+raw=pd.read_csv(S+'/ai/seq.csv',header=None)
+meta=raw.iloc[:,:6]; meta.columns=['market','tf','year','dir','win','entry_dist']
+X=raw.iloc[:,6:].values.astype(np.float32).reshape(len(raw),64,5)
+d=meta.dir.values[:,None]
+o,h,l,c,v=[X[:,:,k] for k in range(5)]
+# توحيد الاتجاه: البيع يُقلب (القمة تصبح قاعاً)
+Xn=np.stack([o*d, np.where(d>0,h,-l), np.where(d>0,l,-h), c*d, v],axis=2).astype(np.float32)
+Xn=np.clip(Xn,-15,15)
+s2=pd.read_csv(S+'/ai/signals2.csv')
+assert (s2.win.values==meta.win.values).all()
+y=meta.win.values.astype(np.float32)
+trm=(((meta.market=='gold20')&(meta.year>=2010)&(meta.year<=2018))|((meta.market=='btc')&(meta.year<=2020))).values
+test=(~trm)&~((meta.market=='gold20')&(meta.year<2010)).values
+gold=(meta.market=='gold20').values
+class CNN(nn.Module):
+    def __init__(s):
+        super().__init__()
+        s.f=nn.Sequential(nn.Conv1d(5,32,5,padding=2),nn.ReLU(),nn.Conv1d(32,32,5,padding=2),nn.ReLU(),nn.MaxPool1d(2),
+                          nn.Conv1d(32,64,3,padding=1),nn.ReLU(),nn.AdaptiveAvgPool1d(1))
+        s.h=nn.Sequential(nn.Dropout(0.3),nn.Linear(64,1))
+    def forward(s,x): return s.h(s.f(x.transpose(1,2)).squeeze(-1)).squeeze(-1)
+class LSTM(nn.Module):
+    def __init__(s):
+        super().__init__(); s.r=nn.LSTM(5,48,batch_first=True,num_layers=1); s.h=nn.Sequential(nn.Dropout(0.3),nn.Linear(48,1))
+    def forward(s,x): o,_=s.r(x); return s.h(o[:,-1]).squeeze(-1)
+class TRF(nn.Module):
+    def __init__(s):
+        super().__init__(); s.e=nn.Linear(5,32); s.p=nn.Parameter(torch.randn(1,64,32)*0.02)
+        s.t=nn.TransformerEncoder(nn.TransformerEncoderLayer(32,4,64,dropout=0.2,batch_first=True),2); s.h=nn.Linear(32,1)
+    def forward(s,x): z=s.t(s.e(x)+s.p); return s.h(z[:,-1]).squeeze(-1)
+def train(M,seed):
+    torch.manual_seed(seed); np.random.seed(seed)
+    idx=np.where(trm)[0]; np.random.shuffle(idx); nv=len(idx)//7; va,tr=idx[:nv],idx[nv:]
+    m=M(); opt=torch.optim.AdamW(m.parameters(),1e-3,weight_decay=1e-3); lf=nn.BCEWithLogitsLoss()
+    Xt=torch.tensor(Xn); yt=torch.tensor(y); best=(1e9,None); bad=0
+    for ep in range(40):
+        m.train(); np.random.shuffle(tr)
+        for b in range(0,len(tr),256):
+            j=tr[b:b+256]; opt.zero_grad(); loss=lf(m(Xt[j]),yt[j]); loss.backward(); opt.step()
+        m.eval()
+        with torch.no_grad(): vl=lf(m(Xt[va]),yt[va]).item()
+        if vl<best[0]-1e-4: best=(vl,{k:v.clone() for k,v in m.state_dict().items()}); bad=0
+        else:
+            bad+=1
+            if bad>=5: break
+    m.load_state_dict(best[1]); m.eval()
+    with torch.no_grad(): p=torch.sigmoid(torch.cat([m(Xt[b:b+4096]) for b in range(0,len(Xt),4096)])).numpy()
+    return p
+def rep(lab,ps):
+    s=f"{lab:34s}"
+    for top in [30,15,7]:
+        a=[];g=[]
+        for p in ps:
+            thr=np.quantile(p[trm],1-top/100); k=(p>=thr)&test
+            a.append(y[k].mean()); g.append(y[k&gold].mean())
+        s+=f" | {top}%: {np.mean(a)*100:.1f}±{np.std(a)*100:.1f} (ذهب {np.mean(g)*100:.1f})"
+    print(s,flush=True)
+rk=lambda p: np.searchsorted(np.sort(p[trm]),p)/trm.sum()
+base=[c for c in s2.columns if c not in ['market','tf','year','dir','win','r','src'] and not c.startswith('i_')]
+safe=['i_st','i_stars','i_near','i_hot','i_held','i_sm','i_smstrong','i_km','i_daily200','i_sr_behind','i_sr_ahead','i_ribage','i_lt']
+king=[]
+for sd in range(1,4):
+    m=RandomForestClassifier(n_estimators=150,min_samples_leaf=120,max_depth=10,max_features=0.3,n_jobs=-1,random_state=sd).fit(s2[trm][base+safe].values.astype(np.float32),y[trm])
+    king.append(m.predict_proba(s2[base+safe].values.astype(np.float32))[:,1])
+rep('King الحالي',king)
+for nm,M in [('CNN (شبكة التفاف)',CNN),('LSTM (ذاكرة)',LSTM),('Transformer',TRF)]:
+    t=time.time(); ps=[train(M,sd) for sd in range(1,4)]
+    rep(nm,ps)
+    rep(f'  King + {nm.split()[0]}',[(rk(a)+rk(b))/2 for a,b in zip(king,ps)])
+    print(f'  ({time.time()-t:.0f}s)',flush=True)

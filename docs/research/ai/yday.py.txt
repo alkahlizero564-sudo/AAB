@@ -1,0 +1,72 @@
+import pandas as pd, numpy as np
+from numba import njit
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+src=open(S+'/ai/gold3.py').read(); exec(src[src.index('@njit'):src.index("d=pd.read_csv")].replace('cache=True','cache=False'))
+d=pd.read_csv(S+'/gold20/xau20_15m.csv'); d.columns=['time','o','h','l','c','v']; d['time']=pd.to_datetime(d.time)
+d=d[d.time.dt.year>=2010].reset_index(drop=True)
+o,h,l,c=[d[k].values.astype(np.float64) for k in 'ohlc']
+pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc))); a=pd.Series(tr).ewm(alpha=1/14,adjust=False).mean().values
+d['day']=d.time.dt.date; hr=d.time.dt.hour.values; yr=d.time.dt.year.values
+D=d.groupby('day').agg(O=('o','first'),H=('h','max'),L=('l','min'),C=('c','last'),yr=('time',lambda x: x.iloc[0].year))
+D=D[D.H>D.L]
+dtr=pd.concat([D.H-D.L,(D.H-D.C.shift()).abs(),(D.L-D.C.shift()).abs()],axis=1).max(axis=1); D['A']=dtr.ewm(alpha=1/14,adjust=False).mean().shift()
+D['pO'],D['pH'],D['pL'],D['pC']=D.O.shift(),D.H.shift(),D.L.shift(),D.C.shift()
+D['col']=np.sign(D.pC-D.pO)
+def summ(lab,yrs,r,w=None):
+    r=np.asarray(r); yrs=np.asarray(yrs); w=(r>0) if w is None else np.asarray(w)
+    s=f"  {lab:44s}"
+    for nm,m in [('تدريب 10-18',yrs<=2018),('اختبار 19-25',yrs>=2019)]:
+        s+=f" | {nm}: {w[m].mean()*100:5.1f}% R {r[m].mean():+.3f} n={m.sum()}"
+    print(s)
+print('===== 1) لون شمعة أمس (دخول افتتاح اليوم، خروج إغلاقه؛ الربح بوحدات ATR اليومي)')
+q=D.dropna(subset=['A','col']); q=q[q.col!=0]
+ret=(q.C-q.O)/q.A
+summ('استمرار (أخضر أمس → شراء اليوم)',q.yr,ret*q.col)
+summ('انعكاس (أخضر أمس → بيع اليوم)',q.yr,-ret*q.col)
+big=(q.pC-q.pO).abs()/q.A>1
+summ('استمرار بعد شمعة كبيرة (>1 ATR)',q.yr[big],(ret*q.col)[big])
+summ('انعكاس بعد شمعة كبيرة (>1 ATR)',q.yr[big],(-ret*q.col)[big])
+print('===== 2+3) كسر قمة/قاع أمس على 15m (أول كسر في اليوم)')
+dayidx=pd.Series(np.arange(len(d))).groupby(d.day.values).apply(list)
+res={k:[] for k in ['كسر — وقف خلف 3 شموع (1R/2R)','كسر — وقف منتصف أمس، هدف 2:1','كسر مع لون أمس — وقف خلف 3 شموع','كسر مع لون أمس — وقف منتصف أمس 2:1','ارتداد من منتصف أمس (1R/2R)']}
+for dy,idxs in dayidx.items():
+    if dy not in D.index or np.isnan(D.loc[dy,'pH']): continue
+    PH,PL,PC,PO=D.loc[dy,['pH','pL','pC','pO']]; mid=(PH+PL)/2; col=np.sign(PC-PO); done=False; doneM=False
+    opn=o[idxs[0]]
+    for i in idxs:
+        if i+1>=len(c) or hr[i]<1: continue
+        if not done:
+            dd=1 if c[i]>PH else (-1 if c[i]<PL else 0)
+            if dd!=0:
+                e=o[i+1]; ext=min(l[i-2:i+1]) if dd>0 else max(h[i-2:i+1]); st3=ext-dd*0.1*a[i]
+                r1,_=trade(o,h,l,c,i,dd,e,st3,2.0,96); _,r2=trade(o,h,l,c,i,dd,e,mid,2.0,96)
+                if r1>-9: res['كسر — وقف خلف 3 شموع (1R/2R)'].append((yr[i],r1))
+                if r2>-9: res['كسر — وقف منتصف أمس، هدف 2:1'].append((yr[i],r2))
+                if dd==col:
+                    if r1>-9: res['كسر مع لون أمس — وقف خلف 3 شموع'].append((yr[i],r1))
+                    if r2>-9: res['كسر مع لون أمس — وقف منتصف أمس 2:1'].append((yr[i],r2))
+                done=True
+        if not doneM:
+            dd=1 if opn>mid else -1
+            touched=(l[i]<=mid and c[i]>mid) if dd>0 else (h[i]>=mid and c[i]<mid)
+            if touched:
+                e=o[i+1]; st=(l[i]-0.1*a[i]) if dd>0 else (h[i]+0.1*a[i])
+                r1,_=trade(o,h,l,c,i,dd,e,st,2.0,96)
+                if r1>-9: res['ارتداد من منتصف أمس (1R/2R)'].append((yr[i],r1))
+                doneM=True
+for k,v in res.items():
+    if v: v=np.array(v); summ(k,v[:,0],v[:,1])
+print('===== 5) اليوم الداخلي (Inside Day) ثم كسره في اليوم التالي (الربح بوحدات ATR اليومي، خروج إغلاق اليوم)')
+q=D.dropna(subset=['A']).copy()
+ins=(q.H<=q.pH)&(q.L>=q.pL)
+nx=q.shift(-1)
+rows=[]
+for dy in q.index[ins.values]:
+    n_=nx.loc[dy]
+    if np.isnan(n_.H): continue
+    H0,L0,A0=q.loc[dy,'H'],q.loc[dy,'L'],q.loc[dy,'A']
+    up=n_.H>H0; dn=n_.L<L0
+    if up and not dn: rows.append((n_.yr,(n_.C-H0)/A0))
+    elif dn and not up: rows.append((n_.yr,(L0-n_.C)/A0))
+    elif up and dn: rows.append((n_.yr,-((H0-L0)/A0)))
+rows=np.array(rows); summ('كسر اليوم الداخلي (أول اتجاه)',rows[:,0],rows[:,1])

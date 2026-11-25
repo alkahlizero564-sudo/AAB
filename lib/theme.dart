@@ -106,6 +106,23 @@ ThemeData buildTheme() {
       inactiveTrackColor: AppColors.border,
     ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(color: AppColors.accent),
+    // انتقالات الصفحات: تكبير ناعم
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: ZoomPageTransitionsBuilder(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    }),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: AppColors.card,
+      contentTextStyle: const TextStyle(fontFamily: 'Cairo', color: AppColors.text, fontWeight: FontWeight.w600),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12), side: BorderSide(color: AppColors.accent.withOpacity(0.6))),
+      actionTextColor: AppColors.gold,
+    ),
+    tooltipTheme: TooltipThemeData(
+      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
+      textStyle: const TextStyle(fontFamily: 'Cairo', color: AppColors.text, fontSize: 12),
+    ),
     inputDecorationTheme: const InputDecorationTheme(
       filled: true,
       fillColor: AppColors.surface,

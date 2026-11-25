@@ -1,0 +1,100 @@
+import pandas as pd, numpy as np, sys, warnings
+warnings.filterwarnings('ignore')
+S='/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad'
+src=open(S+'/ai/flow2.py').read(); exec(src[src.index('@njit'):src.index('def load')].replace('cache=True','cache=False').replace('@njit','from numba import njit\n@njit',1))
+def load(p):
+    d=pd.read_csv(p); d.columns=[x.lower() for x in d.columns]; d=d.rename(columns={d.columns[0]:'time'})
+    d['time']=pd.to_datetime(d.time,utc=True,errors='coerce'); return d.dropna(subset=['time']).reset_index(drop=True)
+sets=[('gold','gold20/xau20_15m'),('gold','gold20/xau20_1h'),('gold','gold20/xau20_4h'),('btc','gold10/btc10_15m'),('btc','gold10/btc10_1h'),('btc','gold10/btc10_4h'),('eth','data/eth_1h_1819'),('eth','data/eth_1h_2526'),('eur','data/EUR_USD_1h')]
+K=['قمة/قاع مزدوج — كسر','قمة/قاع مزدوج — إعادة اختبار العنق','رأس وكتفين — كسر','رأس وكتفين — إعادة اختبار','مثلث — كسر','مثلث — إعادة اختبار','كسر وإعادة اختبار دعم/مقاومة','كسر نطاق تجميع','كسر نطاق تجميع — إعادة اختبار']
+res={}
+for mk,f in sets:
+    d=load(f'{S}/{f}.csv'); o,h,l,c=[d[x].values.astype(np.float64) for x in ['open','high','low','close']]
+    n=len(c); pc=np.r_[c[0],c[:-1]]; tr=np.maximum(h-l,np.maximum(abs(h-pc),abs(l-pc))); a=pd.Series(tr).ewm(alpha=1/14,adjust=False).mean().values
+    sig={k:np.zeros(n,np.int64) for k in K}; stp={k:np.full(n,np.nan) for k in K}
+    PH=[];PL=[]  # (idx, price)
+    pend=[]      # إعادة اختبار منتظرة: (name, dir, level, expire, stopExtreme)
+    lastLevelBrk={}
+    for i in range(30,n-1):
+        j=i-3
+        if all(h[j]>h[q] for q in range(j-3,j+4) if q!=j): PH.append((j,h[j]))
+        if all(l[j]<l[q] for q in range(j-3,j+4) if q!=j): PL.append((j,l[j]))
+        ai=a[i]
+        if ai<=0: continue
+        def put(name,dd,sp):
+            if sig[name][i]==0: sig[name][i]=dd; stp[name][i]=sp
+        # 1) قمة مزدوجة: آخر قمتين متقاربتين (<0.3 ATR) بينهما 8-80 شمعة، العنق = أدنى قاع بينهما
+        for (P,dd) in ((PH,-1),(PL,1)):
+            if len(P)>=2:
+                (j1,p1),(j2,p2)=P[-2],P[-1]
+                if 8<=j2-j1<=80 and abs(p1-p2)<0.3*ai and i-j2<=40:
+                    neck=(l[j1:j2+1].min() if dd<0 else h[j1:j2+1].max())
+                    if (c[i]-neck)*dd>0 and (c[i-1]-neck)*dd<=0:
+                        ext=max(p1,p2) if dd<0 else min(p1,p2)
+                        put('قمة/قاع مزدوج — كسر',dd,ext-dd*0.1*ai)
+                        pend.append(('قمة/قاع مزدوج — إعادة اختبار العنق',dd,neck,i+20,ext))
+        # 2) رأس وكتفين: 3 قمم، الوسطى أعلى بـ 0.5 ATR، الكتفان متقاربان (<1 ATR)، العنق خط بين القاعين
+        for (P,Q,dd) in ((PH,PL,-1),(PL,PH,1)):
+            if len(P)>=3:
+                (a1,v1),(a2,v2),(a3,v3)=P[-3],P[-2],P[-1]
+                head=(v2-max(v1,v3))*(-dd) if True else 0
+                if a3-a1<=120 and i-a3<=40 and (v2-max(v1,v3) if dd<0 else min(v1,v3)-v2)>0.5*ai and abs(v1-v3)<1.0*ai:
+                    t1=[x for x in Q if a1<x[0]<a2]; t2=[x for x in Q if a2<x[0]<a3]
+                    if t1 and t2:
+                        (b1,w1)=t1[-1]; (b2,w2)=t2[-1]
+                        sl_=(w2-w1)/(b2-b1); neck_i=w2+sl_*(i-b2); neck_p=w2+sl_*(i-1-b2)
+                        if (c[i]-neck_i)*dd>0 and (c[i-1]-neck_p)*dd<=0:
+                            put('رأس وكتفين — كسر',dd,v3-dd*0.1*ai)
+                            pend.append(('رأس وكتفين — إعادة اختبار',dd,neck_i,i+20,v3))
+        # 3) مثلث: آخر قمتين هابطتين وآخر قاعين صاعدين (متماثل)، أو قمتان مستويتان وقيعان صاعدة (صاعد) والعكس
+        if len(PH)>=2 and len(PL)>=2:
+            (h1i,h1),(h2i,h2)=PH[-2],PH[-1]; (l1i,l1),(l2i,l2)=PL[-2],PL[-1]
+            if min(h1i,l1i)>=i-120 and i-max(h2i,l2i)<=30:
+                desc=h2<h1-0.1*ai or abs(h2-h1)<0.3*ai; asc=l2>l1+0.1*ai or abs(l2-l1)<0.3*ai
+                contracting=(h2-l2)<(h1-l1)
+                if desc and asc and contracting and not (abs(h2-h1)<0.3*ai and abs(l2-l1)<0.3*ai):
+                    us=(h2-h1)/(h2i-h1i); ls_=(l2-l1)/(l2i-l1i)
+                    up_i=h2+us*(i-h2i); up_p=h2+us*(i-1-h2i); lo_i=l2+ls_*(i-l2i); lo_p=l2+ls_*(i-1-l2i)
+                    if c[i]>up_i and c[i-1]<=up_p:
+                        put('مثلث — كسر',1,l2-0.1*ai); pend.append(('مثلث — إعادة اختبار',1,up_i,i+15,l2))
+                    elif c[i]<lo_i and c[i-1]>=lo_p:
+                        put('مثلث — كسر',-1,h2+0.1*ai); pend.append(('مثلث — إعادة اختبار',-1,lo_i,i+15,h2))
+        # 4) كسر وإعادة اختبار: مستوى لمسته قمتان أو أكثر (<0.3 ATR) خلال 100 شمعة، كسر بإغلاق، ثم رجوع ورفض
+        for (P,dd) in ((PH,1),(PL,-1)):
+            rec=[x for x in P[-8:] if x[0]>=i-100]
+            for x in rec:
+                touches=sum(1 for y in rec if abs(y[1]-x[1])<0.3*ai)
+                if touches>=2 and (c[i]-x[1])*dd>0 and (c[i-1]-x[1])*dd<=0 and lastLevelBrk.get((dd,round(x[1]/ai)),-999)<i-20:
+                    lastLevelBrk[(dd,round(x[1]/ai))]=i
+                    pend.append(('كسر وإعادة اختبار دعم/مقاومة',dd,x[1],i+20,x[1]-dd*1.0*ai)); break
+        # 5) نطاق تجميع: مدى آخر 20 شمعة < 3 ATR ثم إغلاق خارجه
+        hh=h[i-20:i].max(); lll=l[i-20:i].min()
+        if hh-lll<3*ai:
+            if c[i]>hh and c[i-1]<=hh: put('كسر نطاق تجميع',1,lll-0.1*ai); pend.append(('كسر نطاق تجميع — إعادة اختبار',1,hh,i+15,lll))
+            elif c[i]<lll and c[i-1]>=lll: put('كسر نطاق تجميع',-1,hh+0.1*ai); pend.append(('كسر نطاق تجميع — إعادة اختبار',-1,lll,i+15,hh))
+        # إعادة الاختبار: السعر يرجع للمستوى ويرفض (يلمسه ويغلق في اتجاه الكسر بجسم في الاتجاه)
+        keep=[]
+        for (nm,dd,lv,ex,ext) in pend:
+            if i>ex: continue
+            if (c[i]-ext)*dd<0: continue  # أُلغي
+            touched=(l[i]<=lv+0.1*ai) if dd>0 else (h[i]>=lv-0.1*ai)
+            if touched and (c[i]-lv)*dd>0 and (c[i]-o[i])*dd>0 and i>0:
+                put(nm,dd,(l[i] if dd>0 else h[i])-dd*0.1*ai); continue
+            keep.append((nm,dd,lv,ex,ext))
+        pend=keep[-50:]
+    yr=d.time.dt.year.values
+    tr_=((mk=='gold')&(yr>=2010)&(yr<=2018))|((mk=='btc')&(yr<=2020)); te_=~tr_&~((mk=='gold')&(yr<2010))
+    for k in K:
+        s=sig[k].copy(); s[:210]=0
+        w=np.full(n,-1,np.int64); r=np.zeros(n); w2=np.full(n,-1,np.int64); r2=np.zeros(n)
+        simall(o,h,l,c,a,s,stp[k],w,r,w2,r2)
+        for ph,mm in [('train',tr_),('test',te_)]:
+            for g in [mk,'all']:
+                m1=(w>=0)&mm; m2=(w2>=0)&mm
+                x=res.setdefault((k,g,ph),[0,0,0.0,0,0,0.0]); x[0]+=w[m1].sum(); x[1]+=m1.sum(); x[2]+=r[m1].sum(); x[3]+=w2[m2].sum(); x[4]+=m2.sum(); x[5]+=r2[m2].sum()
+    print('done',mk,f,file=sys.stderr,flush=True)
+print(f"{'النموذج':40s} | تدريب R(2:1) | اختبار: 1R  R | 2:1  R  n | ذهب اختبار 2:1 R | بيتكوين اختبار 2:1 R")
+for k in K:
+    tr0=res.get((k,'all','train')); te0=res.get((k,'all','test')); g=res.get((k,'gold','test')); b=res.get((k,'btc','test'))
+    f=lambda x,i: x[i]/max(1,x[i+1]) if x else float('nan')
+    print(f"{k:40s} | {tr0[5]/max(1,tr0[4]):+.3f} | {te0[0]/max(1,te0[1])*100:4.1f}% {te0[2]/max(1,te0[1]):+.3f} | {te0[3]/max(1,te0[4])*100:4.1f}% {te0[5]/max(1,te0[4]):+.3f} n={te0[4]} | {g[3]/max(1,g[4])*100:4.1f}% {g[5]/max(1,g[4]):+.3f} | {b[3]/max(1,b[4])*100:4.1f}% {b[5]/max(1,b[4]):+.3f}")

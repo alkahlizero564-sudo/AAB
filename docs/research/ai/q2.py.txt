@@ -1,0 +1,31 @@
+exec(open('/tmp/claude-0/-home-user-AAB/e2bd39c3-f0fb-5895-8329-383fc758e763/scratchpad/ai/q1.py').read().split("y=np.log(df.U+df.D+1e-3)")[0])
+y=np.log(df.U+df.D+1e-3)
+g=lgb.LGBMRegressor(n_estimators=300,learning_rate=0.05,num_leaves=31,min_child_samples=500,verbose=-1).fit(df[tr][X].values[::3],y[tr].values[::3])
+lin=LinearRegression().fit(df[tr][X],y[tr])
+base=y[tr].mean()
+pg=g.predict(df[X].values); pl=lin.predict(df[X])
+terc=pd.qcut(pg,3,labels=['هادئ','متوسط','متذبذب'])
+for nm,pr in [('ثابت',np.full(len(df),base)),('Q خطي',pl),('Q LightGBM',pg)]:
+    sc=np.exp(pr); z=df.C/sc; q=np.quantile(z[tr],[0.15,0.85]); lo,hi=q[0]*sc,q[1]*sc
+    out=f"{nm:12s}"
+    for lab,mk_ in [('ذهب','gold'),('بيتكوين','btc')]:
+        for t in ['هادئ','متوسط','متذبذب']:
+            m=te&(df.mk==mk_)&(terc==t)
+            out+=f" | {lab}/{t}: تغطية70 {((df.C>=lo)&(df.C<=hi))[m].mean()*100:.0f}% عرض {(hi-lo)[m].mean():.1f}"
+    print(out)
+# احتمال الوصول لـ +k ATR خلال H (من التوزيع المتوقع): معايرة
+print('--- احتمال لمس +2 ATR أو −2 ATR خلال 12 شمعة (Q LightGBM)')
+sc=np.exp(pg)
+for k in [1.5,2.0,3.0]:
+    zU=df.U/sc
+    p_emp=lambda s: (np.asarray(df.U[tr]/np.exp(pg[tr]))[:,None]>=(k/s)[None,:]).mean(0)
+    # تقريب سريع: احتمال لكل نطاق مقياس
+    bins=np.quantile(sc[tr],[0,0.2,0.4,0.6,0.8,1.0])
+    out=f"  +{k} ATR:"
+    for b in range(5):
+        mtr=tr&(sc>=bins[b])&(sc<bins[b+1]); mte=te&(df.mk=='gold')&(sc>=bins[b])&(sc<bins[b+1])
+        out+=f" [{bins[b]:.1f}-{bins[b+1]:.1f}] متوقع {(df.U[mtr]>=k).mean()*100:.0f}% فعلي(ذهب) {(df.U[mte]>=k).mean()*100:.0f}%"
+    print(out)
+import pickle; pickle.dump((g,lin,X,base,np.quantile((df.C/np.exp(pl))[tr],[0.05,0.15,0.85,0.95]),np.quantile((df.C/np.exp(pg))[tr],[0.05,0.15,0.85,0.95])),open(S+'/ai/q_models.pkl','wb'))
+print('coef',dict(zip(X,np.round(lin.coef_,4))),'b',round(lin.intercept_,4))
+print('q lin',np.round(np.quantile((df.C/np.exp(pl))[tr],[0.05,0.15,0.85,0.95]),4))
