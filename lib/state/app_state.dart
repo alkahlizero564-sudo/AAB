@@ -573,8 +573,9 @@ class AppState extends ChangeNotifier {
       final v = stars == null
           ? kingFilter(r, e, 30, keep: _keep('$name|v'))
           : kingFilter(r, e, 15, keep: _keep('$name|v'), wideTop: 30, wide: (i, d) => stars.of(i, d) >= 2);
-      _remember('$name|v', v.signals);
-      return v;
+      final g = _mem.gateAll('$name|v', candles, v);
+      _remember('$name|v', g.signals);
+      return g;
     }
 
     final ak = alka;
