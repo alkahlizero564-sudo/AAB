@@ -412,7 +412,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'Q',
           emoji: '🗺️',
-          desc: 'خريطة الاحتمالات: أين سيكون السعر خلال 12 شمعة (منطقة 70% و90%) وحجم الحركة المتوقع',
+          desc: 'يوضّح أين سيكون السعر غالباً في الفترة القادمة، وهل السوق هادئ أو متحرك',
           health: null,
           on: layers.q,
           toggle: () => layers.q = !layers.q
@@ -597,7 +597,7 @@ class _ChartScreenState extends State<ChartScreen> {
           if (x.name == 'Q') {
             final q = st.qR;
             if (q == null) return 'جاري الحساب…';
-            return 'الحركة القادمة: ${q.regimeAr} • ${q.pUp >= 0.55 ? 'ميل للصعود ${(q.pUp * 100).round()}%' : q.pUp <= 0.45 ? 'ميل للهبوط ${((1 - q.pUp) * 100).round()}%' : 'متوازن'}';
+            return 'السوق ${q.regimeAr} • ${q.pUp >= 0.55 ? 'أقرب للصعود' : q.pUp <= 0.45 ? 'أقرب للهبوط' : 'الاتجاه غير واضح'}';
           }
           if (x.name == 'PQ') {
             return st.pqR == null || st.pqR!.closed == 0
@@ -2058,7 +2058,7 @@ class _LandBar extends StatelessWidget {
 }
 
 
-/// بطاقة Q الصغيرة: حجم الحركة، منطقة 70%، الميل، واحتمال لمس مستويات قريبة.
+/// بطاقة Q الصغيرة (مبسّطة): حال السوق، أين سيكون السعر غالباً، وأي جهة أقرب.
 class _QCard extends StatelessWidget {
   final AppState st;
   const _QCard({required this.st});
@@ -2066,41 +2066,33 @@ class _QCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final q = st.qR!;
     final sym = st.symbol;
+    final mood = const ['السوق هادئ — حركة صغيرة', 'السوق عادي', 'السوق متحرك — حركة كبيرة'][q.regime];
     final col = q.regime == 2 ? AppColors.down : (q.regime == 0 ? AppColors.up : AppColors.gold);
     final lean = q.pUp >= 0.55
-        ? ('ميل للصعود ${(q.pUp * 100).round()}%', AppColors.up)
+        ? ('أقرب للصعود ⬆', AppColors.up)
         : q.pUp <= 0.45
-            ? ('ميل للهبوط ${((1 - q.pUp) * 100).round()}%', AppColors.down)
-            : ('متوازن', AppColors.muted);
-    final up2 = q.price + 2 * q.atr, dn2 = q.price - 2 * q.atr;
+            ? ('أقرب للهبوط ⬇', AppColors.down)
+            : ('الاتجاه غير واضح', AppColors.muted);
     return Container(
-      constraints: const BoxConstraints(maxWidth: 230),
-      padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+      constraints: const BoxConstraints(maxWidth: 220),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
         color: AppColors.card.withOpacity(0.93),
-        borderRadius: BorderRadius.circular(11),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.gold.withOpacity(0.6), width: 0.8),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Row(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Q', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w900, fontSize: 13)),
+          const Text('Q', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w900, fontSize: 14)),
           const SizedBox(width: 6),
-          const Text('12 شمعة القادمة', style: TextStyle(color: AppColors.muted, fontSize: 10)),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-            decoration: BoxDecoration(color: col.withOpacity(0.16), borderRadius: BorderRadius.circular(6)),
-            child: Text('حركة ${q.regimeAr}', style: TextStyle(color: col, fontSize: 10, fontWeight: FontWeight.w800)),
-          ),
+          Flexible(child: Text(mood, style: TextStyle(color: col, fontSize: 11.5, fontWeight: FontWeight.w800))),
         ]),
         const SizedBox(height: 3),
-        Text('منطقة 70%: \u2066${sym.fmt(q.band(1, 12))} – ${sym.fmt(q.band(3, 12))}\u2069',
-            style: const TextStyle(color: AppColors.text, fontSize: 11, fontWeight: FontWeight.w700)),
-        Text(lean.$1, style: TextStyle(color: lean.$2, fontSize: 10.5, fontWeight: FontWeight.w700)),
-        Text('احتمال لمس \u2066${sym.fmt(up2)}\u2069 فوق: ${(q.touchProb(up2) * 100).round()}%',
-            style: const TextStyle(color: AppColors.muted, fontSize: 10)),
-        Text('احتمال لمس \u2066${sym.fmt(dn2)}\u2069 تحت: ${(q.touchProb(dn2) * 100).round()}%',
-            style: const TextStyle(color: AppColors.muted, fontSize: 10)),
+        const Text('السعر غالباً سيكون بين:', style: TextStyle(color: AppColors.muted, fontSize: 10.5)),
+        Text('\u2066${sym.fmt(q.band(1, 12))}  —  ${sym.fmt(q.band(3, 12))}\u2069',
+            style: const TextStyle(color: AppColors.text, fontSize: 13, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 2),
+        Text(lean.$1, style: TextStyle(color: lean.$2, fontSize: 11, fontWeight: FontWeight.w700)),
       ]),
     );
   }

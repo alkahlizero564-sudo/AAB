@@ -1279,10 +1279,10 @@ class _Painter extends CustomPainter {
       canvas.restore();
       // لافتات الأطراف عند نهاية الخريطة
       final xe = xk(qH);
-      for (final (qi, lab) in [(4, '90%'), (3, '70%'), (1, '70%'), (0, '90%')]) {
+      for (final (qi, lab) in [(3, 'أعلى متوقع'), (1, 'أدنى متوقع')]) {
         final pr = q.band(qi, qH);
         if (!inY(pr)) continue;
-        _txt(canvas, '$lab ${sym.fmt(pr)}', Offset(math.min(xe - 70, w - 76), yOf(pr) - (qi >= 3 ? 14 : 0)),
+        _txt(canvas, '$lab ${sym.fmt(pr)}', Offset(math.min(xe - 110, w - 116), yOf(pr) - (qi >= 3 ? 14 : 0)),
             color: qi == 3 || qi == 1 ? gold : gold.withOpacity(0.75), size: 8.5, bold: qi == 3 || qi == 1);
       }
     }
