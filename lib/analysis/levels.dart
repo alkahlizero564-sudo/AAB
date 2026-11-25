@@ -149,7 +149,7 @@ int vwapAnchorTs(MarketSymbol sym, DateTime lastUtc) {
   final off = nyOffsetSec(ts);
   final ny = ts + off;
   final dayStart = ny - ny % 86400;
-  var anchorNy = sym.category == 'stock'
+  var anchorNy = sym.category == 'stock' || sym.category == 'index'
       ? dayStart + 9 * 3600 + 1800
       : dayStart + 17 * 3600;
   if (ny < anchorNy) anchorNy -= 86400;

@@ -168,6 +168,9 @@ class MarketDataService {
         final j = jsonDecode(r.body);
         if (j is Map && j['status'] == 'error') {
           last = '${j['message']}';
+          // المؤشرات قد لا تكون ضمن الاشتراك المجاني: نقترح الصندوق البديل
+          const alt = {'NDX': 'QQQ', 'SPX': 'SPY', 'DJI': 'DIA'};
+          if (alt.containsKey(sym.code)) last = 'المؤشر ${sym.code} غير متاح بمفتاحك — جرّب ${alt[sym.code]} (نفس الحركة) • $last';
           pool.penalize(key);
           continue;
         }
