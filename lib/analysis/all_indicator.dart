@@ -22,6 +22,15 @@ class AllResult {
   int get closed => wins + losses;
   double get winRate => closed == 0 ? 0 : wins / closed;
 
+  /// المصدر للعرض: MTF/Fast/الإجماع تحفظ النجوم بالشكل «K3» أو «K2|6» — تُعرض نجوماً.
+  static String _src(String s) {
+    final m = RegExp(r'^K(\d)(?:\|(\d+))?$').firstMatch(s);
+    if (m == null) return 'من $s';
+    final n = int.parse(m.group(1)!);
+    final agree = m.group(2);
+    return '${n > 0 ? '⭐' * n : 'بدون نجوم'}${agree != null ? ' • $agree مؤشرات متفقة' : ''}';
+  }
+
   /// القرار الموحّد: 1 صفقة مفتوحة ، 2 تنتظر التأكيد ، 0 لا شيء.
   Decision get decision {
     // مع محركين (شراء + بيع) قد تكون الصفقة المفتوحة ليست آخر إشارة
@@ -34,13 +43,13 @@ class AllResult {
           sg.result >= 1
               ? '$tag $side مفتوح — تحقق TP1: أغلق النصف، والوقف المتحرك الآن عند هذا السعر'
               : '$tag $side — صفقة مفتوحة',
-          'من ${sources[oi]}: ${sg.why}', (sg.entry - sg.sl).abs());
+          '${_src(sources[oi])}: ${sg.why}', (sg.entry - sg.sl).abs());
     }
     if (pending.isNotEmpty) {
       final p = pending.first;
       return Decision(2, p.dir, p.trigger, p.sl, p.tp1, p.tp2,
           '$tag ${p.dir > 0 ? 'شراء' : 'بيع'} ينتظر التأكيد — ادخل عند ${p.dir > 0 ? 'اختراق' : 'كسر'} السعر المحدد خلال 3 شموع، وألغِ لو انكسر الطرف الآخر',
-          'من ${pendingSrc.first}: ${p.cond}', (p.trigger - p.sl).abs());
+          '${_src(pendingSrc.first)}: ${p.cond}', (p.trigger - p.sl).abs());
     }
     return Decision(0, 0, double.nan, double.nan, double.nan, double.nan, '$tag: لا توجد إشارة', '');
   }

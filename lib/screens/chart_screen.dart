@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:isolate';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../analysis/trend_zone.dart';
@@ -42,6 +44,39 @@ class _ChartScreenState extends State<ChartScreen> {
       Future.delayed(const Duration(seconds: 2), () => SystemChrome.setPreferredOrientations(const []));
     }
   }
+  // ── حفظ آخر مؤشرات مستخدمة: عند فتح التطبيق يظهر الشارت كما تركه المستخدم (أول مرة: فاضي)
+  String _savedLayers = '';
+  bool _layersLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (debugChartLayers == null) _loadLayers();
+  }
+
+  Future<void> _loadLayers() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final raw = p.getString('chart_layers_v1');
+      if (raw != null && mounted) {
+        setState(() => layers.fromJson(jsonDecode(raw) as Map<String, dynamic>));
+        _savedLayers = raw;
+        final st = context.read<AppState>();
+        if (layers.mtf) st.setMtf(true);
+        if (layers.fast) st.setFast(true);
+      }
+    } catch (_) {}
+    _layersLoaded = true;
+  }
+
+  void _saveLayersIfChanged() {
+    if (!_layersLoaded) return;
+    final raw = jsonEncode(layers.toJson());
+    if (raw == _savedLayers) return;
+    _savedLayers = raw;
+    SharedPreferences.getInstance().then((p) => p.setString('chart_layers_v1', raw)).catchError((_) => true);
+  }
+
   int? sel; // الشمعة المختارة بالضغط المطوّل
   bool why = false; // إظهار سبب القرار في الشريط السفلي
   final forceShow = <String>{}; // مؤشرات طلب المستخدم إظهارها رغم أنها 🔴
@@ -1207,6 +1242,7 @@ class _ChartScreenState extends State<ChartScreen> {
 
   Widget build(BuildContext context) {
     final st = context.watch<AppState>();
+    _saveLayersIfChanged();
     final s = st.signal;
     final mk = '${st.symbol.code}|${st.tf}';
     final auto = st.settings.autoHideWeak;

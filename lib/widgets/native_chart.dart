@@ -24,11 +24,11 @@ import '../theme.dart';
 
 class ChartLayers {
   bool fib = false, vp = false, zones = false, vwap = false, levels = false, ce = false;
-  bool sigs = false, fc = true, pats = false, ema = false;
-  bool algo = true; // مؤشر AAB Algo: تلوين الشموع + خط الاتجاه + مناطق الانعكاس
+  bool sigs = false, fc = false, pats = false, ema = false;
+  bool algo = false; // مؤشر AAB Algo: تلوين الشموع + خط الاتجاه + مناطق الانعكاس
   bool alka = false; // مؤشر Alka: شموع الانعكاس عند الدعم/المقاومة و Volume Profile
   bool all = false; // مؤشر ALL: دمج AAB و Alka + فلتر الشمعة الصغيرة
-  bool mp = true; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
+  bool mp = false; // مؤشر Mp: دمج مؤشراتنا الأربعة (ALL + 0.1) — الأقوى
   bool dm = false; // مؤشر DM: خاص بالذهب (Mp مع الترند اليومي في السوق الهادئ)
   bool star = false; // مؤشر النجوم: كل إشارات Mp مع نجوم بعدد المؤشرات الموافقة (SM و KM و ST و DM)
   bool st = false; // مؤشر ST: إشارات Mp عالية الثقة حسب النموذج المتعلّم
@@ -49,6 +49,25 @@ class ChartLayers {
   bool mtf = false; // King متعدد الفريمات (5m و15m و1h): علامات شراء/بيع فقط
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
+
+  /// حفظ/استرجاع اختيار المستخدم (آخر مؤشرات وطبقات مستخدمة).
+  Map<String, Object> toJson() => {
+        'fib': fib, 'vp': vp, 'zones': zones, 'vwap': vwap, 'levels': levels, 'ce': ce, 'sigs': sigs, 'fc': fc, 'pats': pats,
+        'ema': ema, 'algo': algo, 'alka': alka, 'all': all, 'mp': mp, 'dm': dm, 'star': star, 'st': st, 'km': km, 'sm': sm,
+        'zero': zero, 'vol': vol, 'sr': sr, 'lt': lt, 'pq': pq, 'king': king, 'aiak': aiak, 'q': q, 'tz': tz, 'vote': vote,
+        'fz': fz, 'fast': fast, 'mtf': mtf, 'type': type, 'sub': sub,
+      };
+  void fromJson(Map<String, dynamic> j) {
+    bool b(String k, bool d) => j[k] is bool ? j[k] as bool : d;
+    fib = b('fib', fib); vp = b('vp', vp); zones = b('zones', zones); vwap = b('vwap', vwap); levels = b('levels', levels);
+    ce = b('ce', ce); sigs = b('sigs', sigs); fc = b('fc', fc); pats = b('pats', pats); ema = b('ema', ema); algo = b('algo', algo);
+    alka = b('alka', alka); all = b('all', all); mp = b('mp', mp); dm = b('dm', dm); star = b('star', star); st = b('st', st);
+    km = b('km', km); sm = b('sm', sm); zero = b('zero', zero); vol = b('vol', vol); sr = b('sr', sr); lt = b('lt', lt);
+    pq = b('pq', pq); king = b('king', king); aiak = b('aiak', aiak); q = b('q', q); tz = b('tz', tz); vote = b('vote', vote);
+    fz = b('fz', fz); fast = b('fast', fast); mtf = b('mtf', mtf);
+    if (j['type'] is String) type = j['type'] as String;
+    if (j['sub'] is String) sub = j['sub'] as String;
+  }
 
   /// نسخة بنفس الإعدادات (لإخفاء مؤقت بدون تغيير اختيار المستخدم).
   ChartLayers copyWith({bool? sigs, bool? alka, bool? all, bool? zero, bool? mp, bool? sm, bool? km, bool? dm, bool? st, bool? star}) => ChartLayers()
