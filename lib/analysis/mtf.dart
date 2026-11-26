@@ -71,7 +71,7 @@ List<Candle> aggregate(List<Candle> c, String tf, {DateTime? nowBarStart}) {
 /// إشارات King على شموع فريم واحد (نفس طريقة التطبيق: Mp ← النجوم/SM/KM ← King).
 /// كل إشارة مع نجومها (1 = أعلى 30%، 2 = أعلى 15%، 3 = أعلى 7%).
 List<(PastSignal, int)> kingSignalsFor(List<Candle> c, MarketSymbol sym, String tf,
-    {List<Candle>? daily, double alkaTp1 = 0.35, double rr2 = 2, int top = 30}) {
+    {List<Candle>? daily, double alkaTp1 = 1.0, double rr2 = 2, int top = 30}) {
   final n = c.length;
   if (n < 260) return const [];
   final ms = minStopFor(tf, c.last.close);

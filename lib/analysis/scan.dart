@@ -25,7 +25,7 @@ const scanAcc = {'AK': 66.0, 'King': 62.4, 'النجوم': 61.3};
 /// يفحص الشموع ويرجع آخر إشارة مفتوحة لكل مؤشر قوي (AK، King قوي، النجوم بفهم التوقيت)
 /// ظهرت خلال آخر [maxAge] شمعة مغلقة.
 List<ScanHit> scanCandles(List<Candle> c, MarketSymbol sym,
-    {List<Candle>? daily, double rr1 = 1, double rr2 = 2, double alkaTp1 = 0.35, int maxAge = 6, String tf = '15m'}) {
+    {List<Candle>? daily, double rr1 = 1, double rr2 = 2, double alkaTp1 = 1.0, int maxAge = 6, String tf = '15m'}) {
   final n = c.length;
   if (n < 260) return const [];
   final hist = n;

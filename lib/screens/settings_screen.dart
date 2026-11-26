@@ -298,7 +298,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'الهدف 1: ${rr1.toStringAsFixed(1)}R • الهدف 2: ${rr2.toStringAsFixed(1)}R • ATR ×${atrMult.toStringAsFixed(1)}', [
           _slider('مضاعف ATR لوقف الخسارة', atrMult, 1, 3, 20, (v) => v.toStringAsFixed(1), (v) => setState(() => atrMult = v)),
           _slider('الهدف 1 (R)', rr1, 0.5, 3, 25, (v) => '${v.toStringAsFixed(1)}R', (v) => setState(() => rr1 = v)),
-          _switch('الذهب والمعادن: الهدف 1 = 0.7R تلقائياً', 'مقاس على ذهب حقيقي 2018–2019 (فريم الساعة): الدقة 68% بدل 54%',
+          _switch('الذهب والمعادن: الهدف 1 = 0.7R تلقائياً', 'مطفأ افتراضياً: الهدف 1R يربح أكثر بعد السبريد',
               metalTp07, (v) => setState(() => metalTp07 = v)),
           _slider('Alka و ALL — الهدف الأول (R)', alkaTp1, 0.25, 1.0, 15,
               (v) => '${v.toStringAsFixed(2)}R (≈${v <= 0.3 ? 84 : v <= 0.4 ? 79 : v <= 0.6 ? 72 : v <= 0.8 ? 64 : 55}%)',

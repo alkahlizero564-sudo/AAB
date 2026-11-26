@@ -13,7 +13,7 @@ class AppSettings {
   bool liveWs;
   bool useAi;
   bool metalTp07; // الذهب والمعادن: الهدف الأول 0.7R تلقائياً (الأدق بالقياس)
-  double alkaTp1; // هدف Alka الأول بوحدات R (0.35 ≈ دقة 79% مع الوقف المتحرك)
+  double alkaTp1; // هدف Alka الأول بوحدات R (الافتراضي 1R: الأفضل بعد السبريد)
   bool extraSameDir; // خيار: إشارات إضافية في نفس الاتجاه بعد TP1 للصفقة المفتوحة
   bool autoHideWeak; // إخفاء إشارات المؤشر الضعيف حالياً على السوق (🔴) تلقائياً
   String source; // auto | twelve | tiingo
@@ -33,8 +33,8 @@ class AppSettings {
     this.ceMult = 3.0,
     this.liveWs = true,
     this.useAi = true,
-    this.metalTp07 = true,
-    this.alkaTp1 = 0.35,
+    this.metalTp07 = false,
+    this.alkaTp1 = 1.0,
     this.autoHideWeak = true,
     this.extraSameDir = false,
     this.source = 'auto',
@@ -80,8 +80,9 @@ class AppSettings {
       ceMult: p.getDouble('ceMult') ?? 3.0,
       liveWs: p.getBool('liveWs') ?? true,
       useAi: p.getBool('useAi') ?? true,
-      metalTp07: p.getBool('metalTp07') ?? true,
-      alkaTp1: p.getDouble('alkaTp1') ?? 0.35,
+      // الإصدار 2 للأهداف: الهدف الأول 1R (اختبار حساب حقيقي بعد السبريد: أفضل من 0.35R و0.7R، ومطابق لتدريب King)
+      metalTp07: (p.getInt('tpv') ?? 1) >= 2 ? (p.getBool('metalTp07') ?? false) : false,
+      alkaTp1: (p.getInt('tpv') ?? 1) >= 2 ? (p.getDouble('alkaTp1') ?? 1.0) : 1.0,
       autoHideWeak: p.getBool('autoHideWeak') ?? true,
       extraSameDir: p.getBool('extraSameDir') ?? false,
       source: p.getString('source') ?? 'auto',
@@ -109,6 +110,7 @@ class AppSettings {
     await p.setBool('useAi', useAi);
     await p.setBool('metalTp07', metalTp07);
     await p.setDouble('alkaTp1', alkaTp1);
+    await p.setInt('tpv', 2);
     await p.setBool('autoHideWeak', autoHideWeak);
     await p.remove('twoEngines');
     await p.setBool('extraSameDir', extraSameDir);
