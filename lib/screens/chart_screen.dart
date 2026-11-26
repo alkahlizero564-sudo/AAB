@@ -452,7 +452,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'TZ',
           emoji: '🧱',
-          desc: 'منطقة الاتجاه: خلفية خضراء لمن القمم والقيعان صاعدة، حمراء لمن هابطة، وبدون لون لمن السوق متذبذب',
+          desc: 'منطقة الاتجاه: صندوق بين آخر قمة وآخر قاع — أخضر لمن القمم والقيعان صاعدة، أحمر لمن هابطة، رمادي لمن متذبذب',
           health: null,
           on: layers.tz,
           toggle: () => layers.tz = !layers.tz
@@ -655,7 +655,7 @@ class _ChartScreenState extends State<ChartScreen> {
           if (x.name == 'نجوم') return st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق';
           if (x.name == 'LT') return _ltStatus(st);
           if (x.name == 'TZ') {
-            final z = trendZoneCached(st.candles);
+            final z = trendZoneCached(st.candles).zone;
             if (z.isEmpty) return 'جاري الحساب…';
             return z.last > 0 ? 'الآن: السوق صاعد 🟢' : z.last < 0 ? 'الآن: السوق هابط 🔴' : 'الآن: السوق متذبذب';
           }

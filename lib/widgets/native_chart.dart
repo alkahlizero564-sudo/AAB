@@ -607,34 +607,42 @@ class _Painter extends CustomPainter {
             end: Alignment.bottomCenter,
             colors: [Color(0xFF111117), AppColors.bg],
           ).createShader(Rect.fromLTWH(0, 0, w, fullH)));
-    // ── منطقة الاتجاه (هيكل السوق): خلفية ملونة خلف الشموع + حالة السوق الآن
+    // ── منطقة الاتجاه (هيكل السوق): صندوق بين آخر قمة وآخر قاع، لونه أخضر (صاعد) / أحمر (هابط) / رمادي (متذبذب)
     if (L.tz) {
-      final z = trendZoneCached(c);
+      final td = trendZoneCached(c);
+      final z = td.zone;
+      Color colOf(int v) => v > 0 ? const Color(0xFF00C853) : v < 0 ? const Color(0xFFFF1744) : const Color(0xFF9E9EAE);
       var s0 = i0;
       for (var i = i0; i <= i1 + 1; i++) {
-        if (i <= i1 && z[i] == z[s0]) continue;
-        final v = z[s0];
-        if (v != 0) {
-          final x1 = math.max(0.0, xOf(s0.toDouble()) - barW / 2), x2 = math.min(w, xOf((i - 1).toDouble()) + barW / 2);
-          final col = v > 0 ? const Color(0xFF00C853) : const Color(0xFFFF1744);
-          canvas.drawRect(Rect.fromLTRB(x1, 0, x2, h), Paint()..color = col.withOpacity(0.09));
-          canvas.drawRect(Rect.fromLTRB(x1, h - 3, x2, h), Paint()..color = col.withOpacity(0.55));
+        if (i <= i1 && z[i] == z[s0] && td.top[i] == td.top[s0] && td.bot[i] == td.bot[s0]) continue;
+        final tp0 = td.top[s0], bt0 = td.bot[s0];
+        if (!tp0.isNaN && !bt0.isNaN && tp0 > bt0) {
+          final col = colOf(z[s0]);
+          final x1 = math.max(0.0, xOf(s0.toDouble()) - barW / 2);
+          final x2 = i > i1 ? w : math.min(w, xOf((i - 1).toDouble()) + barW / 2);
+          final r = Rect.fromLTRB(x1, yOf(tp0).clamp(0.0, h).toDouble(), x2, yOf(bt0).clamp(0.0, h).toDouble());
+          canvas.drawRect(r, Paint()..color = col.withOpacity(z[s0] == 0 ? 0.05 : 0.11));
+          final ln = Paint()
+            ..color = col.withOpacity(0.75)
+            ..strokeWidth = 1.2;
+          if (inY(tp0)) canvas.drawLine(Offset(x1, r.top), Offset(x2, r.top), ln);
+          if (inY(bt0)) canvas.drawLine(Offset(x1, r.bottom), Offset(x2, r.bottom), ln);
         }
         s0 = i;
       }
       final now = z[n - 1];
       final txt = now > 0 ? 'السوق صاعد' : now < 0 ? 'السوق هابط' : 'السوق متذبذب';
-      final col = now > 0 ? const Color(0xFF00C853) : now < 0 ? const Color(0xFFFF1744) : AppColors.muted;
-      final tp = TextPainter(
+      final col = colOf(now);
+      final tpn = TextPainter(
           text: TextSpan(text: txt, style: TextStyle(fontFamily: chartFont, color: col, fontSize: 11, fontWeight: FontWeight.w800)),
           textDirection: TextDirection.rtl)
         ..layout();
-      final r = Rect.fromLTWH(w - tp.width - 22, 26, tp.width + 16, tp.height + 6);
+      final r = Rect.fromLTWH(w - tpn.width - 22, 26, tpn.width + 16, tpn.height + 6);
       canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(7)), Paint()..color = AppColors.bg.withOpacity(0.85));
       canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(7)), Paint()
         ..color = col.withOpacity(0.8)
         ..style = PaintingStyle.stroke);
-      tp.paint(canvas, Offset(r.left + 8, r.top + 3));
+      tpn.paint(canvas, Offset(r.left + 8, r.top + 3));
     }
     // ── علامة مائية
     _txt(canvas, '${sym.code}  ${tf.toUpperCase()}', Offset(w / 2 - 70, h / 2 - 16),
