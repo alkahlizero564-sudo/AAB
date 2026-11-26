@@ -615,7 +615,7 @@ class _Painter extends CustomPainter {
       // القناة الحالية فقط (القنوات القديمة تزحم الشارت)
       for (final ch in td.chans.isEmpty ? const <TzChan>[] : [td.chans.last]) {
         // تُرسم من أول قمة/قاع لها (تلمس القمم والقيعان) وتمتد 8 شموع للأمام
-        final a0 = ch.start;
+        final a0 = ch.start < ch.from - 400 ? ch.from - 400 : ch.start;
         final b0 = n - 1 + 8;
         if (b0 < i0 || a0 > i1 + 8) continue;
         final col = colOf(ch.dir);
@@ -636,13 +636,14 @@ class _Painter extends CustomPainter {
         canvas.drawLine(Offset(xa, yOf(ch.dnAt(a0.toDouble()))), Offset(xb, yOf(ch.dnAt(b0.toDouble()))), ln);
         {
           // نقاط اللمس: القمتان والقاعان
-          for (final (ix, p) in [(ch.ha, ch.hav), (ch.hb, ch.hbv), (ch.la, ch.lav), (ch.lb, ch.lbv)]) {
+          for (final (ix, p) in [...ch.upTouch, ...ch.dnTouch]) {
             canvas.drawCircle(Offset(xOf(ix.toDouble()), yOf(p)), 3.2, Paint()..color = col);
           }
         }
         canvas.restore();
       }
-      final now = z[n - 1];
+      // الحالة من اتجاه خطي القناة الحالية (نفس لونها)
+      final now = td.chans.isEmpty ? z[n - 1] : td.chans.last.dir;
       final txt = now > 0 ? 'السوق صاعد' : now < 0 ? 'السوق هابط' : 'السوق متذبذب';
       final col = colOf(now);
       final tpn = TextPainter(

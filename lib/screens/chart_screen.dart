@@ -452,7 +452,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'TZ',
           emoji: '🧱',
-          desc: 'قناة الترند: خط يلمس آخر قمتين وخط يلمس آخر قاعين — خضراء صاعدة، حمراء هابطة، رمادية لمن الخطين مختلفين',
+          desc: 'قناة الترند: خط يلمس القمم وخط يلمس القيعان الواقفة على نفس الخط (بدون قطع الشموع) — خضراء صاعدة، حمراء هابطة، رمادية لمن الخطين مختلفين',
           health: null,
           on: layers.tz,
           toggle: () => layers.tz = !layers.tz
@@ -655,9 +655,10 @@ class _ChartScreenState extends State<ChartScreen> {
           if (x.name == 'نجوم') return st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق';
           if (x.name == 'LT') return _ltStatus(st);
           if (x.name == 'TZ') {
-            final z = trendZoneCached(st.candles).zone;
-            if (z.isEmpty) return 'جاري الحساب…';
-            return z.last > 0 ? 'الآن: السوق صاعد 🟢' : z.last < 0 ? 'الآن: السوق هابط 🔴' : 'الآن: السوق متذبذب';
+            final td = trendZoneCached(st.candles);
+            if (td.zone.isEmpty) return 'جاري الحساب…';
+            final now = td.chans.isEmpty ? td.zone.last : td.chans.last.dir;
+            return now > 0 ? 'الآن: السوق صاعد 🟢' : now < 0 ? 'الآن: السوق هابط 🔴' : 'الآن: السوق متذبذب';
           }
           if (x.name == 'Q') {
             final q = st.qR;
