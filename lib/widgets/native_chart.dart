@@ -39,6 +39,7 @@ class ChartLayers {
   bool king = false; // مؤشر King: ذكاء اصطناعي
   bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
   bool q = false; // مؤشر Q: خريطة الاحتمالات للـ 12 شمعة القادمة
+  bool fast = false; // Fast: King أعلى 50% من 5m و15m و1h — إشارات كثيرة
   bool mtf = false; // King متعدد الفريمات (5m و15m و1h): علامات شراء/بيع فقط
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
@@ -73,6 +74,7 @@ class ChartLayers {
     ..aiak = aiak
     ..q = q
     ..mtf = mtf
+    ..fast = fast
     ..type = type
     ..sub = sub;
 }
@@ -116,6 +118,7 @@ class NativeChart extends StatefulWidget {
   final QResult? qR;
   final KingResult? kingR;
   final AllResult? mtfR;
+  final AllResult? fastR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -142,6 +145,7 @@ class NativeChart extends StatefulWidget {
     this.qR,
     this.kingR,
     this.mtfR,
+    this.fastR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -360,7 +364,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
                   DateTime.now().toUtc(), widget.algo,
-                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR, widget.mtfR),
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR, widget.mtfR, widget.fastR),
             ),
           ),
         ),
@@ -438,8 +442,9 @@ class _Painter extends CustomPainter {
   final QResult? qr;
   final KingResult? kingr;
   final AllResult? mtfr;
+  final AllResult? fastr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr, this.mtfr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr, this.mtfr, this.fastr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -1239,6 +1244,13 @@ class _Painter extends CustomPainter {
     // ── King متعدد الفريمات: «شراء» أو «بيع» فقط
     if (L.mtf && mtfr != null) {
       final r = mtfr!;
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
+          tagPer: List.filled(r.signals.length, ''),
+          starsPer: [for (var q = 0; q < r.signals.length; q++) mtfStarsOf(r, q)]);
+    }
+    // ── Fast: «شراء» أو «بيع» فقط (النجوم للإشارات الأقوى)
+    if (L.fast && fastr != null) {
+      final r = fastr!;
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
           tagPer: List.filled(r.signals.length, ''),
           starsPer: [for (var q = 0; q < r.signals.length; q++) mtfStarsOf(r, q)]);

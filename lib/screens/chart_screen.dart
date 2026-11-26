@@ -422,6 +422,17 @@ class _ChartScreenState extends State<ChartScreen> {
           }
         ),
         (
+          name: 'Fast',
+          emoji: '⚡',
+          desc: 'إشارات كثيرة: King من 5m و15m و1h معاً (أعلى 50%) على أي فريم — حوالي 2-3 إشارات في اليوم بدقة ~56%. النجوم = الإشارات الأقوى',
+          health: st.fastHealth,
+          on: layers.fast,
+          toggle: () {
+            layers.fast = !layers.fast;
+            st.setFast(layers.fast);
+          }
+        ),
+        (
           name: 'Q',
           emoji: '🗺️',
           desc: 'يوضّح أين سيكون السعر غالباً في الفترة القادمة، وهل السوق هادئ أو متحرك',
@@ -587,13 +598,13 @@ class _ChartScreenState extends State<ChartScreen> {
         final inds = _indicators(st);
         // دقة كل مؤشر على بيانات لم يرها (بهدف 1R) — لشريط الدقة والترتيب
         final acc = <String, double>{
-          'AK': 66, 'King': 59.3, 'MTF': 57.5, 'AAB': 62.4, 'SM': 60.5,
+          'AK': 66, 'King': 59.3, 'MTF': 57.5, 'Fast': 56.5, 'AAB': 62.4, 'SM': 60.5,
           'نجوم': 61.3, 'PQ': 61.3, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
           'Mp': 55.7, 'ALL': 60.3, 'Alka': 59.6, '0.1': 51.2,
         };
         final byName = {for (final x in inds) x.name: x};
         const groups = <(String, IconData, List<String>)>[
-          ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['AK', 'King', 'MTF', 'AAB', 'SM']),
+          ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['AK', 'King', 'MTF', 'Fast', 'AAB', 'SM']),
           ('خريطة الاحتمالات', Icons.map_rounded, ['Q']),
           ('مؤشرات الثقة', Icons.verified_rounded, ['نجوم', 'PQ', 'ST', 'KM', 'DM']),
           ('بعيد المدى', Icons.landscape_rounded, ['LT']),
@@ -617,6 +628,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 : 'الآن ${(st.pqV!.winRate * 100).toStringAsFixed(0)}% من ${st.pqV!.closed}';
           }
           if (x.name == 'MTF' && !st.mtfOn) return 'شغّله ليظهر أداؤه الآن';
+          if (x.name == 'Fast' && !st.fastOn) return 'شغّله ليظهر أداؤه الآن';
           if (h == null) return 'جاري الحساب…';
           if (h.trades < 20) return 'عينة صغيرة (${h.trades} صفقة)';
           return 'الآن ${(h.winRate * 100).toStringAsFixed(0)}% من ${h.trades} صفقة';
@@ -1234,6 +1246,7 @@ class _ChartScreenState extends State<ChartScreen> {
               qR: st.qR,
               kingR: st.kingR,
               mtfR: st.mtfR,
+              fastR: st.fastR,
               allR: st.allV,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -1314,7 +1327,7 @@ class _ChartScreenState extends State<ChartScreen> {
     if (eff.all && st.allV != null) e.add(('ALL', st.allV!.decision, null));
     if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
     if (eff.alka && st.alkaV != null) e.add(('Alka', st.alkaV!.decision, null));
-    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf;
+    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf || eff.fast;
     if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
 
     // تجميع الصفقات المتطابقة

@@ -171,6 +171,82 @@ class AppState extends ChangeNotifier {
     }
     mtfR = mtfResult(mergeSignals(lists));
   }
+  // ── Fast: King (أعلى 50%) من 5m و15m و1h على الشارت الحالي — إشارات أكثر ──
+  bool fastOn = false;
+  AllResult? fastR;
+  final Map<String, (List<Candle>, DateTime)> _fastData = {};
+  final Map<String, List<(PastSignal, int)>> _fastSig = {};
+  bool _fastBusy = false;
+
+  void setFast(bool on) {
+    fastOn = on;
+    if (on) {
+      _buildFast();
+      unawaited(_refreshFast());
+    } else {
+      fastR = null;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _refreshFast() async {
+    if (!fastOn || _fastBusy || candles.length < 50) return;
+    _fastBusy = true;
+    final gen = _gen, sym = symbol, cur = tf;
+    try {
+      for (final f in fastFrames) {
+        final ms = mtfMinutes[f]! * 60000;
+        List<Candle> lc;
+        final cached = _fastData[f];
+        if (f == cur) {
+          lc = candles.sublist(0, candles.length - 1); // الشموع المكتملة فقط
+          if (cached != null && cached.$1.isNotEmpty && cached.$1.last.time == lc.last.time) continue;
+        } else {
+          final age = cached == null ? 1 << 30 : DateTime.now().difference(cached.$2).inSeconds;
+          if (age < (mtfMinutes[f]! * 60).clamp(300, 3600)) continue;
+          final raw = await _market.fetch(sym, f, settings, count: f == '5m' ? 3000 : f == '15m' ? 1500 : 1000);
+          if (gen != _gen || !fastOn) return;
+          final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+          lc = [for (final k in raw) if (k.time.millisecondsSinceEpoch + ms <= now) k];
+        }
+        if (lc.length < 260) continue;
+        final sigs = await _kingIso(lc, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2, top: 50);
+        if (gen != _gen || !fastOn) return;
+        _fastData[f] = (lc, DateTime.now());
+        final kept = _mem.gate('Fast|$f', lc, [for (final x in sigs) x.$1]).toSet();
+        _fastSig[f] = [for (final x in sigs) if (kept.contains(x.$1)) x];
+      }
+      _buildFast();
+      notifyListeners();
+    } catch (_) {
+    } finally {
+      _fastBusy = false;
+    }
+  }
+
+  void _buildFast() {
+    if (!fastOn || candles.length < 2) {
+      fastR = null;
+      return;
+    }
+    final lists = <List<(PastSignal, int)>>[];
+    for (final f in fastFrames) {
+      final d = _fastData[f], sg = _fastSig[f];
+      if (d == null || sg == null) continue;
+      lists.add(mapSignals(sg, d.$1, f, candles, allowLast: (mtfMinutes[f] ?? 0) < (mtfMinutes[tf] ?? 0)));
+    }
+    fastR = fastResult(mergeSignals(lists));
+  }
+
+  IndHealth? get fastHealth {
+    final r = fastR;
+    if (!fastOn || r == null || candles.isEmpty) return null;
+    final done = r.signals.where((s) => s.result != 0).toList();
+    final w = done.where((s) => s.result > 0).length;
+    final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
+    return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
+  }
+
   AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
   /// أداء MTF الآن من إشاراته المغلقة على الشارت.
   IndHealth? get mtfHealth {
@@ -418,6 +494,9 @@ class AppState extends ChangeNotifier {
     mtfR = null;
     _mtfData.clear();
     _mtfSig.clear();
+    fastR = null;
+    _fastData.clear();
+    _fastSig.clear();
     _long = const [];
     algo = null;
     alka = null;
@@ -727,6 +806,8 @@ class AppState extends ChangeNotifier {
     _buildViews();
     _buildMtf();
     if (mtfOn) unawaited(_refreshMtf());
+    _buildFast();
+    if (fastOn) unawaited(_refreshFast());
     final ak = alka;
     if (ak != null) {
       final (s, p) = _mem.holdList('Alka', c, ak.signals, ak.pending);
@@ -966,10 +1047,11 @@ AllResult _withExtras(List<Candle> c, AllResult mp, MarketSymbol sym, double rr1
 
 
 /// King لفريم آخر في Isolate (دالة على مستوى الملف حتى لا تُرسل حالة التطبيق).
-Future<List<(PastSignal, int)>> _kingIso(List<Candle> c, MarketSymbol sym, String f, List<Candle>? dd, double a1, double r2) async {
+Future<List<(PastSignal, int)>> _kingIso(List<Candle> c, MarketSymbol sym, String f, List<Candle>? dd, double a1, double r2,
+    {int top = 30}) async {
   try {
-    return await Isolate.run(() => kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2));
+    return await Isolate.run(() => kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2, top: top));
   } catch (_) {
-    return kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2);
+    return kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2, top: top);
   }
 }

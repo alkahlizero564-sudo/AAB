@@ -33,6 +33,10 @@ const mtfLower = {
   '1d': ['1h', '4h'],
 };
 
+/// مؤشر Fast: King (أعلى 50%) من 5m و15m و1h معاً على أي شارت — إشارات كثيرة.
+/// ذهب 2021-2026: ~2-3.5 إشارة/يوم • نجاح ~56-57% • +0.07 إلى +0.13R • أيام بلا إشارة ~9-15%.
+const fastFrames = ['5m', '15m', '1h'];
+
 /// كم شمعة نطلب من الفريم الحالي (طلب واحد) حتى يكفي أعلى فريم مبني منها (~300 شمعة).
 int mtfCount(String tf, int base) {
   final hi = mtfHigher[tf];
@@ -67,7 +71,7 @@ List<Candle> aggregate(List<Candle> c, String tf, {DateTime? nowBarStart}) {
 /// إشارات King على شموع فريم واحد (نفس طريقة التطبيق: Mp ← النجوم/SM/KM ← King).
 /// كل إشارة مع نجومها (1 = أعلى 30%، 2 = أعلى 15%، 3 = أعلى 7%).
 List<(PastSignal, int)> kingSignalsFor(List<Candle> c, MarketSymbol sym, String tf,
-    {List<Candle>? daily, double alkaTp1 = 0.35, double rr2 = 2}) {
+    {List<Candle>? daily, double alkaTp1 = 0.35, double rr2 = 2, int top = 30}) {
   final n = c.length;
   if (n < 260) return const [];
   final ms = minStopFor(tf, c.last.close);
@@ -78,8 +82,9 @@ List<(PastSignal, int)> kingSignalsFor(List<Candle> c, MarketSymbol sym, String 
   final st = buildStar(c, mp);
   final sm = buildSm(c, mp, stars: st);
   final km = buildKm(c, sm);
-  final k = buildKing(c, mp, top: 30, stars: st, sm: sm, km: km, daily: daily);
-  return [for (final x in k.res.signals) (x, k.stars(x.i, x.dir) < 1 ? 1 : k.stars(x.i, x.dir))];
+  final k = buildKing(c, mp, top: top, stars: st, sm: sm, km: km, daily: daily);
+  // أعلى 30%: أقل شيء نجمة؛ الأوسع (Fast): الإشارة تحت 30% بلا نجوم
+  return [for (final x in k.res.signals) (x, top <= 30 && k.stars(x.i, x.dir) < 1 ? 1 : k.stars(x.i, x.dir))];
 }
 
 int _barAt(List<Candle> cc, int ms) {
@@ -136,3 +141,5 @@ List<(PastSignal, int)> mergeSignals(List<List<(PastSignal, int)>> lists) {
 AllResult mtfResult(List<(PastSignal, int)> s) =>
     AllResult([for (final x in s) x.$1], [for (final x in s) 'K${x.$2}'], const [], const [], 'MTF');
 int mtfStarsOf(AllResult r, int q) => q < r.sources.length ? (int.tryParse(r.sources[q].substring(1)) ?? 1) : 1;
+AllResult fastResult(List<(PastSignal, int)> s) =>
+    AllResult([for (final x in s) x.$1], [for (final x in s) 'K${x.$2}'], const [], const [], 'Fast');
