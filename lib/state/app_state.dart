@@ -77,7 +77,8 @@ class AppState extends ChangeNotifier {
   AlkaResult? alkaV;
   StarResult? starV;
   StResult? stV;
-  AllResult? kmV, allV, pqV;
+  AllResult? kmV, allV, pqV, mpV;
+  ZeroResult? zeroV;
 
   // ── King متعدد الفريمات: إشارات King من 5m و15m و1h على الشارت الحالي ──
   bool mtfOn = false;
@@ -508,6 +509,8 @@ class AppState extends ChangeNotifier {
     akR = null;
     qR = null;
     alkaV = null;
+    mpV = null;
+    zeroV = null;
     starV = null;
     stV = null;
     kmV = null;
@@ -785,10 +788,10 @@ class AppState extends ChangeNotifier {
   /// نسخ العرض بفهم التوقيت (فلتر King أعلى 30%) مع ثبات الإشارات.
   void _buildViews() {
     final e = kingR?.eval;
-    AllResult f(String name, AllResult r, {StarResult? stars}) {
+    AllResult f(String name, AllResult r, {StarResult? stars, int top = 30}) {
       // النجوم و PQ: الإشارة بنجمتين فأكثر يكفيها أعلى 30% من King، وغيرها تحتاج أعلى 15%
       final v = stars == null
-          ? kingFilter(r, e, 30, keep: _keep('$name|v'))
+          ? kingFilter(r, e, top, keep: _keep('$name|v'))
           : kingFilter(r, e, 15, keep: _keep('$name|v'), wideTop: 30, wide: (i, d) => stars.of(i, d) >= 2);
       final g = _mem.gateAll('$name|v', candles, v);
       _remember('$name|v', g.signals);
@@ -809,6 +812,15 @@ class AppState extends ChangeNotifier {
     stV = tr == null ? null : StResult(f('ST', tr.res), tr.conf);
     kmV = kmR == null ? null : f('KM', kmR!);
     allV = allR == null ? null : f('ALL', allR!);
+    // Mp و 0.1: فلتر الذكاء (King أعلى 50%) — يحافظ على نصف الإشارات. اختبار: Mp 55.2→57.0% • 0.1 51.4→52.4%
+    mpV = mpR == null ? null : f('Mp', mpR!, top: 50);
+    final z = zero;
+    if (z != null) {
+      final v = f('0.1', AllResult(z.signals, List.filled(z.signals.length, '0.1'), z.pending, List.filled(z.pending.length, '0.1'), '0.1'), top: 50);
+      zeroV = ZeroResult(v.signals, v.pending);
+    } else {
+      zeroV = null;
+    }
   }
 
   /// كل إشارة ظهرت على شمعة مغلقة تبقى ظاهرة (لا تظهر ثم تختفي).

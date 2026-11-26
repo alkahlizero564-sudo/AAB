@@ -516,7 +516,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'Mp',
           emoji: '👑',
-          desc: 'دمج مؤشراتنا — أكثر صفقات وأكبر ربح',
+          desc: 'دمج مؤشراتنا + فهم التوقيت (King أعلى 50%) — أكثر صفقات',
           health: st.mpHealth,
           on: layers.mp,
           toggle: () => layers.mp = !layers.mp
@@ -532,7 +532,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: '0.1',
           emoji: '🎯',
-          desc: 'مصيدة سيولة + شمعة رفض',
+          desc: 'مصيدة سيولة + شمعة رفض + فهم التوقيت (King أعلى 50%) — الأضعف (~52%)',
           health: st.zeroHealth,
           on: layers.zero,
           toggle: () => layers.zero = !layers.zero
@@ -616,7 +616,7 @@ class _ChartScreenState extends State<ChartScreen> {
         final acc = <String, double>{
           'AK': 66, 'King': 59.3, 'MTF': 57.5, 'Fast': 56.5, 'الإجماع': 56.2, 'FZ': 54.0, 'AAB': 62.4, 'SM': 60.5,
           'نجوم': 61.3, 'PQ': 61.3, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
-          'Mp': 55.7, 'ALL': 60.3, 'Alka': 59.6, '0.1': 51.2,
+          'Mp': 57.0, 'ALL': 60.3, 'Alka': 59.6, '0.1': 52.4,
         };
         final byName = {for (final x in inds) x.name: x};
         const groups = <(String, IconData, List<String>)>[
@@ -1250,8 +1250,8 @@ class _ChartScreenState extends State<ChartScreen> {
               forecast: st.forecast,
               algo: st.algo,
               alka: st.alkaV,
-              zero: st.zero,
-              mpR: st.mpR,
+              zero: st.zeroV ?? st.zero,
+              mpR: st.mpV ?? st.mpR,
               smR: st.smView,
               kmR: st.kmV,
               dmR: st.dmR,
