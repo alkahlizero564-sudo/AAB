@@ -184,3 +184,70 @@ List<TzLevel> tzLevels(List<Candle> c, {int k = 5, int lookback = 600}) {
   _clk = key;
   return out;
 }
+
+/// قناة الترند المستقبلية (مثل Future Trend Channel):
+/// الاتجاه من SuperTrend (ATR10 × 3). عند كل تغيّر اتجاه تُرسم قناة: خط وسط بانحدار خطي لآخر [len] إغلاق
+/// بانحدار خطي لإغلاقات الترند نفسه، وعرضها يحيط بكل شموعه. القناة الحالية تتحدّث مع كل شمعة وتمتد 20 شمعة للأمام.
+/// علامة ◆ (بداية الترند) لا تتغير بعد ظهورها.
+class FtChan {
+  final int from, to, dir; // من شمعة التغيّر حتى التغيّر التالي (to = آخر شمعة للقناة الحالية)
+  final double a, b, w; // الوسط عند الشمعة i = a + b * i ، والعرض ± w
+  const FtChan(this.from, this.to, this.dir, this.a, this.b, this.w);
+  double mid(double i) => a + b * i;
+}
+
+List<FtChan>? _cf;
+String _cfk = '';
+
+List<FtChan> futureChannels(List<Candle> c, {int len = 50}) {
+  final n = c.length;
+  if (n < len + 20) return const [];
+  final key = '$n|${c.first.time.millisecondsSinceEpoch}|${c.last.time.millisecondsSinceEpoch}|${c[n - 2].close}';
+  if (key == _cfk && _cf != null) return _cf!;
+  // SuperTrend 10,3 على الشموع المغلقة
+  final dir = List<int>.filled(n, 1);
+  var atr = 0.0, upL = 0.0, dnL = 0.0;
+  for (var i = 1; i < n; i++) {
+    final tr = [c[i].high - c[i].low, (c[i].high - c[i - 1].close).abs(), (c[i].low - c[i - 1].close).abs()].reduce((x, y) => x > y ? x : y);
+    atr = i <= 10 ? (atr * (i - 1) + tr) / i : atr + (tr - atr) / 10;
+    final m = (c[i].high + c[i].low) / 2, u = m - 3 * atr, d = m + 3 * atr;
+    final pu = upL, pd = dnL;
+    upL = (c[i - 1].close > pu && i > 1) ? (u > pu ? u : pu) : u;
+    dnL = (c[i - 1].close < pd && i > 1) ? (d < pd ? d : pd) : d;
+    dir[i] = dir[i - 1] == 1 ? (c[i].close < upL ? -1 : 1) : (c[i].close > dnL ? 1 : -1);
+  }
+  final out = <FtChan>[];
+  // القناة تُحسب من شموع الترند نفسه (من بدايته حتى نهايته/الآن)، فميلها دائماً مع اتجاهه
+  FtChan fit(int k, int to) {
+    final m = (to - k + 1).toDouble();
+    if (m < 8) {
+      // ترند قصير جداً: ميل افتراضي باتجاهه (0.15 ATR لكل شمعة) يبدأ من إغلاق شمعة التغيّر
+      final b = dir[k] * atr * 0.15;
+      return FtChan(k, to, dir[k], c[k].close - b * k, b, atr * 1.5);
+    }
+    var sx = 0.0, sy = 0.0, sxx = 0.0, sxy = 0.0;
+    for (var i = k; i <= to; i++) {
+      sx += i;
+      sy += c[i].close;
+      sxx += i * i.toDouble();
+      sxy += i * c[i].close;
+    }
+    final b = (m * sxy - sx * sy) / (m * sxx - sx * sx), a = (sy - b * sx) / m;
+    var mx = 0.0;
+    for (var i = k; i <= to; i++) {
+      final u = c[i].high - (a + b * i), d = (a + b * i) - c[i].low;
+      if (u > mx) mx = u;
+      if (d > mx) mx = d;
+    }
+    // اللون/الاتجاه من ميل القناة نفسها (طالعة = صاعد، نازلة = هابط)
+    return FtChan(k, to, b > 0 ? 1 : (b < 0 ? -1 : dir[k]), a, b, mx < atr ? atr : mx);
+  }
+
+  final flips = [for (var i = len; i < n - 1; i++) if (dir[i] != dir[i - 1]) i];
+  for (var q = 0; q < flips.length; q++) {
+    out.add(fit(flips[q], q + 1 < flips.length ? flips[q + 1] - 1 : n - 1));
+  }
+  _cf = out;
+  _cfk = key;
+  return out;
+}
