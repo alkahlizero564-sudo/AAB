@@ -12,6 +12,7 @@ import '../analysis/lt_indicator.dart';
 import '../models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'lot_calc.dart';
 import '../widgets/common.dart';
 import '../widgets/native_chart.dart';
 
@@ -350,9 +351,9 @@ class _ChartScreenState extends State<ChartScreen> {
           onTap: onTap,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            width: 29,
+            width: 25,
             height: 28,
-            margin: const EdgeInsets.symmetric(horizontal: 0.5),
+            margin: const EdgeInsets.symmetric(horizontal: 0.25),
             decoration: BoxDecoration(
               gradient: primary ? AppColors.goldGrad : null,
               color: primary ? null : (on ? AppColors.gold.withOpacity(0.18) : Colors.transparent),
@@ -408,6 +409,17 @@ class _ChartScreenState extends State<ChartScreen> {
           health: st.akHealth,
           on: layers.aiak,
           toggle: () => layers.aiak = !layers.aiak
+        ),
+        (
+          name: 'MTF',
+          emoji: '🧭',
+          desc: 'King متعدد الفريمات: إشارات King من هذا الفريم ومن الفريمات الأعلى (تُبنى من نفس الشموع بدون طلبات إضافية) — شراء أو بيع مع نجوم القوة (⭐ ~56% • ⭐⭐ ~61% • ⭐⭐⭐ ~64%)',
+          health: null,
+          on: layers.mtf,
+          toggle: () {
+            layers.mtf = !layers.mtf;
+            st.setMtf(layers.mtf);
+          }
         ),
         (
           name: 'Q',
@@ -575,13 +587,13 @@ class _ChartScreenState extends State<ChartScreen> {
         final inds = _indicators(st);
         // دقة كل مؤشر على بيانات لم يرها (بهدف 1R) — لشريط الدقة والترتيب
         final acc = <String, double>{
-          'AK': 66, 'King': 59.3, 'AAB': 62.4, 'SM': 60.5,
+          'AK': 66, 'King': 59.3, 'MTF': 57.5, 'AAB': 62.4, 'SM': 60.5,
           'نجوم': 61.3, 'PQ': 61.3, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
           'Mp': 55.7, 'ALL': 60.3, 'Alka': 59.6, '0.1': 51.2,
         };
         final byName = {for (final x in inds) x.name: x};
         const groups = <(String, IconData, List<String>)>[
-          ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['AK', 'King', 'AAB', 'SM']),
+          ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['AK', 'King', 'MTF', 'AAB', 'SM']),
           ('خريطة الاحتمالات', Icons.map_rounded, ['Q']),
           ('مؤشرات الثقة', Icons.verified_rounded, ['نجوم', 'PQ', 'ST', 'KM', 'DM']),
           ('بعيد المدى', Icons.landscape_rounded, ['LT']),
@@ -1167,6 +1179,7 @@ class _ChartScreenState extends State<ChartScreen> {
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               _iconTool(Icons.auto_graph_rounded, 'قراءة الشارت', () => _showReading(st), primary: true),
               _iconTool(Icons.leaderboard_outlined, 'مقارنة المؤشرات', () => _showBench(st)),
+              _iconTool(Icons.calculate_outlined, 'حاسبة اللوت', () => showLotCalc(context, st)),
               _iconTool(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', () => setState(() => layers.sr = !layers.sr),
                   on: layers.sr),
               _iconTool(Icons.layers_outlined, 'الطبقات', _showLayers),
@@ -1219,6 +1232,7 @@ class _ChartScreenState extends State<ChartScreen> {
               akR: st.akR,
               qR: st.qR,
               kingR: st.kingR,
+              mtfR: st.mtfR,
               allR: st.allV,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -1299,7 +1313,7 @@ class _ChartScreenState extends State<ChartScreen> {
     if (eff.all && st.allV != null) e.add(('ALL', st.allV!.decision, null));
     if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
     if (eff.alka && st.alkaV != null) e.add(('Alka', st.alkaV!.decision, null));
-    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak;
+    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf;
     if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
 
     // تجميع الصفقات المتطابقة

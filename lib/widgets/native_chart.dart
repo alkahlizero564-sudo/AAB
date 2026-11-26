@@ -12,6 +12,7 @@ import '../analysis/zero_one.dart';
 import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
+import '../analysis/mtf.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/q_model.dart' show qH;
 import '../analysis/indicators.dart';
@@ -38,6 +39,7 @@ class ChartLayers {
   bool king = false; // مؤشر King: ذكاء اصطناعي
   bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
   bool q = false; // مؤشر Q: خريطة الاحتمالات للـ 12 شمعة القادمة
+  bool mtf = false; // King متعدد الفريمات (5m و15m و1h): علامات شراء/بيع فقط
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
   String sub = 'rsi'; // none | rsi | macd — اللوحة السفلية
 
@@ -70,6 +72,7 @@ class ChartLayers {
     ..king = king
     ..aiak = aiak
     ..q = q
+    ..mtf = mtf
     ..type = type
     ..sub = sub;
 }
@@ -112,6 +115,7 @@ class NativeChart extends StatefulWidget {
   final AllResult? akR;
   final QResult? qR;
   final KingResult? kingR;
+  final AllResult? mtfR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -137,6 +141,7 @@ class NativeChart extends StatefulWidget {
     this.akR,
     this.qR,
     this.kingR,
+    this.mtfR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -355,7 +360,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
                   DateTime.now().toUtc(), widget.algo,
-                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR),
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR, widget.mtfR),
             ),
           ),
         ),
@@ -432,8 +437,9 @@ class _Painter extends CustomPainter {
   final AllResult? akr;
   final QResult? qr;
   final KingResult? kingr;
+  final AllResult? mtfr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr, this.mtfr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -1229,6 +1235,13 @@ class _Painter extends CustomPainter {
           ],
           pendTagPer: [for (final _ in r.pending) 'PQ'],
           starsPer: starr == null ? null : [for (final sg in r.signals) inStars(sg) ? starr!.of(sg.i, sg.dir) : -1]);
+    }
+    // ── King متعدد الفريمات: «شراء» أو «بيع» فقط
+    if (L.mtf && mtfr != null) {
+      final r = mtfr!;
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
+          tagPer: List.filled(r.signals.length, ''),
+          starsPer: [for (var q = 0; q < r.signals.length; q++) mtfStarsOf(r, q)]);
     }
     // ── AK: علامات شراء (أخضر) وبيع (أحمر) — توصيات AAB في أعلى 15% حسب King
     if (L.aiak && akr != null) {

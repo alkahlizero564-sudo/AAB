@@ -17,6 +17,7 @@ import '../analysis/lt_indicator.dart';
 import '../analysis/pq_indicator.dart';
 import '../analysis/king_indicator.dart';
 import '../analysis/low_tf.dart';
+import '../analysis/mtf.dart';
 import '../analysis/signal_memory.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/signal_engine.dart';
@@ -73,6 +74,78 @@ class AppState extends ChangeNotifier {
   StarResult? starV;
   StResult? stV;
   AllResult? kmV, allV, pqV;
+
+  // ── King متعدد الفريمات: إشارات King من 5m و15m و1h على الشارت الحالي ──
+  bool mtfOn = false;
+  AllResult? mtfR;
+  final Map<String, (List<Candle>, DateTime)> _mtfData = {};
+  final Map<String, List<(PastSignal, int)>> _mtfSig = {};
+  bool _mtfBusy = false;
+  List<Candle> _long = const []; // شموع الفريم الحالي الطويلة (طلب واحد أكبر عند تشغيل MTF)
+
+  void setMtf(bool on) {
+    mtfOn = on;
+    if (on) {
+      _buildMtf();
+      if (_long.length < mtfCount(tf, candleCount(tf)) * 0.9) {
+        unawaited(refresh()); // طلب واحد أطول للفريم الحالي، ثم يُبنى الأعلى منه
+      } else {
+        unawaited(_refreshMtf());
+      }
+    } else {
+      mtfR = null;
+    }
+    notifyListeners();
+  }
+
+  /// يبني الفريمات الأعلى من شموع الفريم الحالي (بدون أي طلب إضافي) ويحسب King عليها.
+  Future<void> _refreshMtf() async {
+    if (!mtfOn || _mtfBusy || candles.length < 50) return;
+    _mtfBusy = true;
+    final gen = _gen, sym = symbol;
+    try {
+      // الشموع الطويلة (من آخر طلب) + الأحدث منها في الشارت الحي
+      final long = <Candle>[..._long];
+      final lastT = long.isEmpty ? DateTime.fromMillisecondsSinceEpoch(0) : long.last.time;
+      for (final k in candles) {
+        if (k.time.isAfter(lastT)) long.add(k);
+      }
+      if (long.length < 50) return;
+      for (final f in mtfHigher[tf] ?? const <String>[]) {
+        final agg = aggregate(long, f, nowBarStart: candles.last.time);
+        if (agg.length < 260) continue;
+        final cached = _mtfData[f];
+        if (cached != null && cached.$1.isNotEmpty && cached.$1.last.time == agg.last.time) continue; // لا شمعة أعلى جديدة
+        final sigs = await _kingIso(agg, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2);
+        if (gen != _gen || !mtfOn) return;
+        _mtfData[f] = (agg, DateTime.now());
+        final kept = _mem.gate('MTF|$f', agg, [for (final x in sigs) x.$1]).toSet();
+        _mtfSig[f] = [for (final x in sigs) if (kept.contains(x.$1)) x];
+      }
+      _buildMtf();
+      notifyListeners();
+    } catch (_) {
+    } finally {
+      _mtfBusy = false;
+    }
+  }
+
+  void _buildMtf() {
+    if (!mtfOn || candles.length < 2) {
+      mtfR = null;
+      return;
+    }
+    final kr = kingR;
+    final lists = <List<(PastSignal, int)>>[
+      if (kr != null) [for (final x in kr.res.signals) (x, kr.stars(x.i, x.dir) < 1 ? 1 : kr.stars(x.i, x.dir))]
+    ];
+    for (final f in mtfHigher[tf] ?? const <String>[]) {
+      final d = _mtfData[f], sg = _mtfSig[f];
+      if (d == null || sg == null) continue;
+      lists.add(mapSignals(sg, d.$1, f, candles));
+    }
+    mtfR = mtfResult(mergeSignals(lists));
+  }
   AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
   IndHealth? get akHealth => _aiH(15, 2);
   IndHealth? _tH(int k) => 4 + k < aiHealth.length ? aiHealth[4 + k] : null;
@@ -307,6 +380,10 @@ class AppState extends ChangeNotifier {
     kmV = null;
     allV = null;
     pqV = null;
+    mtfR = null;
+    _mtfData.clear();
+    _mtfSig.clear();
+    _long = const [];
     algo = null;
     alka = null;
     allR = null;
@@ -613,6 +690,8 @@ class AppState extends ChangeNotifier {
     if (kr != null) kingR = KingResult(_mem.hold('King|$kingTop|$kingNearOnly', c, kr.res), kr.conf, kr.eval);
     if (forecast != null) forecast = _mem.holdForecast('AAB', c, forecast!);
     _buildViews();
+    _buildMtf();
+    if (mtfOn) unawaited(_refreshMtf());
     final ak = alka;
     if (ak != null) {
       final (s, p) = _mem.holdList('Alka', c, ak.signals, ak.pending);
@@ -699,8 +778,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       // الفريمات الصغيرة: 600 شمعة بدل 300 حتى تظهر إشارات أكثر (300 دقيقة = 5 ساعات فقط)
-      final data = await _market.fetch(symbol, tf, settings, count: candleCount(tf));
+      final want = mtfOn ? mtfCount(tf, candleCount(tf)) : candleCount(tf);
+      final data0 = await _market.fetch(symbol, tf, settings, count: want);
       if (gen != _gen) return;
+      _long = data0;
+      final data = data0.length > candleCount(tf) ? data0.sublist(data0.length - candleCount(tf)) : data0;
       candles = _mergeLive(data);
       liveTick.value++;
       final stale = _htfAt == null ||
@@ -845,4 +927,14 @@ AllResult _withExtras(List<Candle> c, AllResult mp, MarketSymbol sym, double rr1
   ]..sort((a, b) => a.$1.i.compareTo(b.$1.i));
   return AllResult([for (final x in all) x.$1], [for (final x in all) x.$2], mp.pending, mp.pendingSrc, mp.tag,
       {for (final e in extras) e.$1.i});
+}
+
+
+/// King لفريم آخر في Isolate (دالة على مستوى الملف حتى لا تُرسل حالة التطبيق).
+Future<List<(PastSignal, int)>> _kingIso(List<Candle> c, MarketSymbol sym, String f, List<Candle>? dd, double a1, double r2) async {
+  try {
+    return await Isolate.run(() => kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2));
+  } catch (_) {
+    return kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2);
+  }
 }
