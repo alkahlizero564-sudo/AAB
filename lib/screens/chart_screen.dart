@@ -397,7 +397,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'King',
           emoji: '🤖',
-          desc: 'ذكاء اصطناعي يقرأ 54 معلومة من السوق ومؤشراتنا — كل إشارة عليها نجوم قوتها: ⭐ 56% • ⭐⭐ 61% • ⭐⭐⭐ 64% (1M/5M: 64% • 67% • 74%)',
+          desc: 'العقل الأساسي: يختار أفضل الإشارات، والنجوم = قوتها',
           health: st.kingHealthNow,
           on: layers.king,
           toggle: () => layers.king = !layers.king
@@ -405,7 +405,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'الإجماع',
           emoji: '🤝',
-          desc: 'زر واحد لكل المؤشرات: شراء أو بيع كلما اتفق مؤشران أو أكثر من 7 (المصدر، النجوم، SM، KM، ST، King، AK) — إشارات كثيرة (~56%). النجوم = اتفاق أكبر: ⭐ 5 مؤشرات (~60%) • ⭐⭐ 6 (~63%) • ⭐⭐⭐ الكل (~69%)',
+          desc: 'إشارة كلما اتفق مؤشران أو أكثر، والنجوم = اتفاق أكبر',
           health: st.voteHealth,
           on: layers.vote,
           toggle: () => layers.vote = !layers.vote
@@ -413,7 +413,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'AK',
           emoji: '🎯',
-          desc: 'الأدق: توصيات AAB التي يضعها King في أعلى 15% — علامات شراء وبيع، صفقات قليلة',
+          desc: 'الأدق: أقوى التوصيات فقط',
           health: st.akHealth,
           on: layers.aiak,
           toggle: () => layers.aiak = !layers.aiak
@@ -421,7 +421,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'MTF',
           emoji: '🧭',
-          desc: 'King متعدد الفريمات: إشارات King من هذا الفريم ومن الفريمات الأعلى والأصغر (مثلاً على الساعة: 5m و15m و4h) — إشارات أكثر بنفس الدقة تقريباً — شراء أو بيع مع نجوم القوة (⭐ ~56% • ⭐⭐ ~61% • ⭐⭐⭐ ~64%)',
+          desc: 'إشارات King من فريمات أكبر وأصغر معاً',
           health: st.mtfHealth,
           on: layers.mtf,
           toggle: () {
@@ -432,7 +432,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'Fast',
           emoji: '⚡',
-          desc: 'إشارات كثيرة: King من 5m و15m و1h معاً (أعلى 50%) على أي فريم — حوالي 2-3 إشارات في اليوم بدقة ~56%. النجوم = الإشارات الأقوى',
+          desc: 'أكثر الإشارات: King من 3 فريمات معاً',
           health: st.fastHealth,
           on: layers.fast,
           toggle: () {
@@ -443,7 +443,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'FZ',
           emoji: '📐',
-          desc: 'مناطق الفيبوناتشي: خضراء بعد موجة صاعدة (0.5-0.618) وحمراء بعد موجة هابطة. شراء/بيع عند الارتداد من المنطقة أو كسرها (بعد 0.786) — بشرط موافقة Mp',
+          desc: 'مناطق فيبوناتشي: إشارة عند الارتداد أو الكسر',
           health: st.fzHealth,
           on: layers.fz,
           toggle: () => layers.fz = !layers.fz
@@ -451,7 +451,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'Q',
           emoji: '🗺️',
-          desc: 'يوضّح أين سيكون السعر غالباً في الفترة القادمة، وهل السوق هادئ أو متحرك',
+          desc: 'أين سيكون السعر غالباً قريباً، وهل السوق هادئ أو متحرك',
           health: null,
           on: layers.q,
           toggle: () => layers.q = !layers.q
@@ -459,7 +459,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'PQ',
           emoji: '🔷',
-          desc: 'النجوم + SM + Alka في مؤشر واحد + فهم التوقيت (King): نجمتان فأكثر تكفيهما ثقة جيدة، وغيرها تحتاج ثقة عالية',
+          desc: 'النجوم + SM + Alka في مؤشر واحد',
           health: null,
           on: layers.pq,
           toggle: () => layers.pq = !layers.pq
@@ -467,7 +467,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'LT',
           emoji: '🏔️',
-          desc: 'بعيد المدى (يومي، شراء فقط): ترند ~67% وارتداد ~70% — صفقتان تقريباً في الشهر',
+          desc: 'استثمار بعيد المدى (يومي، شراء فقط) — صفقتان تقريباً في الشهر',
           health: null,
           on: layers.lt,
           toggle: () => layers.lt = !layers.lt
@@ -475,7 +475,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'نجوم',
           emoji: '⭐',
-          desc: 'إشارات Mp ونجوم الثقة + فهم التوقيت (King): كل نجمة أدق، ونجمتان فأكثر تكفيهما ثقة جيدة',
+          desc: 'إشارات Mp مع نجوم الثقة',
           health: null,
           on: layers.star,
           toggle: () => layers.star = !layers.star
@@ -492,7 +492,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'KM',
           emoji: '💎',
-          desc: 'SM في السوق الهادئ + فهم التوقيت (King) — صفقات قليلة ودقيقة',
+          desc: 'SM في السوق الهادئ — قليلة ودقيقة',
           health: st.kmHealthNow,
           on: layers.km,
           toggle: () => layers.km = !layers.km
@@ -500,7 +500,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'ST',
           emoji: '🧠',
-          desc: 'نموذج متعلّم: أعلى 30% من إشارات Mp + فهم التوقيت (King)',
+          desc: 'نموذج متعلّم يختار أفضل إشارات Mp',
           health: st.stHealthNow,
           on: layers.st,
           toggle: () => layers.st = !layers.st
@@ -508,7 +508,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'SM',
           emoji: '〰️',
-          desc: 'Mp مع شريط المتوسطات + فلتر الذكاء (King أعلى 30%) — «بداية صعود/هبوط» عند تغيّر لون الشريط',
+          desc: 'إشارات Mp مع شريط المتوسطات',
           health: st.smHealthNow,
           on: layers.sm,
           toggle: () => layers.sm = !layers.sm
@@ -516,7 +516,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'Mp',
           emoji: '👑',
-          desc: 'دمج مؤشراتنا + فهم التوقيت (King أعلى 50%) — أكثر صفقات',
+          desc: 'دمج مؤشراتنا الأساسية، بفلتر King',
           health: st.mpHealth,
           on: layers.mp,
           toggle: () => layers.mp = !layers.mp
@@ -524,7 +524,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'ALL',
           emoji: '🔗',
-          desc: 'دمج AAB و Alka + فهم التوقيت (King)',
+          desc: 'دمج AAB و Alka، بفلتر King',
           health: st.allHealthNow,
           on: layers.all,
           toggle: () => layers.all = !layers.all
@@ -532,7 +532,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: '0.1',
           emoji: '🎯',
-          desc: 'مصيدة سيولة + شمعة رفض + فهم التوقيت (King أعلى 50%) — الأضعف (~52%)',
+          desc: 'مصيدة سيولة + شمعة رفض — الأضعف',
           health: st.zeroHealth,
           on: layers.zero,
           toggle: () => layers.zero = !layers.zero
@@ -540,7 +540,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'Alka',
           emoji: '🕯️',
-          desc: 'شموع الانعكاس عند الدعم والمقاومة + فهم التوقيت (King)',
+          desc: 'شموع الانعكاس عند الدعم والمقاومة، بفلتر King',
           health: st.alkaHealthNow,
           on: layers.alka,
           toggle: () => layers.alka = !layers.alka
@@ -548,7 +548,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'AAB',
           emoji: '📈',
-          desc: 'توصيات AAB + فلتر الذكاء (King أعلى 30%)',
+          desc: 'توصيات مع الدخول والوقف والأهداف',
           health: st.aabHealthNow,
           on: layers.sigs,
           toggle: () => layers.sigs = !layers.sigs
@@ -619,17 +619,28 @@ class _ChartScreenState extends State<ChartScreen> {
           'Mp': 57.0, 'ALL': 60.3, 'Alka': 59.6, '0.1': 52.4,
         };
         final byName = {for (final x in inds) x.name: x};
-        const groups = <(String, IconData, List<String>)>[
-          ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['الإجماع', 'AK', 'King', 'MTF', 'Fast', 'AAB', 'SM']),
-          ('خريطة الاحتمالات', Icons.map_rounded, ['Q']),
-          ('مؤشرات الثقة', Icons.verified_rounded, ['نجوم', 'PQ', 'ST', 'KM', 'DM']),
-          ('المناطق', Icons.crop_square_rounded, ['FZ']),
-          ('بعيد المدى', Icons.landscape_rounded, ['LT']),
-          ('الأساسية', Icons.layers_rounded, ['Mp', 'ALL', 'Alka', '0.1']),
+        const groups = <(String, String, IconData, List<String>)>[
+          ('ابدأ هنا', 'الأفضل لأغلب المتداولين', Icons.emoji_events_rounded, ['King', 'الإجماع', 'Fast', 'MTF']),
+          ('دقة عالية', 'إشارات أقل لكن أدق', Icons.verified_rounded, ['AK', 'KM', 'AAB', 'SM', 'نجوم', 'PQ', 'ST', 'DM']),
+          ('المناطق والخرائط', 'أين يتجه السعر', Icons.map_rounded, ['FZ', 'Q']),
+          ('بعيد المدى', 'للاستثمار على الفريم اليومي', Icons.landscape_rounded, ['LT']),
+          ('الأساسية', 'المؤشرات التي بُني منها الذكاء', Icons.layers_rounded, ['Mp', 'ALL', 'Alka', '0.1']),
         ];
-        final rankOf = {
-          for (final (q, e) in ([...acc.entries.where((e) => e.key != 'LT')]..sort((x, y) => y.value.compareTo(x.value))).indexed) e.key: q + 1
+        // كم إشارة يعطي كل مؤشر
+        const freq = <String, int>{
+          'Fast': 3, 'الإجماع': 3, 'Mp': 3,
+          'King': 2, 'MTF': 2, 'SM': 2, 'نجوم': 2, 'PQ': 2, 'ST': 2, 'ALL': 2, 'Alka': 2,
+          'AK': 1, 'KM': 1, 'AAB': 1, 'DM': 1, 'FZ': 1, '0.1': 1, 'LT': 0,
         };
+        // أوضاع جاهزة: تشغّل هذه المؤشرات فقط
+        void preset(Set<String> names) {
+          setState(() {
+            for (final x in inds) {
+              if (names.contains(x.name) != x.on) x.toggle();
+            }
+          });
+          setSheet(() {});
+        }
         String live(({String name, String emoji, String desc, IndHealth? health, bool on, VoidCallback toggle}) x) {
           final h = x.health;
           if (x.name == 'نجوم') return st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق';
@@ -661,9 +672,17 @@ class _ChartScreenState extends State<ChartScreen> {
                   'red' => AppColors.down,
                   _ => AppColors.muted,
                 };
+          final hasAcc = acc.containsKey(x.name);
           final a = acc[x.name] ?? 50;
           final barCol = a >= 60 ? AppColors.up : a >= 55 ? AppColors.gold : AppColors.muted;
-          final rank = rankOf[x.name] ?? 99;
+          final f = freq[x.name];
+          final (fTxt, fCol) = switch (f) {
+            3 => ('إشارات كثيرة', AppColors.up),
+            2 => ('متوسطة', AppColors.gold),
+            1 => ('قليلة', AppColors.accent),
+            0 => ('نادرة', AppColors.muted),
+            _ => ('خريطة', AppColors.muted),
+          };
           return AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             decoration: BoxDecoration(
@@ -687,20 +706,6 @@ class _ChartScreenState extends State<ChartScreen> {
                   padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
-                      if (rank < 99) Container(
-                        width: 20,
-                        height: 20,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          gradient: rank <= 3 ? AppColors.goldGrad : null,
-                          color: rank <= 3 ? null : AppColors.surface,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text('$rank',
-                            style: TextStyle(
-                                fontSize: 10.5, fontWeight: FontWeight.w900, color: rank <= 3 ? AppColors.onAccent : AppColors.muted)),
-                      ),
-                      const SizedBox(width: 6),
                       Text(x.emoji, style: const TextStyle(fontSize: 14)),
                       const SizedBox(width: 4),
                       Expanded(
@@ -729,14 +734,20 @@ class _ChartScreenState extends State<ChartScreen> {
                         ),
                       ),
                     ]),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(color: fCol.withOpacity(0.14), borderRadius: BorderRadius.circular(6)),
+                      child: Text(fTxt, style: TextStyle(color: fCol, fontSize: 9.5, fontWeight: FontWeight.w800)),
+                    ),
+                    const SizedBox(height: 3),
                     Text(x.desc,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(color: AppColors.muted, fontSize: 10.5, height: 1.3)),
                     const Spacer(),
                     // شريط الدقة (50% → 70%)
-                    Row(children: [
+                    if (hasAcc) Row(children: [
                       Expanded(
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(3),
@@ -776,7 +787,7 @@ class _ChartScreenState extends State<ChartScreen> {
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 8,
               crossAxisSpacing: 8,
-              childAspectRatio: 1.42,
+              childAspectRatio: 1.25,
               children: [for (final n in names) if (byName[n] != null) card(byName[n]!)],
             );
         Widget optBox(List<Widget> kids) => Container(
@@ -858,14 +869,51 @@ class _ChartScreenState extends State<ChartScreen> {
                   ),
               ]),
               const SizedBox(height: 4),
-              Text('${st.symbol.code} • ${st.tf.toUpperCase()} — مرتبة من الأدق. النسبة = دقته على بيانات لم يرها (بهدف 1R). السطر الملوّن = أداؤه الآن على هذا السوق (آخر 5000 شمعة).',
+              Text('${st.symbol.code} • ${st.tf.toUpperCase()} — النسبة = دقته في الاختبار على سنين لم يرها. السطر الملوّن = أداؤه الآن على هذا السوق.',
                   style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
-              for (final (title, icon, names) in groups) ...[
-                const SizedBox(height: 14),
+              const SizedBox(height: 10),
+              // أوضاع جاهزة بلمسة
+              Row(children: [
+                for (final (name, sub, icon, names) in <(String, String, IconData, Set<String>)>[
+                  ('الأدق', 'AK + KM', Icons.gps_fixed_rounded, {'AK', 'KM'}),
+                  ('متوازن', 'King + MTF', Icons.balance_rounded, {'King', 'MTF'}),
+                  ('إشارات كثيرة', 'الإجماع + Fast', Icons.bolt_rounded, {'الإجماع', 'Fast'}),
+                ])
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Material(
+                        color: AppColors.card,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(11), side: BorderSide(color: AppColors.gold.withOpacity(0.5), width: 0.9)),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(11),
+                          onTap: () => preset(names),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(icon, size: 19, color: AppColors.gold),
+                              const SizedBox(height: 2),
+                              Text(name, style: const TextStyle(color: AppColors.text, fontSize: 12, fontWeight: FontWeight.w800)),
+                              Text(sub, style: const TextStyle(color: AppColors.muted, fontSize: 9.5)),
+                            ]),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ]),
+              for (final (title, hint, icon, names) in groups) ...[
+                const SizedBox(height: 16),
                 Row(children: [
                   Icon(icon, size: 17, color: AppColors.gold),
                   const SizedBox(width: 6),
                   Text(title, style: const TextStyle(color: AppColors.text, fontSize: 14, fontWeight: FontWeight.w800)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(hint,
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppColors.muted, fontSize: 11)),
+                  ),
                 ]),
                 const SizedBox(height: 8),
                 grid(names),
@@ -1013,7 +1061,7 @@ class _ChartScreenState extends State<ChartScreen> {
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           const Text('المؤشرات والتوصيات',
                               style: TextStyle(color: AppColors.text, fontSize: 13.5, fontWeight: FontWeight.w800)),
-                          Text('النجوم، LT، SM، ST، KM، ALL، Alka… — المشغّل الآن: $onCount',
+                          Text('King، الإجماع، Fast، MTF وغيرها — المشغّل الآن: $onCount',
                               style: const TextStyle(color: AppColors.muted, fontSize: 10.5)),
                         ]),
                       ),
@@ -1108,7 +1156,7 @@ class _ChartScreenState extends State<ChartScreen> {
               const SizedBox(height: 8),
               grid([
                 tile(Icons.bar_chart_rounded, 'الحجم', 'أعمدة أسفل الشموع', layers.vol, () => layers.vol = !layers.vol),
-                tile(Icons.palette_outlined, 'AAB Algo', 'تلوين الشموع + خط الاتجاه', layers.algo,
+                tile(Icons.palette_outlined, 'AAB Algo', 'تلوين الشموع', layers.algo,
                     () => layers.algo = !layers.algo),
                 tile(Icons.auto_awesome_outlined, 'توقع الشمعة', 'الشمعة القادمة', layers.fc, () => layers.fc = !layers.fc),
                 tile(Icons.text_fields_rounded, 'أنماط الشموع', 'أسماء النماذج', layers.pats,
@@ -1116,7 +1164,7 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               head('خطوط ومستويات', Icons.straighten_rounded),
               grid([
-                tile(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', 'العليا والسفلى والقريبة', layers.sr,
+                tile(Icons.align_vertical_center_rounded, 'الدعم والمقاومة', 'المستويات المهمة', layers.sr,
                     () => layers.sr = !layers.sr),
                 tile(Icons.show_chart_rounded, 'EMA 20/50/200', 'المتوسطات', layers.ema, () => layers.ema = !layers.ema),
                 tile(Icons.crop_square_rounded, 'OB / FVG', 'مناطق وفجوات', layers.zones, () => layers.zones = !layers.zones),
@@ -1129,7 +1177,7 @@ class _ChartScreenState extends State<ChartScreen> {
               ]),
               head('خيارات الصفقات', Icons.tune_rounded),
               grid([
-                tile(Icons.add_circle_outline_rounded, 'إشارات بعد TP1', 'نفس الاتجاه «+» — مطفأ افتراضياً',
+                tile(Icons.add_circle_outline_rounded, 'إشارات بعد TP1', 'نفس الاتجاه «+»',
                     st.settings.extraSameDir, () {
                   st.setEngineOptions(extraSameDir: !st.settings.extraSameDir);
                 }),
