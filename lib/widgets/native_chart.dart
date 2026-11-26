@@ -1231,9 +1231,28 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
+    // إشارة واحدة لكل (شمعة، اتجاه): ما يرسمه King لا يُعاد في MTF والإجماع و Fast و AK (لا علامات فوق بعض)
+    final shown = <(int, int)>{};
+    (List<PastSignal>, List<int>) fresh(List<PastSignal> sg, int Function(int q) stars) {
+      final out = <PastSignal>[], st = <int>[];
+      for (var q = 0; q < sg.length; q++) {
+        final k = (sg[q].i, sg[q].dir);
+        if (shown.contains(k)) continue;
+        out.add(sg[q]);
+        st.add(stars(q));
+      }
+      for (final x in out) {
+        shown.add((x.i, x.dir));
+      }
+      return (out, st);
+    }
+
     // ── King: إشارات أعلى 30% ثقة مع نجوم القوة (⭐ 30% • ⭐⭐ 15% • ⭐⭐⭐ 7%)
     if (L.king && kingr != null) {
       final r = kingr!.res;
+      for (final x in r.signals) {
+        shown.add((x.i, x.dir));
+      }
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'King', AppColors.gold,
           tagPer: List.filled(r.signals.length, 'King'),
           starsPer: [for (final sg in r.signals) math.max(1, kingr!.stars(sg.i, sg.dir))],
@@ -1256,16 +1275,16 @@ class _Painter extends CustomPainter {
     // ── King متعدد الفريمات: «شراء» أو «بيع» فقط
     if (L.mtf && mtfr != null) {
       final r = mtfr!;
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
-          tagPer: List.filled(r.signals.length, ''),
-          starsPer: [for (var q = 0; q < r.signals.length; q++) mtfStarsOf(r, q)]);
+      final (sg, stars) = fresh(r.signals, (q) => mtfStarsOf(r, q));
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, sg, const [], '', null,
+          tagPer: List.filled(sg.length, ''), starsPer: stars);
     }
     // ── الإجماع: «شراء» أو «بيع» مع نجوم (5 / 6 / 7 مؤشرات متفقة)
     if (L.vote && voter != null) {
       final r = voter!;
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
-          tagPer: List.filled(r.signals.length, ''),
-          starsPer: [for (var q = 0; q < r.signals.length; q++) voteStarsOf(r, q)]);
+      final (sg, stars) = fresh(r.signals, (q) => voteStarsOf(r, q));
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, sg, const [], '', null,
+          tagPer: List.filled(sg.length, ''), starsPer: stars);
     }
     // ── FZ: مناطق الفيبوناتشي — خضراء بعد موجة صاعدة، حمراء بعد موجة هابطة، وخط متقطع عند 0.786
     if (L.fz && fzr != null) {
@@ -1296,15 +1315,16 @@ class _Painter extends CustomPainter {
     // ── Fast: «شراء» أو «بيع» فقط (النجوم للإشارات الأقوى)
     if (L.fast && fastr != null) {
       final r = fastr!;
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
-          tagPer: List.filled(r.signals.length, ''),
-          starsPer: [for (var q = 0; q < r.signals.length; q++) mtfStarsOf(r, q)]);
+      final (sg, stars) = fresh(r.signals, (q) => mtfStarsOf(r, q));
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, sg, const [], '', null,
+          tagPer: List.filled(sg.length, ''), starsPer: stars);
     }
     // ── AK: علامات شراء (أخضر) وبيع (أحمر) — توصيات AAB في أعلى 15% حسب King
     if (L.aiak && akr != null) {
       final r = akr!;
-      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, r.pending, 'AK', null,
-          tagPer: [for (final _ in r.signals) 'AK'], pendTagPer: [for (final _ in r.pending) 'AK']);
+      final (sg, _) = fresh(r.signals, (q) => 0);
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, sg, r.pending, 'AK', null,
+          tagPer: [for (final _ in sg) 'AK'], pendTagPer: [for (final _ in r.pending) 'AK']);
     }
     // ── Q (مبسّط): صندوق «السعر غالباً سيكون هنا» بخطين: أعلى متوقع وأدنى متوقع
     if (L.q && qr != null && qr!.i < n) {
