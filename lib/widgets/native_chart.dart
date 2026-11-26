@@ -14,6 +14,7 @@ import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
 import '../analysis/mtf.dart';
 import '../analysis/fz_indicator.dart';
+import '../analysis/vote_indicator.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/q_model.dart' show qH;
 import '../analysis/indicators.dart';
@@ -40,6 +41,7 @@ class ChartLayers {
   bool king = false; // مؤشر King: ذكاء اصطناعي
   bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
   bool q = false; // مؤشر Q: خريطة الاحتمالات للـ 12 شمعة القادمة
+  bool vote = false; // الإجماع: 5 مؤشرات أو أكثر من 7 متفقة — شراء/بيع مع نجوم
   bool fz = false; // FZ: مناطق الفيبوناتشي (خضراء/حمراء) + شراء/بيع عند الارتداد أو الكسر
   bool fast = false; // Fast: King أعلى 50% من 5m و15m و1h — إشارات كثيرة
   bool mtf = false; // King متعدد الفريمات (5m و15m و1h): علامات شراء/بيع فقط
@@ -78,6 +80,7 @@ class ChartLayers {
     ..mtf = mtf
     ..fast = fast
     ..fz = fz
+    ..vote = vote
     ..type = type
     ..sub = sub;
 }
@@ -123,6 +126,7 @@ class NativeChart extends StatefulWidget {
   final AllResult? mtfR;
   final AllResult? fastR;
   final FzResult? fzR;
+  final AllResult? voteR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -151,6 +155,7 @@ class NativeChart extends StatefulWidget {
     this.mtfR,
     this.fastR,
     this.fzR,
+    this.voteR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -369,7 +374,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
                   DateTime.now().toUtc(), widget.algo,
-                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR, widget.mtfR, widget.fastR, widget.fzR),
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR, widget.mtfR, widget.fastR, widget.fzR, widget.voteR),
             ),
           ),
         ),
@@ -449,8 +454,9 @@ class _Painter extends CustomPainter {
   final AllResult? mtfr;
   final AllResult? fastr;
   final FzResult? fzr;
+  final AllResult? voter;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr, this.mtfr, this.fastr, this.fzr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr, this.mtfr, this.fastr, this.fzr, this.voter])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -1253,6 +1259,13 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
           tagPer: List.filled(r.signals.length, ''),
           starsPer: [for (var q = 0; q < r.signals.length; q++) mtfStarsOf(r, q)]);
+    }
+    // ── الإجماع: «شراء» أو «بيع» مع نجوم (5 / 6 / 7 مؤشرات متفقة)
+    if (L.vote && voter != null) {
+      final r = voter!;
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
+          tagPer: List.filled(r.signals.length, ''),
+          starsPer: [for (var q = 0; q < r.signals.length; q++) voteStarsOf(r, q)]);
     }
     // ── FZ: مناطق الفيبوناتشي — خضراء بعد موجة صاعدة، حمراء بعد موجة هابطة، وخط متقطع عند 0.786
     if (L.fz && fzr != null) {

@@ -19,6 +19,7 @@ import '../analysis/king_indicator.dart';
 import '../analysis/low_tf.dart';
 import '../analysis/mtf.dart';
 import '../analysis/fz_indicator.dart';
+import '../analysis/vote_indicator.dart';
 import '../analysis/signal_memory.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/signal_engine.dart';
@@ -55,6 +56,7 @@ class AppState extends ChangeNotifier {
   AlkaResult? alka; // مؤشر Alka (شموع الانعكاس عند الدعم/المقاومة و Volume Profile)
   AllResult? allR; // مؤشر ALL (دمج AAB و Alka + فلتر الشمعة الصغيرة)
   ZeroResult? zero; // مؤشر 0.1 (مصيدة سيولة + شمعة رفض)
+  AllResult? voteR; // مؤشر الإجماع: إشارة إذا اتفق 5 مؤشرات أو أكثر من 7
   FzResult? fzR; // مؤشر FZ: مناطق الفيبوناتشي + ارتداد/كسر (بموافقة Mp)
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
@@ -254,6 +256,15 @@ class AppState extends ChangeNotifier {
   IndHealth? get mtfHealth {
     final r = mtfR;
     if (!mtfOn || r == null || candles.isEmpty) return null;
+    final done = r.signals.where((s) => s.result != 0).toList();
+    final w = done.where((s) => s.result > 0).length;
+    final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
+    return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
+  }
+
+  IndHealth? get voteHealth {
+    final r = voteR;
+    if (r == null || candles.isEmpty) return null;
     final done = r.signals.where((s) => s.result != 0).toList();
     final w = done.where((s) => s.result > 0).length;
     final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
@@ -515,6 +526,7 @@ class AppState extends ChangeNotifier {
     zero = null;
     mpR = null;
     fzR = null;
+    voteR = null;
     smR = null;
     kmR = null;
     stR = null;
@@ -751,6 +763,7 @@ class AppState extends ChangeNotifier {
     final kn = 'King|$kingTop|$kingNearOnly';
     kingR = buildKing(candles, mp, top: kingTop, stars: starR, sm: smR, km: kmR, daily: daily, nearOnly: kingNearOnly, stick: _keep(kn));
     _remember(kn, kingR?.res.signals);
+    voteR = buildVote(mp, stars: starR, sm: smR, km: kmR, st: stR, king: kingR);
     _applyAi();
   }
 
@@ -815,6 +828,8 @@ class AppState extends ChangeNotifier {
     if (tr != null) stR = StResult(_mem.hold('ST', c, tr.res), tr.conf);
     final kr = kingR;
     if (kr != null) kingR = KingResult(_mem.hold('King|$kingTop|$kingNearOnly', c, kr.res), kr.conf, kr.eval);
+    final vr = voteR;
+    if (vr != null) voteR = _mem.hold('VOTE', c, vr);
     final fz = fzR;
     if (fz != null) fzR = FzResult(fz.zones, _mem.hold('FZ', c, fz.res));
     if (forecast != null) forecast = _mem.holdForecast('AAB', c, forecast!);

@@ -403,6 +403,14 @@ class _ChartScreenState extends State<ChartScreen> {
           toggle: () => layers.king = !layers.king
         ),
         (
+          name: 'الإجماع',
+          emoji: '🤝',
+          desc: 'زر واحد لكل المؤشرات: إشارة شراء أو بيع فقط إذا اتفق 5 مؤشرات أو أكثر من 7 (المصدر، النجوم، SM، KM، ST، King، AK). ⭐ = 5 متفقة (~60%) • ⭐⭐ = 6 (~63%) • ⭐⭐⭐ = الكل (~69%)',
+          health: st.voteHealth,
+          on: layers.vote,
+          toggle: () => layers.vote = !layers.vote
+        ),
+        (
           name: 'AK',
           emoji: '🎯',
           desc: 'الأدق: توصيات AAB التي يضعها King في أعلى 15% — علامات شراء وبيع، صفقات قليلة',
@@ -606,13 +614,13 @@ class _ChartScreenState extends State<ChartScreen> {
         final inds = _indicators(st);
         // دقة كل مؤشر على بيانات لم يرها (بهدف 1R) — لشريط الدقة والترتيب
         final acc = <String, double>{
-          'AK': 66, 'King': 59.3, 'MTF': 57.5, 'Fast': 56.5, 'FZ': 54.0, 'AAB': 62.4, 'SM': 60.5,
+          'AK': 66, 'King': 59.3, 'MTF': 57.5, 'Fast': 56.5, 'الإجماع': 59.6, 'FZ': 54.0, 'AAB': 62.4, 'SM': 60.5,
           'نجوم': 61.3, 'PQ': 61.3, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
           'Mp': 55.7, 'ALL': 60.3, 'Alka': 59.6, '0.1': 51.2,
         };
         final byName = {for (final x in inds) x.name: x};
         const groups = <(String, IconData, List<String>)>[
-          ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['AK', 'King', 'MTF', 'Fast', 'AAB', 'SM']),
+          ('الأقوى — ذكاء اصطناعي', Icons.emoji_events_rounded, ['الإجماع', 'AK', 'King', 'MTF', 'Fast', 'AAB', 'SM']),
           ('خريطة الاحتمالات', Icons.map_rounded, ['Q']),
           ('مؤشرات الثقة', Icons.verified_rounded, ['نجوم', 'PQ', 'ST', 'KM', 'DM']),
           ('المناطق', Icons.crop_square_rounded, ['FZ']),
@@ -1257,6 +1265,7 @@ class _ChartScreenState extends State<ChartScreen> {
               mtfR: st.mtfR,
               fastR: st.fastR,
               fzR: st.fzR,
+              voteR: st.voteR,
               allR: st.allV,
               repaint: st.liveTick,
               sym: st.symbol,
@@ -1337,7 +1346,7 @@ class _ChartScreenState extends State<ChartScreen> {
     if (eff.all && st.allV != null) e.add(('ALL', st.allV!.decision, null));
     if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
     if (eff.alka && st.alkaV != null) e.add(('Alka', st.alkaV!.decision, null));
-    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf || eff.fast || eff.fz;
+    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf || eff.fast || eff.fz || eff.vote;
     if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
 
     // تجميع الصفقات المتطابقة
