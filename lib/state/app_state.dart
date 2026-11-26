@@ -17,6 +17,7 @@ import '../analysis/lt_indicator.dart';
 import '../analysis/pq_indicator.dart';
 import '../analysis/king_indicator.dart';
 import '../analysis/low_tf.dart';
+import '../analysis/mtf.dart';
 import '../analysis/signal_memory.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/signal_engine.dart';
@@ -73,6 +74,64 @@ class AppState extends ChangeNotifier {
   StarResult? starV;
   StResult? stV;
   AllResult? kmV, allV, pqV;
+
+  // ── King متعدد الفريمات: إشارات King من 5m و15m و1h على الشارت الحالي ──
+  bool mtfOn = false;
+  AllResult? mtfR;
+  final Map<String, (List<Candle>, DateTime)> _mtfData = {};
+  final Map<String, List<PastSignal>> _mtfSig = {};
+  bool _mtfBusy = false;
+
+  void setMtf(bool on) {
+    mtfOn = on;
+    if (on) {
+      _buildMtf();
+      unawaited(_refreshMtf());
+    } else {
+      mtfR = null;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _refreshMtf() async {
+    if (!mtfOn || _mtfBusy || candles.length < 50) return;
+    _mtfBusy = true;
+    final gen = _gen, sym = symbol;
+    try {
+      for (final f in mtfFrames) {
+        if (f == tf) continue;
+        final cached = _mtfData[f];
+        final maxAge = (mtfMinutes[f] ?? 15).clamp(5, 30);
+        if (cached != null && DateTime.now().difference(cached.$2).inMinutes < maxAge) continue;
+        final c = await _market.fetch(sym, f, settings, count: candleCount(f));
+        if (gen != _gen || !mtfOn) return;
+        final sigs = await _kingIso(c, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2);
+        if (gen != _gen || !mtfOn) return;
+        _mtfData[f] = (c, DateTime.now());
+        _mtfSig[f] = _mem.gate('MTF|$f', c, sigs);
+      }
+      _buildMtf();
+      notifyListeners();
+    } catch (_) {
+    } finally {
+      _mtfBusy = false;
+    }
+  }
+
+  void _buildMtf() {
+    if (!mtfOn || candles.length < 2) {
+      mtfR = null;
+      return;
+    }
+    final lists = <List<PastSignal>>[kingR?.res.signals ?? const []];
+    for (final f in mtfFrames) {
+      if (f == tf) continue;
+      final d = _mtfData[f], sg = _mtfSig[f];
+      if (d == null || sg == null) continue;
+      lists.add(mapSignals(sg, d.$1, f, candles));
+    }
+    mtfR = mtfResult(mergeSignals(lists));
+  }
   AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
   IndHealth? get akHealth => _aiH(15, 2);
   IndHealth? _tH(int k) => 4 + k < aiHealth.length ? aiHealth[4 + k] : null;
@@ -307,6 +366,9 @@ class AppState extends ChangeNotifier {
     kmV = null;
     allV = null;
     pqV = null;
+    mtfR = null;
+    _mtfData.clear();
+    _mtfSig.clear();
     algo = null;
     alka = null;
     allR = null;
@@ -613,6 +675,8 @@ class AppState extends ChangeNotifier {
     if (kr != null) kingR = KingResult(_mem.hold('King|$kingTop|$kingNearOnly', c, kr.res), kr.conf, kr.eval);
     if (forecast != null) forecast = _mem.holdForecast('AAB', c, forecast!);
     _buildViews();
+    _buildMtf();
+    if (mtfOn) unawaited(_refreshMtf());
     final ak = alka;
     if (ak != null) {
       final (s, p) = _mem.holdList('Alka', c, ak.signals, ak.pending);
@@ -845,4 +909,14 @@ AllResult _withExtras(List<Candle> c, AllResult mp, MarketSymbol sym, double rr1
   ]..sort((a, b) => a.$1.i.compareTo(b.$1.i));
   return AllResult([for (final x in all) x.$1], [for (final x in all) x.$2], mp.pending, mp.pendingSrc, mp.tag,
       {for (final e in extras) e.$1.i});
+}
+
+
+/// King لفريم آخر في Isolate (دالة على مستوى الملف حتى لا تُرسل حالة التطبيق).
+Future<List<PastSignal>> _kingIso(List<Candle> c, MarketSymbol sym, String f, List<Candle>? dd, double a1, double r2) async {
+  try {
+    return await Isolate.run(() => kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2));
+  } catch (_) {
+    return kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2);
+  }
 }
