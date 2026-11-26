@@ -15,6 +15,7 @@ import '../analysis/forecast.dart';
 import '../analysis/mtf.dart';
 import '../analysis/fz_indicator.dart';
 import '../analysis/vote_indicator.dart';
+import '../analysis/trend_zone.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/q_model.dart' show qH;
 import '../analysis/indicators.dart';
@@ -41,6 +42,7 @@ class ChartLayers {
   bool king = false; // مؤشر King: ذكاء اصطناعي
   bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
   bool q = false; // مؤشر Q: خريطة الاحتمالات للـ 12 شمعة القادمة
+  bool tz = false; // منطقة الاتجاه: خلفية خضراء (قمم وقيعان صاعدة) / حمراء (هابطة) / بدون لون (متذبذب)
   bool vote = false; // الإجماع: 5 مؤشرات أو أكثر من 7 متفقة — شراء/بيع مع نجوم
   bool fz = false; // FZ: مناطق الفيبوناتشي (خضراء/حمراء) + شراء/بيع عند الارتداد أو الكسر
   bool fast = false; // Fast: King أعلى 50% من 5m و15m و1h — إشارات كثيرة
@@ -81,6 +83,7 @@ class ChartLayers {
     ..fast = fast
     ..fz = fz
     ..vote = vote
+    ..tz = tz
     ..type = type
     ..sub = sub;
 }
@@ -604,6 +607,35 @@ class _Painter extends CustomPainter {
             end: Alignment.bottomCenter,
             colors: [Color(0xFF111117), AppColors.bg],
           ).createShader(Rect.fromLTWH(0, 0, w, fullH)));
+    // ── منطقة الاتجاه (هيكل السوق): خلفية ملونة خلف الشموع + حالة السوق الآن
+    if (L.tz) {
+      final z = trendZoneCached(c);
+      var s0 = i0;
+      for (var i = i0; i <= i1 + 1; i++) {
+        if (i <= i1 && z[i] == z[s0]) continue;
+        final v = z[s0];
+        if (v != 0) {
+          final x1 = math.max(0.0, xOf(s0.toDouble()) - barW / 2), x2 = math.min(w, xOf((i - 1).toDouble()) + barW / 2);
+          final col = v > 0 ? const Color(0xFF00C853) : const Color(0xFFFF1744);
+          canvas.drawRect(Rect.fromLTRB(x1, 0, x2, h), Paint()..color = col.withOpacity(0.09));
+          canvas.drawRect(Rect.fromLTRB(x1, h - 3, x2, h), Paint()..color = col.withOpacity(0.55));
+        }
+        s0 = i;
+      }
+      final now = z[n - 1];
+      final txt = now > 0 ? 'السوق صاعد' : now < 0 ? 'السوق هابط' : 'السوق متذبذب';
+      final col = now > 0 ? const Color(0xFF00C853) : now < 0 ? const Color(0xFFFF1744) : AppColors.muted;
+      final tp = TextPainter(
+          text: TextSpan(text: txt, style: TextStyle(fontFamily: chartFont, color: col, fontSize: 11, fontWeight: FontWeight.w800)),
+          textDirection: TextDirection.rtl)
+        ..layout();
+      final r = Rect.fromLTWH(w - tp.width - 22, 26, tp.width + 16, tp.height + 6);
+      canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(7)), Paint()..color = AppColors.bg.withOpacity(0.85));
+      canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(7)), Paint()
+        ..color = col.withOpacity(0.8)
+        ..style = PaintingStyle.stroke);
+      tp.paint(canvas, Offset(r.left + 8, r.top + 3));
+    }
     // ── علامة مائية
     _txt(canvas, '${sym.code}  ${tf.toUpperCase()}', Offset(w / 2 - 70, h / 2 - 16),
         color: AppColors.accent.withOpacity(0.045), size: 26, bold: true);

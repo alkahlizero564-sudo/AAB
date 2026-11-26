@@ -1,6 +1,7 @@
 import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../analysis/trend_zone.dart';
 import '../analysis/all_indicator.dart';
 import 'package:provider/provider.dart';
 import '../analysis/benchmark.dart';
@@ -449,6 +450,14 @@ class _ChartScreenState extends State<ChartScreen> {
           toggle: () => layers.fz = !layers.fz
         ),
         (
+          name: 'TZ',
+          emoji: '🧱',
+          desc: 'منطقة الاتجاه: خلفية خضراء لمن القمم والقيعان صاعدة، حمراء لمن هابطة، وبدون لون لمن السوق متذبذب',
+          health: null,
+          on: layers.tz,
+          toggle: () => layers.tz = !layers.tz
+        ),
+        (
           name: 'Q',
           emoji: '🗺️',
           desc: 'أين سيكون السعر غالباً قريباً، وهل السوق هادئ أو متحرك',
@@ -622,7 +631,7 @@ class _ChartScreenState extends State<ChartScreen> {
         const groups = <(String, String, IconData, List<String>)>[
           ('ابدأ هنا', 'الأفضل لأغلب المتداولين', Icons.emoji_events_rounded, ['King', 'الإجماع', 'Fast', 'MTF']),
           ('دقة عالية', 'إشارات أقل لكن أدق', Icons.verified_rounded, ['AK', 'KM', 'AAB', 'SM', 'نجوم', 'PQ', 'ST', 'DM']),
-          ('المناطق والخرائط', 'أين يتجه السعر', Icons.map_rounded, ['FZ', 'Q']),
+          ('المناطق والخرائط', 'أين يتجه السعر', Icons.map_rounded, ['TZ', 'FZ', 'Q']),
           ('بعيد المدى', 'للاستثمار على الفريم اليومي', Icons.landscape_rounded, ['LT']),
           ('الأساسية', 'المؤشرات التي بُني منها الذكاء', Icons.layers_rounded, ['Mp', 'ALL', 'Alka', '0.1']),
         ];
@@ -645,6 +654,11 @@ class _ChartScreenState extends State<ChartScreen> {
           final h = x.health;
           if (x.name == 'نجوم') return st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق';
           if (x.name == 'LT') return _ltStatus(st);
+          if (x.name == 'TZ') {
+            final z = trendZoneCached(st.candles);
+            if (z.isEmpty) return 'جاري الحساب…';
+            return z.last > 0 ? 'الآن: السوق صاعد 🟢' : z.last < 0 ? 'الآن: السوق هابط 🔴' : 'الآن: السوق متذبذب';
+          }
           if (x.name == 'Q') {
             final q = st.qR;
             if (q == null) return 'جاري الحساب…';
@@ -1394,7 +1408,7 @@ class _ChartScreenState extends State<ChartScreen> {
     if (eff.all && st.allV != null) e.add(('ALL', st.allV!.decision, null));
     if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
     if (eff.alka && st.alkaV != null) e.add(('Alka', st.alkaV!.decision, null));
-    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf || eff.fast || eff.fz || eff.vote;
+    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf || eff.fast || eff.fz || eff.vote || eff.tz;
     if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
 
     // تجميع الصفقات المتطابقة
