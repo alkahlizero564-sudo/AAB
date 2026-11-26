@@ -452,7 +452,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'TZ',
           emoji: '🧱',
-          desc: 'قناة الترند: خط يلمس القمم وخط يلمس القيعان الواقفة على نفس الخط (بدون قطع الشموع) — خضراء صاعدة، حمراء هابطة، رمادية لمن الخطين مختلفين',
+          desc: 'مستويات أفقية لمستها قمتان أو قاعان أو أكثر، والمنطقة بين أقرب مستوى فوق السعر وتحته: خضراء لمن السوق صاعد، حمراء لمن هابط',
           health: null,
           on: layers.tz,
           toggle: () => layers.tz = !layers.tz
@@ -657,7 +657,7 @@ class _ChartScreenState extends State<ChartScreen> {
           if (x.name == 'TZ') {
             final td = trendZoneCached(st.candles);
             if (td.zone.isEmpty) return 'جاري الحساب…';
-            final now = td.chans.isEmpty ? td.zone.last : td.chans.last.dir;
+            final now = td.zone.last;
             return now > 0 ? 'الآن: السوق صاعد 🟢' : now < 0 ? 'الآن: السوق هابط 🔴' : 'الآن: السوق متذبذب';
           }
           if (x.name == 'Q') {

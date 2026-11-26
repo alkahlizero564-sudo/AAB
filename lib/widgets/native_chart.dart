@@ -612,38 +612,39 @@ class _Painter extends CustomPainter {
       final td = trendZoneCached(c);
       final z = td.zone;
       Color colOf(int v) => v > 0 ? const Color(0xFF00C853) : v < 0 ? const Color(0xFFFF1744) : const Color(0xFF9E9EAE);
-      // القناة الحالية فقط (القنوات القديمة تزحم الشارت)
-      for (final ch in td.chans.isEmpty ? const <TzChan>[] : [td.chans.last]) {
-        // تُرسم من أول قمة/قاع لها (تلمس القمم والقيعان) وتمتد 8 شموع للأمام
-        final a0 = ch.start < ch.from - 400 ? ch.from - 400 : ch.start;
-        final b0 = n - 1 + 8;
-        if (b0 < i0 || a0 > i1 + 8) continue;
-        final col = colOf(ch.dir);
-        final xa = xOf(a0.toDouble()), xb = xOf(b0.toDouble());
-        final path = Path()
-          ..moveTo(xa, yOf(ch.upAt(a0.toDouble())))
-          ..lineTo(xb, yOf(ch.upAt(b0.toDouble())))
-          ..lineTo(xb, yOf(ch.dnAt(b0.toDouble())))
-          ..lineTo(xa, yOf(ch.dnAt(a0.toDouble())))
-          ..close();
-        canvas.save();
-        canvas.clipRect(Rect.fromLTWH(0, 0, w, h));
-        canvas.drawPath(path, Paint()..color = col.withOpacity(0.13));
-        final ln = Paint()
-          ..color = col.withOpacity(0.95)
-          ..strokeWidth = 1.6;
-        canvas.drawLine(Offset(xa, yOf(ch.upAt(a0.toDouble()))), Offset(xb, yOf(ch.upAt(b0.toDouble()))), ln);
-        canvas.drawLine(Offset(xa, yOf(ch.dnAt(a0.toDouble()))), Offset(xb, yOf(ch.dnAt(b0.toDouble()))), ln);
-        {
-          // نقاط اللمس: القمتان والقاعان
-          for (final (ix, p) in [...ch.upTouch, ...ch.dnTouch]) {
-            canvas.drawCircle(Offset(xOf(ix.toDouble()), yOf(p)), 3.2, Paint()..color = col);
-          }
-        }
-        canvas.restore();
+      // المستويات الأفقية (قمتان/قاعان أو أكثر على نفس السعر) + المنطقة بين أقرب مستوى فوق السعر وأقرب مستوى تحته
+      final lv = tzLevels(c);
+      final px = c.last.close;
+      TzLevel? above, below;
+      for (final L0 in lv) {
+        if (L0.price > px && (above == null || L0.price < above.price)) above = L0;
+        if (L0.price <= px && (below == null || L0.price > below.price)) below = L0;
       }
-      // الحالة من اتجاه خطي القناة الحالية (نفس لونها)
-      final now = td.chans.isEmpty ? z[n - 1] : td.chans.last.dir;
+      final zc = colOf(z[n - 1]);
+      if (above != null && below != null) {
+        final r = Rect.fromLTRB(0, yOf(above.price).clamp(0.0, h).toDouble(), w, yOf(below.price).clamp(0.0, h).toDouble());
+        canvas.drawRect(r, Paint()..color = zc.withOpacity(z[n - 1] == 0 ? 0.06 : 0.12));
+      }
+      // أقرب 3 مستويات فوق السعر و3 تحته فقط (لا زحمة)
+      final up3 = [for (final L0 in lv) if (L0.price > px) L0]..sort((a, b) => a.price.compareTo(b.price));
+      final dn3 = [for (final L0 in lv) if (L0.price <= px) L0]..sort((a, b) => b.price.compareTo(a.price));
+      final shown = [...up3.take(3), ...dn3.take(3)];
+      for (final L0 in shown) {
+        if (!inY(L0.price)) continue;
+        final near = identical(L0, above) || identical(L0, below);
+        final y = yOf(L0.price);
+        final x0 = math.max(0.0, xOf(L0.first.toDouble()) - barW / 2);
+        final lc = near ? zc : AppColors.text.withOpacity(0.45);
+        canvas.drawLine(Offset(x0, y), Offset(w, y), Paint()
+          ..color = lc.withOpacity(near ? 0.95 : 0.5)
+          ..strokeWidth = near ? 1.6 : 1.0);
+        for (final ix in L0.at) {
+          if (ix < i0 || ix > i1) continue;
+          canvas.drawCircle(Offset(xOf(ix.toDouble()), y), 2.6, Paint()..color = lc);
+        }
+        if (y > 14) _txt(canvas, '${L0.touches} لمسات', Offset(w - 52, y - 13), color: lc, size: 9);
+      }
+      final now = z[n - 1];
       final txt = now > 0 ? 'السوق صاعد' : now < 0 ? 'السوق هابط' : 'السوق متذبذب';
       final col = colOf(now);
       final tpn = TextPainter(

@@ -127,3 +127,60 @@ TzData trendZone(List<Candle> c, {int k = 10}) {
   closeChan(n - 1);
   return TzData(z, top, bot, chans);
 }
+
+/// مستوى أفقي: سعر لمسته قمتان/قاعان أو أكثر (قمم وقيعان مختلطة).
+class TzLevel {
+  final double price;
+  final int touches, first; // عدد اللمسات وأول شمعة لمسته
+  final List<int> at; // أرقام الشموع التي لمسته
+  const TzLevel(this.price, this.touches, this.first, this.at);
+}
+
+List<TzLevel>? _cl;
+String _clk = '';
+
+/// المستويات الأفقية الحالية من القمم والقيعان المؤكدة (بعد [k] شموع — بلا نظر للمستقبل).
+/// تُجمع النقاط المتقاربة (فرق ≤ 0.25 ATR) في مستوى واحد، ويُبقى المستوى إذا لمسه نقطتان أو أكثر.
+List<TzLevel> tzLevels(List<Candle> c, {int k = 5, int lookback = 600}) {
+  final n = c.length;
+  if (n < 2 * k + 20) return const [];
+  final key = '$n|${c.first.time.millisecondsSinceEpoch}|${c.last.time.millisecondsSinceEpoch}|${c[n - 2].close}';
+  if (key == _clk && _cl != null) return _cl!;
+  var atr = 0.0;
+  for (var i = n - 15; i < n; i++) {
+    atr += c[i].high - c[i].low;
+  }
+  atr /= 15;
+  final tol = atr * 0.25;
+  final pts = <(double, int)>[];
+  for (var j = (n - lookback).clamp(k, n); j < n - k; j++) {
+    var isH = true, isL = true;
+    for (var q = j - k; q <= j + k; q++) {
+      if (c[q].high > c[j].high) isH = false;
+      if (c[q].low < c[j].low) isL = false;
+    }
+    if (isH) pts.add((c[j].high, j));
+    if (isL) pts.add((c[j].low, j));
+  }
+  pts.sort((a, b) => a.$1.compareTo(b.$1));
+  final out = <TzLevel>[];
+  var g = <(double, int)>[];
+  void flush() {
+    if (g.length >= 2) {
+      final p = g.map((e) => e.$1).reduce((a, b) => a + b) / g.length;
+      final at = g.map((e) => e.$2).toList()..sort();
+      out.add(TzLevel(p, g.length, at.first, at));
+    }
+    g = [];
+  }
+
+  for (final p in pts) {
+    if (g.isNotEmpty && p.$1 - g.first.$1 > tol) flush();
+    g.add(p);
+  }
+  flush();
+  // مستوى كسره السعر بإغلاق واضح ثم ابتعد عنه كثيراً يبقى (قد يصبح دعماً/مقاومة) — لا نحذف شيئاً
+  _cl = out;
+  _clk = key;
+  return out;
+}
