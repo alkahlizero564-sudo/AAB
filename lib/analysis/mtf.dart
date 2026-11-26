@@ -23,6 +23,16 @@ const mtfHigher = {
   '1h': ['4h'],
 };
 
+/// الفريمات الأصغر: تُجلب بطلب خاص (شموع قليلة) وتُعرض إشاراتها على الشارت الحالي.
+/// ذهب 2021-2026: 5m 57.1% (بعد السبريد) • 15m 58.4% • 1h 58.3% — معاً ~1.1 إشارة/يوم.
+const mtfLower = {
+  '15m': ['5m'],
+  '30m': ['5m', '15m'],
+  '1h': ['5m', '15m'],
+  '4h': ['15m', '1h'],
+  '1d': ['1h', '4h'],
+};
+
 /// كم شمعة نطلب من الفريم الحالي (طلب واحد) حتى يكفي أعلى فريم مبني منها (~300 شمعة).
 int mtfCount(String tf, int base) {
   final hi = mtfHigher[tf];
@@ -88,7 +98,8 @@ int _barAt(List<Candle> cc, int ms) {
 }
 
 /// ينقل إشارات فريم آخر إلى شموع الشارت الحالي: الإشارة تظهر على الشمعة التي أُغلقت فيها شمعة الإشارة.
-List<(PastSignal, int)> mapSignals(List<(PastSignal, int)> sigs, List<Candle> from, String fromTf, List<Candle> to) {
+List<(PastSignal, int)> mapSignals(List<(PastSignal, int)> sigs, List<Candle> from, String fromTf, List<Candle> to,
+    {bool allowLast = false}) {
   if (to.length < 2 || from.isEmpty) return const [];
   final dur = (mtfMinutes[fromTf] ?? 15) * 60000;
   final out = <(PastSignal, int)>[];
@@ -96,7 +107,8 @@ List<(PastSignal, int)> mapSignals(List<(PastSignal, int)> sigs, List<Candle> fr
     if (s.i < 0 || s.i >= from.length) continue;
     final closeMs = from[s.i].time.millisecondsSinceEpoch + dur - 1;
     final i = _barAt(to, closeMs);
-    if (i < 0 || i >= to.length - 1) continue; // لا نضعها على الشمعة الجارية
+    // إشارات الفريم الأعلى لا توضع على الشمعة الجارية؛ إشارات الفريم الأصغر (شمعتها أُغلقت) تظهر فوراً
+    if (i < 0 || i >= to.length - (allowLast ? 0 : 1)) continue;
     var ex = -1;
     if (s.exitI >= 0 && s.exitI < from.length) {
       ex = _barAt(to, from[s.exitI].time.millisecondsSinceEpoch + dur - 1);

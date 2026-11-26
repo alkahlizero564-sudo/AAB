@@ -122,6 +122,26 @@ class AppState extends ChangeNotifier {
         final kept = _mem.gate('MTF|$f', agg, [for (final x in sigs) x.$1]).toSet();
         _mtfSig[f] = [for (final x in sigs) if (kept.contains(x.$1)) x];
       }
+      // الفريمات الأصغر: طلب لكل فريم، ويُعاد الطلب فقط بعد اكتمال شمعة جديدة منه
+      for (final f in mtfLower[tf] ?? const <String>[]) {
+        final cached = _mtfData['L$f'];
+        final age = cached == null ? 1 << 30 : DateTime.now().difference(cached.$2).inSeconds;
+        if (age < (mtfMinutes[f]! * 60).clamp(300, 3600)) continue;
+        try {
+          final raw = await _market.fetch(sym, f, settings, count: f == '5m' ? 3000 : 1500);
+          if (gen != _gen || !mtfOn) return;
+          // نحذف الشمعة الجارية (غير المكتملة)
+          final ms = mtfMinutes[f]! * 60000;
+          final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+          final lc = [for (final k in raw) if (k.time.millisecondsSinceEpoch + ms <= now) k];
+          if (lc.length < 260) continue;
+          final sigs = await _kingIso(lc, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2);
+          if (gen != _gen || !mtfOn) return;
+          _mtfData['L$f'] = (lc, DateTime.now());
+          final kept = _mem.gate('MTF|L$f', lc, [for (final x in sigs) x.$1]).toSet();
+          _mtfSig['L$f'] = [for (final x in sigs) if (kept.contains(x.$1)) x];
+        } catch (_) {}
+      }
       _buildMtf();
       notifyListeners();
     } catch (_) {
@@ -143,6 +163,11 @@ class AppState extends ChangeNotifier {
       final d = _mtfData[f], sg = _mtfSig[f];
       if (d == null || sg == null) continue;
       lists.add(mapSignals(sg, d.$1, f, candles));
+    }
+    for (final f in mtfLower[tf] ?? const <String>[]) {
+      final d = _mtfData['L$f'], sg = _mtfSig['L$f'];
+      if (d == null || sg == null) continue;
+      lists.add(mapSignals(sg, d.$1, f, candles, allowLast: true));
     }
     mtfR = mtfResult(mergeSignals(lists));
   }
