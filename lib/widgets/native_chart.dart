@@ -15,6 +15,7 @@ import '../analysis/forecast.dart';
 import '../analysis/mtf.dart';
 import '../analysis/fz_indicator.dart';
 import '../analysis/vote_indicator.dart';
+import '../analysis/trend_zone.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/q_model.dart' show qH;
 import '../analysis/indicators.dart';
@@ -41,6 +42,7 @@ class ChartLayers {
   bool king = false; // مؤشر King: ذكاء اصطناعي
   bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
   bool q = false; // مؤشر Q: خريطة الاحتمالات للـ 12 شمعة القادمة
+  bool tz = false; // منطقة الاتجاه: خلفية خضراء (قمم وقيعان صاعدة) / حمراء (هابطة) / بدون لون (متذبذب)
   bool vote = false; // الإجماع: 5 مؤشرات أو أكثر من 7 متفقة — شراء/بيع مع نجوم
   bool fz = false; // FZ: مناطق الفيبوناتشي (خضراء/حمراء) + شراء/بيع عند الارتداد أو الكسر
   bool fast = false; // Fast: King أعلى 50% من 5m و15m و1h — إشارات كثيرة
@@ -81,6 +83,7 @@ class ChartLayers {
     ..fast = fast
     ..fz = fz
     ..vote = vote
+    ..tz = tz
     ..type = type
     ..sub = sub;
 }
@@ -604,6 +607,75 @@ class _Painter extends CustomPainter {
             end: Alignment.bottomCenter,
             colors: [Color(0xFF111117), AppColors.bg],
           ).createShader(Rect.fromLTWH(0, 0, w, fullH)));
+    // ── منطقة الاتجاه (هيكل السوق): صندوق بين آخر قمة وآخر قاع، لونه أخضر (صاعد) / أحمر (هابط) / رمادي (متذبذب)
+    if (L.tz) {
+      final td = trendZoneCached(c);
+      final z = td.zone;
+      Color colOf(int v) => v > 0 ? const Color(0xFF00C853) : v < 0 ? const Color(0xFFFF8A3D) : const Color(0xFF9E9EAE);
+      final chs = futureChannels(c);
+      canvas.save();
+      canvas.clipRect(Rect.fromLTWH(0, 0, w, h));
+      for (final ch in chs) {
+        final cur = identical(ch, chs.last);
+        final a0 = ch.from, b0 = cur ? n - 1 + 20 : ch.to;
+        if (b0 < i0 || a0 > i1 + 20) continue;
+        final col = colOf(ch.dir);
+        final xa = xOf(a0.toDouble()) - barW / 2, xb = xOf(b0.toDouble()) + barW / 2;
+        double ya(double off) => yOf(ch.mid(a0.toDouble()) + off);
+        double yb(double off) => yOf(ch.mid(b0.toDouble()) + off);
+        final path = Path()
+          ..moveTo(xa, ya(ch.w))
+          ..lineTo(xb, yb(ch.w))
+          ..lineTo(xb, yb(-ch.w))
+          ..lineTo(xa, ya(-ch.w))
+          ..close();
+        canvas.drawPath(path, Paint()..color = col.withOpacity(cur ? 0.14 : 0.08));
+        final ln = Paint()
+          ..color = col.withOpacity(cur ? 0.9 : 0.55)
+          ..strokeWidth = 1.1;
+        canvas.drawLine(Offset(xa, ya(ch.w)), Offset(xb, yb(ch.w)), ln);
+        canvas.drawLine(Offset(xa, ya(-ch.w)), Offset(xb, yb(-ch.w)), ln);
+        canvas.drawLine(Offset(xa, ya(0)), Offset(xb, yb(0)), Paint()
+          ..color = col.withOpacity(0.5)
+          ..strokeWidth = 0.9);
+        // ◆ عند بداية الترند
+        final px0 = xOf(a0.toDouble()), py0 = yOf(ch.dir > 0 ? c[a0].low : c[a0].high) + (ch.dir > 0 ? 9 : -9);
+        final dm = Path()
+          ..moveTo(px0, py0 - 5)
+          ..lineTo(px0 + 5, py0)
+          ..lineTo(px0, py0 + 5)
+          ..lineTo(px0 - 5, py0)
+          ..close();
+        canvas.drawPath(dm, Paint()..color = col);
+        if (cur) {
+          final fp = ch.mid(b0.toDouble());
+          final t = TextPainter(
+              text: TextSpan(
+                  text: 'السعر المتوقع ${fp.toStringAsFixed(fp > 100 ? 2 : 5)}',
+                  style: TextStyle(fontFamily: chartFont, color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w700)),
+              textDirection: TextDirection.rtl)
+            ..layout();
+          final ty = (yb(0) - t.height / 2).clamp(2.0, h - t.height - 4).toDouble();
+          final r = Rect.fromLTWH(w - t.width - 14, ty - 2, t.width + 10, t.height + 4);
+          canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(5)), Paint()..color = const Color(0xFF2A2F3A));
+          t.paint(canvas, Offset(r.left + 5, r.top + 2));
+        }
+      }
+      canvas.restore();
+      final now = chs.isEmpty ? z[n - 1] : chs.last.dir;
+      final txt = now > 0 ? 'السوق صاعد' : now < 0 ? 'السوق هابط' : 'السوق متذبذب';
+      final col = colOf(now);
+      final tpn = TextPainter(
+          text: TextSpan(text: txt, style: TextStyle(fontFamily: chartFont, color: col, fontSize: 11, fontWeight: FontWeight.w800)),
+          textDirection: TextDirection.rtl)
+        ..layout();
+      final r = Rect.fromLTWH(w - tpn.width - 22, 26, tpn.width + 16, tpn.height + 6);
+      canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(7)), Paint()..color = AppColors.bg.withOpacity(0.85));
+      canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(7)), Paint()
+        ..color = col.withOpacity(0.8)
+        ..style = PaintingStyle.stroke);
+      tpn.paint(canvas, Offset(r.left + 8, r.top + 3));
+    }
     // ── علامة مائية
     _txt(canvas, '${sym.code}  ${tf.toUpperCase()}', Offset(w / 2 - 70, h / 2 - 16),
         color: AppColors.accent.withOpacity(0.045), size: 26, bold: true);
@@ -1231,6 +1303,23 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
+    // أحدث صفقة مفتوحة عبر الطبقات المشغّلة: الصفقات المفتوحة العكسية الأقدم «انعكست» ولا تُرسم خطوطها
+    _newestDir = 0;
+    var newestI = -1;
+    for (final (on, l) in <(bool, List<PastSignal>?)>[
+      (L.king, kingr?.res.signals), (L.mtf, mtfr?.signals), (L.fast, fastr?.signals), (L.vote, voter?.signals),
+      (L.aiak, akr?.signals), (L.star, starr?.res.signals), (L.pq, pqr?.signals), (L.km, kmr?.signals),
+      (L.dm, dmr?.signals), (L.st, str?.res.signals), (L.sm, smr?.signals), (L.mp, mr?.signals),
+      (L.all, ar?.signals), (L.zero, zr?.signals), (L.alka, ak?.signals), (L.fz, fzr?.res.signals),
+    ]) {
+      if (!on) continue;
+      for (final x in l ?? const <PastSignal>[]) {
+        if (x.exitI < 0 && x.i > newestI) {
+          newestI = x.i;
+          _newestDir = x.dir;
+        }
+      }
+    }
     // إشارة واحدة لكل (شمعة، اتجاه): ما يرسمه King لا يُعاد في MTF والإجماع و Fast و AK (لا علامات فوق بعض)
     final shown = <(int, int)>{};
     (List<PastSignal>, List<int>) fresh(List<PastSignal> sg, int Function(int q) stars) {
@@ -1840,6 +1929,8 @@ class _Painter extends CustomPainter {
   /// علامات Alka: "Alka شراء ▲" تحت الشمعة و "Alka بيع ▼" فوقها، مع نتيجة الصفقة.
   /// علامات شراء/بيع بأسلوب Alka لأي مؤشر: "TAG شراء ▲" تحت الشمعة و "TAG بيع ▼" فوقها،
   /// مع نتيجة الصفقة، وخطوط الصفقة المفتوحة، والإشارة المنتظرة. [border] لون إطار مميز (ALL ذهبي).
+  int _newestDir = 0; // اتجاه أحدث صفقة مفتوحة في الطبقات المرسومة
+
   void _paintTagged(Canvas cv, double w, double barW, double Function(double) xOf,
       double Function(double) yOf, bool Function(double) inY, int i0, int i1,
       List<PastSignal> signals, List<PendingSetup> pending, String tag, Color? border,
@@ -1930,12 +2021,13 @@ class _Painter extends CustomPainter {
         _txt(cv, txt, Offset(x - 18, buy ? boxY + bh + 2 : boxY - 13),
             color: sg.result > 0 ? const Color(0xFF00E676) : const Color(0xFFFF8A80), size: 9, bold: true);
       } else {
-        _txt(cv, 'مفتوحة', Offset(x - 16, buy ? boxY + bh + 2 : boxY - 13),
-            color: AppColors.gold, size: 9, bold: true, rtl: true);
+        final rev = _newestDir != 0 && sg.dir != _newestDir;
+        _txt(cv, rev ? 'انعكست' : 'مفتوحة', Offset(x - 16, buy ? boxY + bh + 2 : boxY - 13),
+            color: rev ? AppColors.muted : AppColors.gold, size: 9, bold: true, rtl: true);
       }
     }
     // صفقات مفتوحة (قد تكون صفقتان: شراء + بيع): خطوط الدخول والوقف والهدف
-    for (final sg in signals.where((x) => x.exitI < 0)) {
+    for (final sg in signals.where((x) => x.exitI < 0 && (_newestDir == 0 || x.dir == _newestDir))) {
       final x0 = math.max(0.0, xOf(sg.i.toDouble()));
       void ln(double p, Color col, String t) {
         if (!inY(p)) return;

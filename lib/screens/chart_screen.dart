@@ -1,6 +1,7 @@
 import 'dart:isolate';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../analysis/trend_zone.dart';
 import '../analysis/all_indicator.dart';
 import 'package:provider/provider.dart';
 import '../analysis/benchmark.dart';
@@ -449,6 +450,14 @@ class _ChartScreenState extends State<ChartScreen> {
           toggle: () => layers.fz = !layers.fz
         ),
         (
+          name: 'TZ',
+          emoji: '🧱',
+          desc: 'قناة الترند المستقبلية: خضراء لمن الترند صاعد وبرتقالية لمن نازل، تمتد لقدام مع السعر المتوقع، و◆ عند بداية كل ترند',
+          health: null,
+          on: layers.tz,
+          toggle: () => layers.tz = !layers.tz
+        ),
+        (
           name: 'Q',
           emoji: '🗺️',
           desc: 'أين سيكون السعر غالباً قريباً، وهل السوق هادئ أو متحرك',
@@ -622,7 +631,7 @@ class _ChartScreenState extends State<ChartScreen> {
         const groups = <(String, String, IconData, List<String>)>[
           ('ابدأ هنا', 'الأفضل لأغلب المتداولين', Icons.emoji_events_rounded, ['King', 'الإجماع', 'Fast', 'MTF']),
           ('دقة عالية', 'إشارات أقل لكن أدق', Icons.verified_rounded, ['AK', 'KM', 'AAB', 'SM', 'نجوم', 'PQ', 'ST', 'DM']),
-          ('المناطق والخرائط', 'أين يتجه السعر', Icons.map_rounded, ['FZ', 'Q']),
+          ('المناطق والخرائط', 'أين يتجه السعر', Icons.map_rounded, ['TZ', 'FZ', 'Q']),
           ('بعيد المدى', 'للاستثمار على الفريم اليومي', Icons.landscape_rounded, ['LT']),
           ('الأساسية', 'المؤشرات التي بُني منها الذكاء', Icons.layers_rounded, ['Mp', 'ALL', 'Alka', '0.1']),
         ];
@@ -645,6 +654,13 @@ class _ChartScreenState extends State<ChartScreen> {
           final h = x.health;
           if (x.name == 'نجوم') return st.starMin == 0 ? 'يظهر: كل الإشارات' : 'يظهر: ${st.starMin} نجوم فما فوق';
           if (x.name == 'LT') return _ltStatus(st);
+          if (x.name == 'TZ') {
+            final td = trendZoneCached(st.candles);
+            if (td.zone.isEmpty) return 'جاري الحساب…';
+            final fc = futureChannels(st.candles);
+            final now = fc.isEmpty ? td.zone.last : fc.last.dir;
+            return now > 0 ? 'الآن: السوق صاعد 🟢' : now < 0 ? 'الآن: السوق هابط 🔴' : 'الآن: السوق متذبذب';
+          }
           if (x.name == 'Q') {
             final q = st.qR;
             if (q == null) return 'جاري الحساب…';
@@ -1379,6 +1395,9 @@ class _ChartScreenState extends State<ChartScreen> {
     }
     if (eff.king && st.kingR != null) e.add(('King', st.kingR!.res.decision, null));
     if (eff.aiak && st.akR != null) e.add(('AK', st.akR!.decision, null));
+    if (eff.mtf && st.mtfR != null) e.add(('MTF', st.mtfR!.decision, null));
+    if (eff.fast && st.fastR != null) e.add(('Fast', st.fastR!.decision, null));
+    if (eff.vote && st.voteR != null) e.add(('الإجماع', st.voteR!.decision, null));
     if (eff.pq && st.pqV != null) e.add(('PQ', st.pqV!.decision, null));
     if (eff.lt) e.add(_ltEntry(st));
     final fam = <(String, AllResult)>[
@@ -1394,7 +1413,7 @@ class _ChartScreenState extends State<ChartScreen> {
     if (eff.all && st.allV != null) e.add(('ALL', st.allV!.decision, null));
     if (eff.zero && st.zero != null) e.add(('0.1', st.zero!.decision, null));
     if (eff.alka && st.alkaV != null) e.add(('Alka', st.alkaV!.decision, null));
-    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf || eff.fast || eff.fz || eff.vote;
+    final anyInd = eff.all || eff.alka || eff.mp || eff.zero || eff.sm || eff.km || eff.dm || eff.st || eff.star || eff.lt || eff.pq || eff.king || eff.aiak || eff.mtf || eff.fast || eff.fz || eff.vote || eff.tz;
     if (showAab && st.forecast != null && (eff.sigs || !anyInd)) e.add(('AAB', st.forecast!.decision, null));
 
     // تجميع الصفقات المتطابقة
@@ -1415,6 +1434,9 @@ class _ChartScreenState extends State<ChartScreen> {
     }
     // زر فحص الصفقة داخل الشريط نفسه (بدل زر كامل العرض)
     final open = _openTrades(st, eff);
+    // صفقتان مفتوحتان باتجاهين متعاكسين: الأحدث تغلب (الأقدم انعكست) — لا نعرض قرارين متناقضين
+    final nd = _newestOpenDir(st, eff);
+    if (nd != 0) groups.removeWhere((k, g) => g.$2.state == 1 && g.$2.dir != nd);
     final price = st.candles.isEmpty ? double.nan : st.candles.last.close;
     VoidCallback? checkFor(Decision d) {
       if (d.state != 1) return null;
@@ -1463,6 +1485,37 @@ class _ChartScreenState extends State<ChartScreen> {
 
   /// أول صفقة مفتوحة في المؤشرات المشغّلة (للزر "افحص صفقتي").
   /// كل الصفقات المفتوحة لأول مؤشر مشغّل عنده صفقة (مع محركين: قد تكون شراء + بيع).
+  /// اتجاه أحدث صفقة مفتوحة في كل المؤشرات المشغّلة (0 = لا يوجد).
+  int _newestOpenDir(AppState st, ChartLayers eff) {
+    final all = <List<PastSignal>?>[
+      if (eff.star) st.starV?.res.signals,
+      if (eff.king) st.kingR?.res.signals,
+      if (eff.aiak) st.akR?.signals,
+      if (eff.pq) st.pqV?.signals,
+      if (eff.mtf) st.mtfR?.signals,
+      if (eff.fast) st.fastR?.signals,
+      if (eff.vote) st.voteR?.signals,
+      if (eff.km) st.kmV?.signals,
+      if (eff.dm) st.dmR?.signals,
+      if (eff.st) st.stV?.res.signals,
+      if (eff.sm) st.smView?.signals,
+      if (eff.mp) st.mpR?.signals,
+      if (eff.all) st.allV?.signals,
+      if (eff.zero) st.zero?.signals,
+      if (eff.alka) st.alkaV?.signals,
+    ];
+    var bi = -1, bd = 0;
+    for (final l in all) {
+      for (final x in l ?? const <PastSignal>[]) {
+        if (x.exitI < 0 && x.i > bi) {
+          bi = x.i;
+          bd = x.dir;
+        }
+      }
+    }
+    return bd;
+  }
+
   List<(String, PastSignal)> _openTrades(AppState st, ChartLayers eff) {
     final l = <(String, List<PastSignal>?)>[
       if (eff.star) ('نجوم', st.starV?.res.signals),
