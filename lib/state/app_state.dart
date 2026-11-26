@@ -18,6 +18,7 @@ import '../analysis/pq_indicator.dart';
 import '../analysis/king_indicator.dart';
 import '../analysis/low_tf.dart';
 import '../analysis/mtf.dart';
+import '../analysis/fz_indicator.dart';
 import '../analysis/signal_memory.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/signal_engine.dart';
@@ -54,6 +55,7 @@ class AppState extends ChangeNotifier {
   AlkaResult? alka; // مؤشر Alka (شموع الانعكاس عند الدعم/المقاومة و Volume Profile)
   AllResult? allR; // مؤشر ALL (دمج AAB و Alka + فلتر الشمعة الصغيرة)
   ZeroResult? zero; // مؤشر 0.1 (مصيدة سيولة + شمعة رفض)
+  FzResult? fzR; // مؤشر FZ: مناطق الفيبوناتشي + ارتداد/كسر (بموافقة Mp)
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
@@ -253,6 +255,15 @@ class AppState extends ChangeNotifier {
     final r = mtfR;
     if (!mtfOn || r == null || candles.isEmpty) return null;
     final done = r.signals.where((s) => s.result != 0).toList();
+    final w = done.where((s) => s.result > 0).length;
+    final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
+    return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
+  }
+
+  IndHealth? get fzHealth {
+    final r = fzR;
+    if (r == null || candles.isEmpty) return null;
+    final done = r.res.signals.where((s) => s.result != 0).toList();
     final w = done.where((s) => s.result > 0).length;
     final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
     return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
@@ -503,6 +514,7 @@ class AppState extends ChangeNotifier {
     allR = null;
     zero = null;
     mpR = null;
+    fzR = null;
     smR = null;
     kmR = null;
     stR = null;
@@ -591,6 +603,7 @@ class AppState extends ChangeNotifier {
     pqR = starR == null ? null : buildPq(mp, starR!, smR!, alka: ak.signals);
     kmR = buildKm(candles, smR!);
     stR = buildSt(candles, mp);
+    fzR = candles.isEmpty ? null : buildFz(candles, mp, minStop: minStopFor(tf, candles.last.close));
     _rebuildKing();
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     _rebuildLt();
@@ -802,6 +815,8 @@ class AppState extends ChangeNotifier {
     if (tr != null) stR = StResult(_mem.hold('ST', c, tr.res), tr.conf);
     final kr = kingR;
     if (kr != null) kingR = KingResult(_mem.hold('King|$kingTop|$kingNearOnly', c, kr.res), kr.conf, kr.eval);
+    final fz = fzR;
+    if (fz != null) fzR = FzResult(fz.zones, _mem.hold('FZ', c, fz.res));
     if (forecast != null) forecast = _mem.holdForecast('AAB', c, forecast!);
     _buildViews();
     _buildMtf();

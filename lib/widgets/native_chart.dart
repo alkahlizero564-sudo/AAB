@@ -13,6 +13,7 @@ import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
 import '../analysis/mtf.dart';
+import '../analysis/fz_indicator.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/q_model.dart' show qH;
 import '../analysis/indicators.dart';
@@ -39,6 +40,7 @@ class ChartLayers {
   bool king = false; // مؤشر King: ذكاء اصطناعي
   bool aiak = false; // مؤشر AK: توصيات AAB في أعلى 15% حسب King
   bool q = false; // مؤشر Q: خريطة الاحتمالات للـ 12 شمعة القادمة
+  bool fz = false; // FZ: مناطق الفيبوناتشي (خضراء/حمراء) + شراء/بيع عند الارتداد أو الكسر
   bool fast = false; // Fast: King أعلى 50% من 5m و15m و1h — إشارات كثيرة
   bool mtf = false; // King متعدد الفريمات (5m و15m و1h): علامات شراء/بيع فقط
   String type = 'candle'; // candle | ha (Heikin Ashi) | line
@@ -75,6 +77,7 @@ class ChartLayers {
     ..q = q
     ..mtf = mtf
     ..fast = fast
+    ..fz = fz
     ..type = type
     ..sub = sub;
 }
@@ -119,6 +122,7 @@ class NativeChart extends StatefulWidget {
   final KingResult? kingR;
   final AllResult? mtfR;
   final AllResult? fastR;
+  final FzResult? fzR;
   final MarketSymbol sym;
   final String tf;
   final ChartLayers layers;
@@ -146,6 +150,7 @@ class NativeChart extends StatefulWidget {
     this.kingR,
     this.mtfR,
     this.fastR,
+    this.fzR,
     this.onSelect,
     this.repaint,
     required this.sym,
@@ -364,7 +369,7 @@ class _NativeChartState extends State<NativeChart> with TickerProviderStateMixin
               painter: _Painter(widget.candles, widget.signal, widget.forecast,
                   widget.sym, widget.tf, visible, shift, cross, widget.layers, yZoom,
                   DateTime.now().toUtc(), widget.algo,
-                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR, widget.mtfR, widget.fastR),
+                  widget.repaint == null ? _smTick : Listenable.merge([widget.repaint, _smTick]), widget.alka, widget.allR, widget.zero, widget.mpR, widget.smR, widget.kmR, widget.dmR, widget.stR, widget.starR, widget.ltR, _sm, widget.pqR, widget.kingR, widget.akR, widget.qR, widget.mtfR, widget.fastR, widget.fzR),
             ),
           ),
         ),
@@ -443,8 +448,9 @@ class _Painter extends CustomPainter {
   final KingResult? kingr;
   final AllResult? mtfr;
   final AllResult? fastr;
+  final FzResult? fzr;
   _Painter(this.c, this.s, this.f, this.sym, this.tf, this.visible, this.shift,
-      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr, this.mtfr, this.fastr])
+      this.cross, this.L, this.yZoom, this.now, this.al, Listenable? repaint, [this.ak, this.ar, this.zr, this.mr, this.smr, this.kmr, this.dmr, this.str, this.starr, this.ltr, this.sm, this.pqr, this.kingr, this.akr, this.qr, this.mtfr, this.fastr, this.fzr])
       : super(repaint: repaint);
 
   // يبقى التلوين ثابتاً لحظة فتح شمعة جديدة قبل وصول التحليل التالي
@@ -1247,6 +1253,32 @@ class _Painter extends CustomPainter {
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
           tagPer: List.filled(r.signals.length, ''),
           starsPer: [for (var q = 0; q < r.signals.length; q++) mtfStarsOf(r, q)]);
+    }
+    // ── FZ: مناطق الفيبوناتشي — خضراء بعد موجة صاعدة، حمراء بعد موجة هابطة، وخط متقطع عند 0.786
+    if (L.fz && fzr != null) {
+      final f = fzr!;
+      for (final z in f.zones) {
+        if (z.to < i0 || z.from > i1) continue;
+        final col = z.dir > 0 ? _up : _down;
+        final x1 = math.max(0.0, xOf(z.from.toDouble()) - barW / 2);
+        final x2 = math.min(w, xOf(z.to.toDouble()) + barW / 2);
+        if (x2 <= x1) continue;
+        final top = math.max(z.z5, z.z618), bot = math.min(z.z5, z.z618);
+        final y1 = yOf(top), y2 = yOf(bot);
+        final r = Rect.fromLTRB(x1, y1, x2, math.max(y2, y1 + 2));
+        canvas.drawRect(r, Paint()..color = col.withOpacity(0.18));
+        canvas.drawRect(r, Paint()
+          ..color = col.withOpacity(0.75)
+          ..style = PaintingStyle.stroke);
+        final y7 = yOf(z.z786);
+        for (var x = x1; x < x2; x += 6) {
+          canvas.drawLine(Offset(x, y7), Offset(math.min(x + 3, x2), y7), Paint()
+            ..color = col.withOpacity(0.6)
+            ..strokeWidth = 1);
+        }
+      }
+      _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, f.res.signals, const [], '', null,
+          tagPer: List.filled(f.res.signals.length, ''));
     }
     // ── Fast: «شراء» أو «بيع» فقط (النجوم للإشارات الأقوى)
     if (L.fast && fastr != null) {
