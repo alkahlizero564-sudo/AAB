@@ -1097,3 +1097,9 @@ ALL 55.5% / 56.6% (11097)، Mp 55.0% / 55.7% (12662)، Alka 53.4% / 53.6% (24345
 - التعلم الذاتي لم يحسّن شيئاً مقارنة بالدمج الثابت (±0.3%).
 - الثقة العالية (أعلى 5%) لأفق 20: دقة 58-62%، لكن التداول بـ 1R/2R بعد السبريد: ذهب 15m −0.04R (1.2 في اليوم)، ذهب 1h +0.08R (0.02 في اليوم فقط)، بيتكوين 15m +0.03R، بيتكوين 1h +0.18R (0.09 في اليوم).
 - ممر 10-90%: يغطي 69-78% بدل 80% (أضيق من الواقع). عرضه حوالي 6-7.5 ATR، ولا يضيف شيئاً لمؤشر Q الموجود.
+
+## قائمة TradingView من صور المستخدم: 57 مؤشراً واستراتيجية لم تُختبر سابقاً (tv2.py) — لا شيء يعمل
+- الاستراتيجيات الجاهزة (Bar up/down، Consecutive، Greedy، Outside bar، Price channel، ADX breakout، Technical ratings، Volatility expansion)، والمؤشرات المدمجة (Chaikin، Chande، Coppock، DPO، EOM، Elder، Fisher، KST، Klinger، McGinley، Mass، LSMA، PVT، RVI، SMI، UO، Alligator، Fractal، Connors RSI، Woodies، ALMA، DEMA/TEMA، Envelope، Volatility stop)، والمجتمع (Squeeze LazyBear، WaveTrend/VuManChu، UT Bot، AlphaTrend، Vix Fix، Sling Shot، Turtle، Madrid، OTT، Hull Suite، CM RSI-2، MACD 4C، TonyUX، Pivot reversal).
+- دخول مباشر، نصف 1R ونصف 2R، السبريد محسوب: ولا مؤشر موجب في الأسواق الأربعة. الأفضل متوسطاً Volatility expansion-close (−0.02R).
+- الذهب 15m كله بين −0.17 و−0.01 (العشوائي −0.15)، والذهب 1h بين −0.25 و+0.01 (العشوائي −0.07)، والبيتكوين حوالي الصفر مثل العشوائي.
+- مع البحث الكبير السابق (138 استراتيجية): أكثر من 195 مؤشراً واستراتيجية من TradingView، وكلها ≈ العشوائي.
