@@ -23,6 +23,20 @@ const mtfHigher = {
   '1h': ['4h'],
 };
 
+/// الفريمات الأصغر: تُجلب بطلب خاص (شموع قليلة) وتُعرض إشاراتها على الشارت الحالي.
+/// ذهب 2021-2026: 5m 57.1% (بعد السبريد) • 15m 58.4% • 1h 58.3% — معاً ~1.1 إشارة/يوم.
+const mtfLower = {
+  '15m': ['5m'],
+  '30m': ['5m', '15m'],
+  '1h': ['5m', '15m'],
+  '4h': ['15m', '1h'],
+  '1d': ['1h', '4h'],
+};
+
+/// مؤشر Fast: King (أعلى 50%) من 5m و15m و1h معاً على أي شارت — إشارات كثيرة.
+/// ذهب 2021-2026: ~2-3.5 إشارة/يوم • نجاح ~56-57% • +0.07 إلى +0.13R • أيام بلا إشارة ~9-15%.
+const fastFrames = ['5m', '15m', '1h'];
+
 /// كم شمعة نطلب من الفريم الحالي (طلب واحد) حتى يكفي أعلى فريم مبني منها (~300 شمعة).
 int mtfCount(String tf, int base) {
   final hi = mtfHigher[tf];
@@ -57,7 +71,7 @@ List<Candle> aggregate(List<Candle> c, String tf, {DateTime? nowBarStart}) {
 /// إشارات King على شموع فريم واحد (نفس طريقة التطبيق: Mp ← النجوم/SM/KM ← King).
 /// كل إشارة مع نجومها (1 = أعلى 30%، 2 = أعلى 15%، 3 = أعلى 7%).
 List<(PastSignal, int)> kingSignalsFor(List<Candle> c, MarketSymbol sym, String tf,
-    {List<Candle>? daily, double alkaTp1 = 0.35, double rr2 = 2}) {
+    {List<Candle>? daily, double alkaTp1 = 0.35, double rr2 = 2, int top = 30}) {
   final n = c.length;
   if (n < 260) return const [];
   final ms = minStopFor(tf, c.last.close);
@@ -68,8 +82,9 @@ List<(PastSignal, int)> kingSignalsFor(List<Candle> c, MarketSymbol sym, String 
   final st = buildStar(c, mp);
   final sm = buildSm(c, mp, stars: st);
   final km = buildKm(c, sm);
-  final k = buildKing(c, mp, top: 30, stars: st, sm: sm, km: km, daily: daily);
-  return [for (final x in k.res.signals) (x, k.stars(x.i, x.dir) < 1 ? 1 : k.stars(x.i, x.dir))];
+  final k = buildKing(c, mp, top: top, stars: st, sm: sm, km: km, daily: daily);
+  // أعلى 30%: أقل شيء نجمة؛ الأوسع (Fast): الإشارة تحت 30% بلا نجوم
+  return [for (final x in k.res.signals) (x, top <= 30 && k.stars(x.i, x.dir) < 1 ? 1 : k.stars(x.i, x.dir))];
 }
 
 int _barAt(List<Candle> cc, int ms) {
@@ -88,7 +103,8 @@ int _barAt(List<Candle> cc, int ms) {
 }
 
 /// ينقل إشارات فريم آخر إلى شموع الشارت الحالي: الإشارة تظهر على الشمعة التي أُغلقت فيها شمعة الإشارة.
-List<(PastSignal, int)> mapSignals(List<(PastSignal, int)> sigs, List<Candle> from, String fromTf, List<Candle> to) {
+List<(PastSignal, int)> mapSignals(List<(PastSignal, int)> sigs, List<Candle> from, String fromTf, List<Candle> to,
+    {bool allowLast = false}) {
   if (to.length < 2 || from.isEmpty) return const [];
   final dur = (mtfMinutes[fromTf] ?? 15) * 60000;
   final out = <(PastSignal, int)>[];
@@ -96,7 +112,8 @@ List<(PastSignal, int)> mapSignals(List<(PastSignal, int)> sigs, List<Candle> fr
     if (s.i < 0 || s.i >= from.length) continue;
     final closeMs = from[s.i].time.millisecondsSinceEpoch + dur - 1;
     final i = _barAt(to, closeMs);
-    if (i < 0 || i >= to.length - 1) continue; // لا نضعها على الشمعة الجارية
+    // إشارات الفريم الأعلى لا توضع على الشمعة الجارية؛ إشارات الفريم الأصغر (شمعتها أُغلقت) تظهر فوراً
+    if (i < 0 || i >= to.length - (allowLast ? 0 : 1)) continue;
     var ex = -1;
     if (s.exitI >= 0 && s.exitI < from.length) {
       ex = _barAt(to, from[s.exitI].time.millisecondsSinceEpoch + dur - 1);
@@ -124,3 +141,5 @@ List<(PastSignal, int)> mergeSignals(List<List<(PastSignal, int)>> lists) {
 AllResult mtfResult(List<(PastSignal, int)> s) =>
     AllResult([for (final x in s) x.$1], [for (final x in s) 'K${x.$2}'], const [], const [], 'MTF');
 int mtfStarsOf(AllResult r, int q) => q < r.sources.length ? (int.tryParse(r.sources[q].substring(1)) ?? 1) : 1;
+AllResult fastResult(List<(PastSignal, int)> s) =>
+    AllResult([for (final x in s) x.$1], [for (final x in s) 'K${x.$2}'], const [], const [], 'Fast');

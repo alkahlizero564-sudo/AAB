@@ -18,6 +18,8 @@ import '../analysis/pq_indicator.dart';
 import '../analysis/king_indicator.dart';
 import '../analysis/low_tf.dart';
 import '../analysis/mtf.dart';
+import '../analysis/fz_indicator.dart';
+import '../analysis/vote_indicator.dart';
 import '../analysis/signal_memory.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/signal_engine.dart';
@@ -54,6 +56,8 @@ class AppState extends ChangeNotifier {
   AlkaResult? alka; // مؤشر Alka (شموع الانعكاس عند الدعم/المقاومة و Volume Profile)
   AllResult? allR; // مؤشر ALL (دمج AAB و Alka + فلتر الشمعة الصغيرة)
   ZeroResult? zero; // مؤشر 0.1 (مصيدة سيولة + شمعة رفض)
+  AllResult? voteR; // مؤشر الإجماع: إشارة إذا اتفق 5 مؤشرات أو أكثر من 7
+  FzResult? fzR; // مؤشر FZ: مناطق الفيبوناتشي + ارتداد/كسر (بموافقة Mp)
   AllResult? mpR; // مؤشر Mp (دمج مؤشراتنا الأربعة: ALL + 0.1)
   AllResult? smR; // مؤشر SM (إشارات Mp التي يوافقها شريط المتوسطات)
   AllResult? kmR; // مؤشر KM (إشارات SM في السوق الهادئ)
@@ -73,7 +77,8 @@ class AppState extends ChangeNotifier {
   AlkaResult? alkaV;
   StarResult? starV;
   StResult? stV;
-  AllResult? kmV, allV, pqV;
+  AllResult? kmV, allV, pqV, mpV;
+  ZeroResult? zeroV;
 
   // ── King متعدد الفريمات: إشارات King من 5m و15m و1h على الشارت الحالي ──
   bool mtfOn = false;
@@ -122,6 +127,26 @@ class AppState extends ChangeNotifier {
         final kept = _mem.gate('MTF|$f', agg, [for (final x in sigs) x.$1]).toSet();
         _mtfSig[f] = [for (final x in sigs) if (kept.contains(x.$1)) x];
       }
+      // الفريمات الأصغر: طلب لكل فريم، ويُعاد الطلب فقط بعد اكتمال شمعة جديدة منه
+      for (final f in mtfLower[tf] ?? const <String>[]) {
+        final cached = _mtfData['L$f'];
+        final age = cached == null ? 1 << 30 : DateTime.now().difference(cached.$2).inSeconds;
+        if (age < (mtfMinutes[f]! * 60).clamp(300, 3600)) continue;
+        try {
+          final raw = await _market.fetch(sym, f, settings, count: f == '5m' ? 3000 : 1500);
+          if (gen != _gen || !mtfOn) return;
+          // نحذف الشمعة الجارية (غير المكتملة)
+          final ms = mtfMinutes[f]! * 60000;
+          final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+          final lc = [for (final k in raw) if (k.time.millisecondsSinceEpoch + ms <= now) k];
+          if (lc.length < 260) continue;
+          final sigs = await _kingIso(lc, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2);
+          if (gen != _gen || !mtfOn) return;
+          _mtfData['L$f'] = (lc, DateTime.now());
+          final kept = _mem.gate('MTF|L$f', lc, [for (final x in sigs) x.$1]).toSet();
+          _mtfSig['L$f'] = [for (final x in sigs) if (kept.contains(x.$1)) x];
+        } catch (_) {}
+      }
       _buildMtf();
       notifyListeners();
     } catch (_) {
@@ -144,9 +169,118 @@ class AppState extends ChangeNotifier {
       if (d == null || sg == null) continue;
       lists.add(mapSignals(sg, d.$1, f, candles));
     }
+    for (final f in mtfLower[tf] ?? const <String>[]) {
+      final d = _mtfData['L$f'], sg = _mtfSig['L$f'];
+      if (d == null || sg == null) continue;
+      lists.add(mapSignals(sg, d.$1, f, candles, allowLast: true));
+    }
     mtfR = mtfResult(mergeSignals(lists));
   }
+  // ── Fast: King (أعلى 50%) من 5m و15m و1h على الشارت الحالي — إشارات أكثر ──
+  bool fastOn = false;
+  AllResult? fastR;
+  final Map<String, (List<Candle>, DateTime)> _fastData = {};
+  final Map<String, List<(PastSignal, int)>> _fastSig = {};
+  bool _fastBusy = false;
+
+  void setFast(bool on) {
+    fastOn = on;
+    if (on) {
+      _buildFast();
+      unawaited(_refreshFast());
+    } else {
+      fastR = null;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _refreshFast() async {
+    if (!fastOn || _fastBusy || candles.length < 50) return;
+    _fastBusy = true;
+    final gen = _gen, sym = symbol, cur = tf;
+    try {
+      for (final f in fastFrames) {
+        final ms = mtfMinutes[f]! * 60000;
+        List<Candle> lc;
+        final cached = _fastData[f];
+        if (f == cur) {
+          lc = candles.sublist(0, candles.length - 1); // الشموع المكتملة فقط
+          if (cached != null && cached.$1.isNotEmpty && cached.$1.last.time == lc.last.time) continue;
+        } else {
+          final age = cached == null ? 1 << 30 : DateTime.now().difference(cached.$2).inSeconds;
+          if (age < (mtfMinutes[f]! * 60).clamp(300, 3600)) continue;
+          final raw = await _market.fetch(sym, f, settings, count: f == '5m' ? 3000 : f == '15m' ? 1500 : 1000);
+          if (gen != _gen || !fastOn) return;
+          final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+          lc = [for (final k in raw) if (k.time.millisecondsSinceEpoch + ms <= now) k];
+        }
+        if (lc.length < 260) continue;
+        final sigs = await _kingIso(lc, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2, top: 50);
+        if (gen != _gen || !fastOn) return;
+        _fastData[f] = (lc, DateTime.now());
+        final kept = _mem.gate('Fast|$f', lc, [for (final x in sigs) x.$1]).toSet();
+        _fastSig[f] = [for (final x in sigs) if (kept.contains(x.$1)) x];
+      }
+      _buildFast();
+      notifyListeners();
+    } catch (_) {
+    } finally {
+      _fastBusy = false;
+    }
+  }
+
+  void _buildFast() {
+    if (!fastOn || candles.length < 2) {
+      fastR = null;
+      return;
+    }
+    final lists = <List<(PastSignal, int)>>[];
+    for (final f in fastFrames) {
+      final d = _fastData[f], sg = _fastSig[f];
+      if (d == null || sg == null) continue;
+      lists.add(mapSignals(sg, d.$1, f, candles, allowLast: (mtfMinutes[f] ?? 0) < (mtfMinutes[tf] ?? 0)));
+    }
+    fastR = fastResult(mergeSignals(lists));
+  }
+
+  IndHealth? get fastHealth {
+    final r = fastR;
+    if (!fastOn || r == null || candles.isEmpty) return null;
+    final done = r.signals.where((s) => s.result != 0).toList();
+    final w = done.where((s) => s.result > 0).length;
+    final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
+    return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
+  }
+
   AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
+  /// أداء MTF الآن من إشاراته المغلقة على الشارت.
+  IndHealth? get mtfHealth {
+    final r = mtfR;
+    if (!mtfOn || r == null || candles.isEmpty) return null;
+    final done = r.signals.where((s) => s.result != 0).toList();
+    final w = done.where((s) => s.result > 0).length;
+    final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
+    return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
+  }
+
+  IndHealth? get voteHealth {
+    final r = voteR;
+    if (r == null || candles.isEmpty) return null;
+    final done = r.signals.where((s) => s.result != 0).toList();
+    final w = done.where((s) => s.result > 0).length;
+    final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
+    return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
+  }
+
+  IndHealth? get fzHealth {
+    final r = fzR;
+    if (r == null || candles.isEmpty) return null;
+    final done = r.res.signals.where((s) => s.result != 0).toList();
+    final w = done.where((s) => s.result > 0).length;
+    final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
+    return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
+  }
+
   IndHealth? get akHealth => _aiH(15, 2);
   IndHealth? _tH(int k) => 4 + k < aiHealth.length ? aiHealth[4 + k] : null;
   IndHealth? get alkaHealthNow => _tH(0) ?? alkaHealth;
@@ -375,6 +509,8 @@ class AppState extends ChangeNotifier {
     akR = null;
     qR = null;
     alkaV = null;
+    mpV = null;
+    zeroV = null;
     starV = null;
     stV = null;
     kmV = null;
@@ -383,12 +519,17 @@ class AppState extends ChangeNotifier {
     mtfR = null;
     _mtfData.clear();
     _mtfSig.clear();
+    fastR = null;
+    _fastData.clear();
+    _fastSig.clear();
     _long = const [];
     algo = null;
     alka = null;
     allR = null;
     zero = null;
     mpR = null;
+    fzR = null;
+    voteR = null;
     smR = null;
     kmR = null;
     stR = null;
@@ -477,6 +618,7 @@ class AppState extends ChangeNotifier {
     pqR = starR == null ? null : buildPq(mp, starR!, smR!, alka: ak.signals);
     kmR = buildKm(candles, smR!);
     stR = buildSt(candles, mp);
+    fzR = candles.isEmpty ? null : buildFz(candles, mp, minStop: minStopFor(tf, candles.last.close));
     _rebuildKing();
     dmR = buildDm(candles, symbol, aab: fAll, alka: ak, zero: z, daily: daily);
     _rebuildLt();
@@ -624,6 +766,7 @@ class AppState extends ChangeNotifier {
     final kn = 'King|$kingTop|$kingNearOnly';
     kingR = buildKing(candles, mp, top: kingTop, stars: starR, sm: smR, km: kmR, daily: daily, nearOnly: kingNearOnly, stick: _keep(kn));
     _remember(kn, kingR?.res.signals);
+    voteR = buildVote(mp, stars: starR, sm: smR, km: kmR, st: stR, king: kingR);
     _applyAi();
   }
 
@@ -645,10 +788,10 @@ class AppState extends ChangeNotifier {
   /// نسخ العرض بفهم التوقيت (فلتر King أعلى 30%) مع ثبات الإشارات.
   void _buildViews() {
     final e = kingR?.eval;
-    AllResult f(String name, AllResult r, {StarResult? stars}) {
+    AllResult f(String name, AllResult r, {StarResult? stars, int top = 30}) {
       // النجوم و PQ: الإشارة بنجمتين فأكثر يكفيها أعلى 30% من King، وغيرها تحتاج أعلى 15%
       final v = stars == null
-          ? kingFilter(r, e, 30, keep: _keep('$name|v'))
+          ? kingFilter(r, e, top, keep: _keep('$name|v'))
           : kingFilter(r, e, 15, keep: _keep('$name|v'), wideTop: 30, wide: (i, d) => stars.of(i, d) >= 2);
       final g = _mem.gateAll('$name|v', candles, v);
       _remember('$name|v', g.signals);
@@ -669,6 +812,15 @@ class AppState extends ChangeNotifier {
     stV = tr == null ? null : StResult(f('ST', tr.res), tr.conf);
     kmV = kmR == null ? null : f('KM', kmR!);
     allV = allR == null ? null : f('ALL', allR!);
+    // Mp و 0.1: فلتر الذكاء (King أعلى 50%) — يحافظ على نصف الإشارات. اختبار: Mp 55.2→57.0% • 0.1 51.4→52.4%
+    mpV = mpR == null ? null : f('Mp', mpR!, top: 50);
+    final z = zero;
+    if (z != null) {
+      final v = f('0.1', AllResult(z.signals, List.filled(z.signals.length, '0.1'), z.pending, List.filled(z.pending.length, '0.1'), '0.1'), top: 50);
+      zeroV = ZeroResult(v.signals, v.pending);
+    } else {
+      zeroV = null;
+    }
   }
 
   /// كل إشارة ظهرت على شمعة مغلقة تبقى ظاهرة (لا تظهر ثم تختفي).
@@ -688,10 +840,16 @@ class AppState extends ChangeNotifier {
     if (tr != null) stR = StResult(_mem.hold('ST', c, tr.res), tr.conf);
     final kr = kingR;
     if (kr != null) kingR = KingResult(_mem.hold('King|$kingTop|$kingNearOnly', c, kr.res), kr.conf, kr.eval);
+    final vr = voteR;
+    if (vr != null) voteR = _mem.hold('VOTE', c, vr);
+    final fz = fzR;
+    if (fz != null) fzR = FzResult(fz.zones, _mem.hold('FZ', c, fz.res));
     if (forecast != null) forecast = _mem.holdForecast('AAB', c, forecast!);
     _buildViews();
     _buildMtf();
     if (mtfOn) unawaited(_refreshMtf());
+    _buildFast();
+    if (fastOn) unawaited(_refreshFast());
     final ak = alka;
     if (ak != null) {
       final (s, p) = _mem.holdList('Alka', c, ak.signals, ak.pending);
@@ -931,10 +1089,11 @@ AllResult _withExtras(List<Candle> c, AllResult mp, MarketSymbol sym, double rr1
 
 
 /// King لفريم آخر في Isolate (دالة على مستوى الملف حتى لا تُرسل حالة التطبيق).
-Future<List<(PastSignal, int)>> _kingIso(List<Candle> c, MarketSymbol sym, String f, List<Candle>? dd, double a1, double r2) async {
+Future<List<(PastSignal, int)>> _kingIso(List<Candle> c, MarketSymbol sym, String f, List<Candle>? dd, double a1, double r2,
+    {int top = 30}) async {
   try {
-    return await Isolate.run(() => kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2));
+    return await Isolate.run(() => kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2, top: top));
   } catch (_) {
-    return kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2);
+    return kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2, top: top);
   }
 }
