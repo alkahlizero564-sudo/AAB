@@ -413,7 +413,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'MTF',
           emoji: '🧭',
-          desc: 'King متعدد الفريمات: إشارات King من 5M و15M و1H معاً على هذا الشارت — شراء أو بيع فقط. ضعف الإشارات بنفس الجودة (~57.5%)',
+          desc: 'King متعدد الفريمات: إشارات King من هذا الفريم ومن الفريمات الأعلى (تُبنى من نفس الشموع بدون طلبات إضافية) — شراء أو بيع فقط (~58%)',
           health: null,
           on: layers.mtf,
           toggle: () {

@@ -81,34 +81,45 @@ class AppState extends ChangeNotifier {
   final Map<String, (List<Candle>, DateTime)> _mtfData = {};
   final Map<String, List<PastSignal>> _mtfSig = {};
   bool _mtfBusy = false;
+  List<Candle> _long = const []; // شموع الفريم الحالي الطويلة (طلب واحد أكبر عند تشغيل MTF)
 
   void setMtf(bool on) {
     mtfOn = on;
     if (on) {
       _buildMtf();
-      unawaited(_refreshMtf());
+      if (_long.length < mtfCount(tf, candleCount(tf)) * 0.9) {
+        unawaited(refresh()); // طلب واحد أطول للفريم الحالي، ثم يُبنى الأعلى منه
+      } else {
+        unawaited(_refreshMtf());
+      }
     } else {
       mtfR = null;
     }
     notifyListeners();
   }
 
+  /// يبني الفريمات الأعلى من شموع الفريم الحالي (بدون أي طلب إضافي) ويحسب King عليها.
   Future<void> _refreshMtf() async {
     if (!mtfOn || _mtfBusy || candles.length < 50) return;
     _mtfBusy = true;
     final gen = _gen, sym = symbol;
     try {
-      for (final f in mtfFrames) {
-        if (f == tf) continue;
+      // الشموع الطويلة (من آخر طلب) + الأحدث منها في الشارت الحي
+      final long = <Candle>[..._long];
+      final lastT = long.isEmpty ? DateTime.fromMillisecondsSinceEpoch(0) : long.last.time;
+      for (final k in candles) {
+        if (k.time.isAfter(lastT)) long.add(k);
+      }
+      if (long.length < 50) return;
+      for (final f in mtfHigher[tf] ?? const <String>[]) {
+        final agg = aggregate(long, f, nowBarStart: candles.last.time);
+        if (agg.length < 260) continue;
         final cached = _mtfData[f];
-        final maxAge = (mtfMinutes[f] ?? 15).clamp(5, 30);
-        if (cached != null && DateTime.now().difference(cached.$2).inMinutes < maxAge) continue;
-        final c = await _market.fetch(sym, f, settings, count: candleCount(f));
+        if (cached != null && cached.$1.isNotEmpty && cached.$1.last.time == agg.last.time) continue; // لا شمعة أعلى جديدة
+        final sigs = await _kingIso(agg, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2);
         if (gen != _gen || !mtfOn) return;
-        final sigs = await _kingIso(c, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2);
-        if (gen != _gen || !mtfOn) return;
-        _mtfData[f] = (c, DateTime.now());
-        _mtfSig[f] = _mem.gate('MTF|$f', c, sigs);
+        _mtfData[f] = (agg, DateTime.now());
+        _mtfSig[f] = _mem.gate('MTF|$f', agg, sigs);
       }
       _buildMtf();
       notifyListeners();
@@ -124,8 +135,7 @@ class AppState extends ChangeNotifier {
       return;
     }
     final lists = <List<PastSignal>>[kingR?.res.signals ?? const []];
-    for (final f in mtfFrames) {
-      if (f == tf) continue;
+    for (final f in mtfHigher[tf] ?? const <String>[]) {
       final d = _mtfData[f], sg = _mtfSig[f];
       if (d == null || sg == null) continue;
       lists.add(mapSignals(sg, d.$1, f, candles));
@@ -369,6 +379,7 @@ class AppState extends ChangeNotifier {
     mtfR = null;
     _mtfData.clear();
     _mtfSig.clear();
+    _long = const [];
     algo = null;
     alka = null;
     allR = null;
@@ -763,8 +774,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       // الفريمات الصغيرة: 600 شمعة بدل 300 حتى تظهر إشارات أكثر (300 دقيقة = 5 ساعات فقط)
-      final data = await _market.fetch(symbol, tf, settings, count: candleCount(tf));
+      final want = mtfOn ? mtfCount(tf, candleCount(tf)) : candleCount(tf);
+      final data0 = await _market.fetch(symbol, tf, settings, count: want);
       if (gen != _gen) return;
+      _long = data0;
+      final data = data0.length > candleCount(tf) ? data0.sublist(data0.length - candleCount(tf)) : data0;
       candles = _mergeLive(data);
       liveTick.value++;
       final stale = _htfAt == null ||

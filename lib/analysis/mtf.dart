@@ -14,6 +14,46 @@ import 'zero_one.dart';
 const mtfFrames = ['5m', '15m', '1h'];
 const mtfMinutes = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440};
 
+/// الفريمات الأعلى التي تُبنى من شموع الفريم الحالي نفسه (بدون طلبات بيانات إضافية).
+const mtfHigher = {
+  '1m': ['5m', '15m'],
+  '5m': ['15m', '1h'],
+  '15m': ['1h'],
+  '30m': ['4h'],
+  '1h': ['4h'],
+};
+
+/// كم شمعة نطلب من الفريم الحالي (طلب واحد) حتى يكفي أعلى فريم مبني منها (~300 شمعة).
+int mtfCount(String tf, int base) {
+  final hi = mtfHigher[tf];
+  if (hi == null) return base;
+  final r = (mtfMinutes[hi.last]! / mtfMinutes[tf]!).round();
+  return (300 * r + 50).clamp(base, 5000).toInt();
+}
+
+/// تجميع شموع الفريم الحالي إلى فريم أعلى — الشموع المكتملة فقط.
+List<Candle> aggregate(List<Candle> c, String tf, {DateTime? nowBarStart}) {
+  final ms = (mtfMinutes[tf] ?? 60) * 60000;
+  final out = <Candle>[];
+  int? key;
+  for (final k in c) {
+    final kk = k.time.millisecondsSinceEpoch ~/ ms;
+    if (key != kk) {
+      out.add(Candle(DateTime.fromMillisecondsSinceEpoch(kk * ms, isUtc: true), k.open, k.high, k.low, k.close, k.volume));
+      key = kk;
+    } else {
+      final o = out.removeLast();
+      out.add(Candle(o.time, o.open, k.high > o.high ? k.high : o.high, k.low < o.low ? k.low : o.low, k.close, o.volume + k.volume));
+    }
+  }
+  // آخر شمعة أعلى لم تكتمل بعد (الشمعة الجارية داخلها) — تُحذف
+  final cut = nowBarStart ?? c.last.time;
+  while (out.isNotEmpty && out.last.time.millisecondsSinceEpoch + ms > cut.millisecondsSinceEpoch) {
+    out.removeLast();
+  }
+  return out;
+}
+
 /// إشارات King على شموع فريم واحد (نفس طريقة التطبيق: Mp ← النجوم/SM/KM ← King).
 List<PastSignal> kingSignalsFor(List<Candle> c, MarketSymbol sym, String tf,
     {List<Candle>? daily, double alkaTp1 = 0.35, double rr2 = 2}) {
