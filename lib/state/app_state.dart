@@ -79,7 +79,7 @@ class AppState extends ChangeNotifier {
   bool mtfOn = false;
   AllResult? mtfR;
   final Map<String, (List<Candle>, DateTime)> _mtfData = {};
-  final Map<String, List<PastSignal>> _mtfSig = {};
+  final Map<String, List<(PastSignal, int)>> _mtfSig = {};
   bool _mtfBusy = false;
   List<Candle> _long = const []; // شموع الفريم الحالي الطويلة (طلب واحد أكبر عند تشغيل MTF)
 
@@ -119,7 +119,8 @@ class AppState extends ChangeNotifier {
         final sigs = await _kingIso(agg, sym, f, daily == null ? null : List<Candle>.of(daily!), settings.alkaTp1, settings.rr2);
         if (gen != _gen || !mtfOn) return;
         _mtfData[f] = (agg, DateTime.now());
-        _mtfSig[f] = _mem.gate('MTF|$f', agg, sigs);
+        final kept = _mem.gate('MTF|$f', agg, [for (final x in sigs) x.$1]).toSet();
+        _mtfSig[f] = [for (final x in sigs) if (kept.contains(x.$1)) x];
       }
       _buildMtf();
       notifyListeners();
@@ -134,7 +135,10 @@ class AppState extends ChangeNotifier {
       mtfR = null;
       return;
     }
-    final lists = <List<PastSignal>>[kingR?.res.signals ?? const []];
+    final kr = kingR;
+    final lists = <List<(PastSignal, int)>>[
+      if (kr != null) [for (final x in kr.res.signals) (x, kr.stars(x.i, x.dir) < 1 ? 1 : kr.stars(x.i, x.dir))]
+    ];
     for (final f in mtfHigher[tf] ?? const <String>[]) {
       final d = _mtfData[f], sg = _mtfSig[f];
       if (d == null || sg == null) continue;
@@ -927,7 +931,7 @@ AllResult _withExtras(List<Candle> c, AllResult mp, MarketSymbol sym, double rr1
 
 
 /// King لفريم آخر في Isolate (دالة على مستوى الملف حتى لا تُرسل حالة التطبيق).
-Future<List<PastSignal>> _kingIso(List<Candle> c, MarketSymbol sym, String f, List<Candle>? dd, double a1, double r2) async {
+Future<List<(PastSignal, int)>> _kingIso(List<Candle> c, MarketSymbol sym, String f, List<Candle>? dd, double a1, double r2) async {
   try {
     return await Isolate.run(() => kingSignalsFor(c, sym, f, daily: dd, alkaTp1: a1, rr2: r2));
   } catch (_) {

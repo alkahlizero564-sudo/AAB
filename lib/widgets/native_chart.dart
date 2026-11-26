@@ -12,6 +12,7 @@ import '../analysis/zero_one.dart';
 import '../analysis/sm_indicator.dart';
 import '../analysis/all_indicator.dart';
 import '../analysis/forecast.dart';
+import '../analysis/mtf.dart';
 import '../analysis/q_indicator.dart';
 import '../analysis/q_model.dart' show qH;
 import '../analysis/indicators.dart';
@@ -1239,7 +1240,8 @@ class _Painter extends CustomPainter {
     if (L.mtf && mtfr != null) {
       final r = mtfr!;
       _paintTagged(canvas, w, barW, xOf, yOf, inY, i0, i1, r.signals, const [], '', null,
-          tagPer: List.filled(r.signals.length, ''));
+          tagPer: List.filled(r.signals.length, ''),
+          starsPer: [for (var q = 0; q < r.signals.length; q++) mtfStarsOf(r, q)]);
     }
     // ── AK: علامات شراء (أخضر) وبيع (أحمر) — توصيات AAB في أعلى 15% حسب King
     if (L.aiak && akr != null) {

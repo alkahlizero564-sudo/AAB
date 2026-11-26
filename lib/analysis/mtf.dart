@@ -55,7 +55,8 @@ List<Candle> aggregate(List<Candle> c, String tf, {DateTime? nowBarStart}) {
 }
 
 /// إشارات King على شموع فريم واحد (نفس طريقة التطبيق: Mp ← النجوم/SM/KM ← King).
-List<PastSignal> kingSignalsFor(List<Candle> c, MarketSymbol sym, String tf,
+/// كل إشارة مع نجومها (1 = أعلى 30%، 2 = أعلى 15%، 3 = أعلى 7%).
+List<(PastSignal, int)> kingSignalsFor(List<Candle> c, MarketSymbol sym, String tf,
     {List<Candle>? daily, double alkaTp1 = 0.35, double rr2 = 2}) {
   final n = c.length;
   if (n < 260) return const [];
@@ -67,7 +68,8 @@ List<PastSignal> kingSignalsFor(List<Candle> c, MarketSymbol sym, String tf,
   final st = buildStar(c, mp);
   final sm = buildSm(c, mp, stars: st);
   final km = buildKm(c, sm);
-  return buildKing(c, mp, top: 30, stars: st, sm: sm, km: km, daily: daily).res.signals;
+  final k = buildKing(c, mp, top: 30, stars: st, sm: sm, km: km, daily: daily);
+  return [for (final x in k.res.signals) (x, k.stars(x.i, x.dir) < 1 ? 1 : k.stars(x.i, x.dir))];
 }
 
 int _barAt(List<Candle> cc, int ms) {
@@ -86,11 +88,11 @@ int _barAt(List<Candle> cc, int ms) {
 }
 
 /// ينقل إشارات فريم آخر إلى شموع الشارت الحالي: الإشارة تظهر على الشمعة التي أُغلقت فيها شمعة الإشارة.
-List<PastSignal> mapSignals(List<PastSignal> sigs, List<Candle> from, String fromTf, List<Candle> to) {
+List<(PastSignal, int)> mapSignals(List<(PastSignal, int)> sigs, List<Candle> from, String fromTf, List<Candle> to) {
   if (to.length < 2 || from.isEmpty) return const [];
   final dur = (mtfMinutes[fromTf] ?? 15) * 60000;
-  final out = <PastSignal>[];
-  for (final s in sigs) {
+  final out = <(PastSignal, int)>[];
+  for (final (s, stars) in sigs) {
     if (s.i < 0 || s.i >= from.length) continue;
     final closeMs = from[s.i].time.millisecondsSinceEpoch + dur - 1;
     final i = _barAt(to, closeMs);
@@ -100,16 +102,25 @@ List<PastSignal> mapSignals(List<PastSignal> sigs, List<Candle> from, String fro
       ex = _barAt(to, from[s.exitI].time.millisecondsSinceEpoch + dur - 1);
       if (ex < i) ex = i;
     }
-    out.add(PastSignal(i, s.dir, s.entry, s.sl, s.tp1, s.tp2, s.result, ex, s.why, s.strong, s.agree, s.total, s.exitPrice, s.curStop));
+    out.add((PastSignal(i, s.dir, s.entry, s.sl, s.tp1, s.tp2, s.result, ex, s.why, s.strong, s.agree, s.total, s.exitPrice, s.curStop), stars));
   }
   return out;
 }
 
-/// دمج الفريمات: إشارة واحدة لكل (شمعة، اتجاه).
-List<PastSignal> mergeSignals(List<List<PastSignal>> lists) {
-  final seen = <(int, int)>{};
-  final all = [for (final l in lists) ...l]..sort((a, b) => a.i.compareTo(b.i));
-  return [for (final s in all) if (seen.add((s.i, s.dir))) s];
+/// دمج الفريمات: إشارة واحدة لكل (شمعة، اتجاه) بأعلى نجوم.
+List<(PastSignal, int)> mergeSignals(List<List<(PastSignal, int)>> lists) {
+  final best = <(int, int), (PastSignal, int)>{};
+  for (final l in lists) {
+    for (final x in l) {
+      final k = (x.$1.i, x.$1.dir);
+      final o = best[k];
+      if (o == null || x.$2 > o.$2) best[k] = x;
+    }
+  }
+  return best.values.toList()..sort((a, b) => a.$1.i.compareTo(b.$1.i));
 }
 
-AllResult mtfResult(List<PastSignal> s) => AllResult(s, List.filled(s.length, 'King'), const [], const [], 'MTF');
+/// النجوم تُحمل في sources بالشكل «K2».
+AllResult mtfResult(List<(PastSignal, int)> s) =>
+    AllResult([for (final x in s) x.$1], [for (final x in s) 'K${x.$2}'], const [], const [], 'MTF');
+int mtfStarsOf(AllResult r, int q) => q < r.sources.length ? (int.tryParse(r.sources[q].substring(1)) ?? 1) : 1;
