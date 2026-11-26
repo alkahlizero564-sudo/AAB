@@ -452,7 +452,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'TZ',
           emoji: '🧱',
-          desc: 'منطقة الاتجاه: صندوق بين آخر قمة وآخر قاع — أخضر لمن القمم والقيعان صاعدة، أحمر لمن هابطة، رمادي لمن متذبذب',
+          desc: 'قناة الترند: خط يلمس آخر قمتين وخط يلمس آخر قاعين — خضراء صاعدة، حمراء هابطة، رمادية لمن الخطين مختلفين',
           health: null,
           on: layers.tz,
           toggle: () => layers.tz = !layers.tz
