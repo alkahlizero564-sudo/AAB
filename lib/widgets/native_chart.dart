@@ -1303,6 +1303,23 @@ class _Painter extends CustomPainter {
           pendTagPer: [for (final p in r.pending) '${_starTag(starr!, p.i, p.dir, false)} نجوم ${starr!.of(p.i, p.dir)}'.trim()],
           starsPer: [for (final sg in r.signals) starr!.of(sg.i, sg.dir)]);
     }
+    // أحدث صفقة مفتوحة عبر الطبقات المشغّلة: الصفقات المفتوحة العكسية الأقدم «انعكست» ولا تُرسم خطوطها
+    _newestDir = 0;
+    var newestI = -1;
+    for (final (on, l) in <(bool, List<PastSignal>?)>[
+      (L.king, kingr?.res.signals), (L.mtf, mtfr?.signals), (L.fast, fastr?.signals), (L.vote, voter?.signals),
+      (L.aiak, akr?.signals), (L.star, starr?.res.signals), (L.pq, pqr?.signals), (L.km, kmr?.signals),
+      (L.dm, dmr?.signals), (L.st, str?.res.signals), (L.sm, smr?.signals), (L.mp, mr?.signals),
+      (L.all, ar?.signals), (L.zero, zr?.signals), (L.alka, ak?.signals), (L.fz, fzr?.res.signals),
+    ]) {
+      if (!on) continue;
+      for (final x in l ?? const <PastSignal>[]) {
+        if (x.exitI < 0 && x.i > newestI) {
+          newestI = x.i;
+          _newestDir = x.dir;
+        }
+      }
+    }
     // إشارة واحدة لكل (شمعة، اتجاه): ما يرسمه King لا يُعاد في MTF والإجماع و Fast و AK (لا علامات فوق بعض)
     final shown = <(int, int)>{};
     (List<PastSignal>, List<int>) fresh(List<PastSignal> sg, int Function(int q) stars) {
@@ -1912,6 +1929,8 @@ class _Painter extends CustomPainter {
   /// علامات Alka: "Alka شراء ▲" تحت الشمعة و "Alka بيع ▼" فوقها، مع نتيجة الصفقة.
   /// علامات شراء/بيع بأسلوب Alka لأي مؤشر: "TAG شراء ▲" تحت الشمعة و "TAG بيع ▼" فوقها،
   /// مع نتيجة الصفقة، وخطوط الصفقة المفتوحة، والإشارة المنتظرة. [border] لون إطار مميز (ALL ذهبي).
+  int _newestDir = 0; // اتجاه أحدث صفقة مفتوحة في الطبقات المرسومة
+
   void _paintTagged(Canvas cv, double w, double barW, double Function(double) xOf,
       double Function(double) yOf, bool Function(double) inY, int i0, int i1,
       List<PastSignal> signals, List<PendingSetup> pending, String tag, Color? border,
@@ -2002,12 +2021,13 @@ class _Painter extends CustomPainter {
         _txt(cv, txt, Offset(x - 18, buy ? boxY + bh + 2 : boxY - 13),
             color: sg.result > 0 ? const Color(0xFF00E676) : const Color(0xFFFF8A80), size: 9, bold: true);
       } else {
-        _txt(cv, 'مفتوحة', Offset(x - 16, buy ? boxY + bh + 2 : boxY - 13),
-            color: AppColors.gold, size: 9, bold: true, rtl: true);
+        final rev = _newestDir != 0 && sg.dir != _newestDir;
+        _txt(cv, rev ? 'انعكست' : 'مفتوحة', Offset(x - 16, buy ? boxY + bh + 2 : boxY - 13),
+            color: rev ? AppColors.muted : AppColors.gold, size: 9, bold: true, rtl: true);
       }
     }
     // صفقات مفتوحة (قد تكون صفقتان: شراء + بيع): خطوط الدخول والوقف والهدف
-    for (final sg in signals.where((x) => x.exitI < 0)) {
+    for (final sg in signals.where((x) => x.exitI < 0 && (_newestDir == 0 || x.dir == _newestDir))) {
       final x0 = math.max(0.0, xOf(sg.i.toDouble()));
       void ln(double p, Color col, String t) {
         if (!inY(p)) return;

@@ -1395,6 +1395,9 @@ class _ChartScreenState extends State<ChartScreen> {
     }
     if (eff.king && st.kingR != null) e.add(('King', st.kingR!.res.decision, null));
     if (eff.aiak && st.akR != null) e.add(('AK', st.akR!.decision, null));
+    if (eff.mtf && st.mtfR != null) e.add(('MTF', st.mtfR!.decision, null));
+    if (eff.fast && st.fastR != null) e.add(('Fast', st.fastR!.decision, null));
+    if (eff.vote && st.voteR != null) e.add(('الإجماع', st.voteR!.decision, null));
     if (eff.pq && st.pqV != null) e.add(('PQ', st.pqV!.decision, null));
     if (eff.lt) e.add(_ltEntry(st));
     final fam = <(String, AllResult)>[
@@ -1431,6 +1434,9 @@ class _ChartScreenState extends State<ChartScreen> {
     }
     // زر فحص الصفقة داخل الشريط نفسه (بدل زر كامل العرض)
     final open = _openTrades(st, eff);
+    // صفقتان مفتوحتان باتجاهين متعاكسين: الأحدث تغلب (الأقدم انعكست) — لا نعرض قرارين متناقضين
+    final nd = _newestOpenDir(st, eff);
+    if (nd != 0) groups.removeWhere((k, g) => g.$2.state == 1 && g.$2.dir != nd);
     final price = st.candles.isEmpty ? double.nan : st.candles.last.close;
     VoidCallback? checkFor(Decision d) {
       if (d.state != 1) return null;
@@ -1479,6 +1485,37 @@ class _ChartScreenState extends State<ChartScreen> {
 
   /// أول صفقة مفتوحة في المؤشرات المشغّلة (للزر "افحص صفقتي").
   /// كل الصفقات المفتوحة لأول مؤشر مشغّل عنده صفقة (مع محركين: قد تكون شراء + بيع).
+  /// اتجاه أحدث صفقة مفتوحة في كل المؤشرات المشغّلة (0 = لا يوجد).
+  int _newestOpenDir(AppState st, ChartLayers eff) {
+    final all = <List<PastSignal>?>[
+      if (eff.star) st.starV?.res.signals,
+      if (eff.king) st.kingR?.res.signals,
+      if (eff.aiak) st.akR?.signals,
+      if (eff.pq) st.pqV?.signals,
+      if (eff.mtf) st.mtfR?.signals,
+      if (eff.fast) st.fastR?.signals,
+      if (eff.vote) st.voteR?.signals,
+      if (eff.km) st.kmV?.signals,
+      if (eff.dm) st.dmR?.signals,
+      if (eff.st) st.stV?.res.signals,
+      if (eff.sm) st.smView?.signals,
+      if (eff.mp) st.mpR?.signals,
+      if (eff.all) st.allV?.signals,
+      if (eff.zero) st.zero?.signals,
+      if (eff.alka) st.alkaV?.signals,
+    ];
+    var bi = -1, bd = 0;
+    for (final l in all) {
+      for (final x in l ?? const <PastSignal>[]) {
+        if (x.exitI < 0 && x.i > bi) {
+          bi = x.i;
+          bd = x.dir;
+        }
+      }
+    }
+    return bd;
+  }
+
   List<(String, PastSignal)> _openTrades(AppState st, ChartLayers eff) {
     final l = <(String, List<PastSignal>?)>[
       if (eff.star) ('نجوم', st.starV?.res.signals),
