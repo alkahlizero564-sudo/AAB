@@ -414,7 +414,7 @@ class _ChartScreenState extends State<ChartScreen> {
           name: 'MTF',
           emoji: '🧭',
           desc: 'King متعدد الفريمات: إشارات King من هذا الفريم ومن الفريمات الأعلى (تُبنى من نفس الشموع بدون طلبات إضافية) — شراء أو بيع مع نجوم القوة (⭐ ~56% • ⭐⭐ ~61% • ⭐⭐⭐ ~64%)',
-          health: null,
+          health: st.mtfHealth,
           on: layers.mtf,
           toggle: () {
             layers.mtf = !layers.mtf;
@@ -616,6 +616,7 @@ class _ChartScreenState extends State<ChartScreen> {
                 ? 'جاري الحساب…'
                 : 'الآن ${(st.pqV!.winRate * 100).toStringAsFixed(0)}% من ${st.pqV!.closed}';
           }
+          if (x.name == 'MTF' && !st.mtfOn) return 'شغّله ليظهر أداؤه الآن';
           if (h == null) return 'جاري الحساب…';
           if (h.trades < 20) return 'عينة صغيرة (${h.trades} صفقة)';
           return 'الآن ${(h.winRate * 100).toStringAsFixed(0)}% من ${h.trades} صفقة';

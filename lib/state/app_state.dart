@@ -147,6 +147,16 @@ class AppState extends ChangeNotifier {
     mtfR = mtfResult(mergeSignals(lists));
   }
   AllResult? akR; // مؤشر AK: توصيات AAB في أعلى 15% حسب King (الأدق)
+  /// أداء MTF الآن من إشاراته المغلقة على الشارت.
+  IndHealth? get mtfHealth {
+    final r = mtfR;
+    if (!mtfOn || r == null || candles.isEmpty) return null;
+    final done = r.signals.where((s) => s.result != 0).toList();
+    final w = done.where((s) => s.result > 0).length;
+    final tot = done.fold(0.0, (a, s) => a + (s.result == 2 ? 1.5 : s.result == 1 ? 0.5 : -1.0));
+    return IndHealth(w, done.length, tot, candles.length, candles.last.time.difference(candles.first.time).inDays);
+  }
+
   IndHealth? get akHealth => _aiH(15, 2);
   IndHealth? _tH(int k) => 4 + k < aiHealth.length ? aiHealth[4 + k] : null;
   IndHealth? get alkaHealthNow => _tH(0) ?? alkaHealth;
