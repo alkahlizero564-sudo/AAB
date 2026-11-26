@@ -405,7 +405,7 @@ class _ChartScreenState extends State<ChartScreen> {
         (
           name: 'الإجماع',
           emoji: '🤝',
-          desc: 'زر واحد لكل المؤشرات: إشارة شراء أو بيع فقط إذا اتفق 5 مؤشرات أو أكثر من 7 (المصدر، النجوم، SM، KM، ST، King، AK). ⭐ = 5 متفقة (~60%) • ⭐⭐ = 6 (~63%) • ⭐⭐⭐ = الكل (~69%)',
+          desc: 'زر واحد لكل المؤشرات: شراء أو بيع كلما اتفق مؤشران أو أكثر من 7 (المصدر، النجوم، SM، KM، ST، King، AK) — إشارات كثيرة (~56%). النجوم = اتفاق أكبر: ⭐ 5 مؤشرات (~60%) • ⭐⭐ 6 (~63%) • ⭐⭐⭐ الكل (~69%)',
           health: st.voteHealth,
           on: layers.vote,
           toggle: () => layers.vote = !layers.vote
@@ -614,7 +614,7 @@ class _ChartScreenState extends State<ChartScreen> {
         final inds = _indicators(st);
         // دقة كل مؤشر على بيانات لم يرها (بهدف 1R) — لشريط الدقة والترتيب
         final acc = <String, double>{
-          'AK': 66, 'King': 59.3, 'MTF': 57.5, 'Fast': 56.5, 'الإجماع': 59.6, 'FZ': 54.0, 'AAB': 62.4, 'SM': 60.5,
+          'AK': 66, 'King': 59.3, 'MTF': 57.5, 'Fast': 56.5, 'الإجماع': 56.2, 'FZ': 54.0, 'AAB': 62.4, 'SM': 60.5,
           'نجوم': 61.3, 'PQ': 61.3, 'ST': 60.6, 'KM': 63.3, 'DM': 59.2, 'LT': 67,
           'Mp': 55.7, 'ALL': 60.3, 'Alka': 59.6, '0.1': 51.2,
         };

@@ -7,11 +7,11 @@ import 'star_indicator.dart';
 
 /// مؤشر الإجماع: كل إشارة Mp يُعدّ لها كم مؤشراً من 7 يوافقها:
 /// مصدرها (Alka أو AAB أو 0.1) • النجوم • SM • KM • ST • King (أعلى 30%) • AK (AAB في أعلى 15%).
-/// تظهر الإشارة إذا وافق أغلبهم (5 من 7 أو أكثر).
+/// تظهر الإشارة إذا وافقها مؤشران أو أكثر (60% من إشارات Mp — إشارات كثيرة).
 /// اختبار (ذهب 2019+ وبيتكوين 2021+، دقة الهدف 1R):
-/// 5 فأكثر 59.6% • 6 فأكثر 63.1% • الكل (7) 68.9% (مقابل 55.2% لكل إشارات Mp).
-/// النجوم: ⭐ = 5 مؤشرات • ⭐⭐ = 6 • ⭐⭐⭐ = 7 أو أكثر.
-const voteMin = 5;
+/// 2 فأكثر 56.2% • 5 فأكثر 59.6% • 6 فأكثر 63.1% • الكل (7) 68.9% (مقابل 55.2% لكل إشارات Mp).
+/// النجوم: بلا نجوم = 2-4 مؤشرات • ⭐ = 5 • ⭐⭐ = 6 • ⭐⭐⭐ = 7.
+const voteMin = 2;
 const voteTotal = 7;
 
 AllResult buildVote(AllResult? mp, {StarResult? stars, AllResult? sm, AllResult? km, StResult? st, KingResult? king}) {
@@ -32,7 +32,7 @@ AllResult buildVote(AllResult? mp, {StarResult? stars, AllResult? sm, AllResult?
         (mp.sources[q] == 'AAB' && p >= kingQ85 ? 1 : 0);
     if (v < voteMin) continue;
     sigs.add(s);
-    src.add('K${v >= 7 ? 3 : v - 4}|$v');
+    src.add('K${v >= 7 ? 3 : v >= 5 ? v - 4 : 0}|$v');
   }
   return AllResult(sigs, src, const [], const [], 'VOTE');
 }
